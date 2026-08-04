@@ -1,0 +1,4 @@
+interface:
+  display_name: "Data-Centric ML Coach"
+  short_description: "Improve ML systems through data quality"
+  default_prompt: "Help me improve this ML system using a data-centric workflow."

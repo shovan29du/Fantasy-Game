@@ -1,0 +1,4 @@
+interface:
+  display_name: "Adaptive Tutor"
+  short_description: "Personalized tutoring with mastery checks"
+  default_prompt: "Teach me this topic adaptively and check my understanding."

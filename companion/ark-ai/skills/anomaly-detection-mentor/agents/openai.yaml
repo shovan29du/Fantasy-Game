@@ -1,0 +1,4 @@
+interface:
+  display_name: "Anomaly Detection Mentor"
+  short_description: "Teacher-student anomaly detection guidance"
+  default_prompt: "Guide me through building and evaluating an anomaly detector."

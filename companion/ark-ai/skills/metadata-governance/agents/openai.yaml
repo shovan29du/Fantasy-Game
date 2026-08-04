@@ -1,0 +1,4 @@
+interface:
+  display_name: "Metadata Governance"
+  short_description: "Catalog, lineage, quality, and ownership"
+  default_prompt: "Design trusted metadata and governance for this data system."

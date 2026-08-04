@@ -1,0 +1,244 @@
+============================================================
+ARK AI - COMPLETE USER GUIDE AND FEATURE HELP
+============================================================
+
+QUICK START
+-----------
+1. Start ARK AI and open http://127.0.0.1:5000.
+2. Open Settings. Add an OpenRouter key, another provider key, or detect a
+   local LM Studio/Ollama model.
+3. Choose an Online or LM model from the top bar.
+4. Choose a mode, type a request, and press Enter. Use Shift+Enter for a new
+   line.
+5. Choose an Agent/Skill when you want a specialized workflow.
+
+MODEL CONNECTIONS
+-----------------
+Settings supports OpenRouter, Anthropic Claude, DeepSeek, OpenAI, Google
+Gemini, xAI Grok, Groq, Mistral, Together.ai, Perplexity, and Fireworks.
+Available models appear only when the matching key is saved. OpenRouter can
+accept comma-separated keys for rotation and automatic fallback.
+
+Local models:
+- LM Studio: start its local server (normally http://localhost:1234), then
+  click Detect. The top-bar pill reports offline or the loaded model count.
+- Ollama: run Ollama (normally http://localhost:11434), pull a model, then
+  click Detect.
+
+Local models avoid cloud API charges, but privacy still depends on how the
+local model software is configured. Larger models need more RAM/VRAM.
+
+Temperature controls variation: use 0-0.3 for precise work, around 0.7 for
+general chat, and higher values for creative exploration. The optional system
+prompt applies persistent style or behavior instructions.
+
+CHAT MODES
+----------
+Chat:
+  General conversation, drafting, explanation, brainstorming, and Q&A.
+
+Search:
+  Searches the web and supplies source context to the model. Ask focused
+  questions and request links, dates, comparisons, or verification.
+
+Research:
+  Uses research-oriented model ordering and deeper evidence synthesis. State
+  the question, scope, geography, date range, desired sources, and output.
+
+Learn:
+  Tutoring-oriented answers. Include your current level, goal, available time,
+  and whether you want hints, examples, a quiz, or a complete lesson.
+
+Travel:
+  Builds itineraries and comparisons. Include dates, starting location,
+  destination, budget, travellers, interests, accessibility, and constraints.
+  Verify live prices, visas, opening times, and safety information externally.
+
+Image:
+  Generates an image from a prompt. Describe subject, composition, style,
+  lighting, colours, camera/viewpoint, aspect ratio, and exclusions.
+
+Animation/Video:
+  The backend supports generated GIF animation. Describe the subject, motion,
+  duration/loop, scene, and visual style. Availability depends on configured
+  generation services.
+
+Code:
+  Opens the Files, Agent Log, and Viewer panes. The code agent can inspect,
+  create, edit, and run files inside ARK AI's controlled workspace. State the
+  desired outcome, language/framework, constraints, and how to verify it.
+  Review generated code and backups before using it in important systems.
+
+Think:
+  Requests extended reasoning behavior from compatible models. It is useful
+  for difficult planning, mathematics, debugging, and trade-off analysis, but
+  may be slower.
+
+CONVERSATIONS AND HISTORY
+-------------------------
+- New chat starts a clean conversation.
+- History in the left sidebar reopens earlier chats.
+- Double-click a conversation to rename it.
+- Hover over a conversation to delete it.
+- Branch from a message to explore a different direction without losing the
+  original thread.
+- Export downloads the current conversation as JSON.
+- Regenerate retries the last answer where that control is available.
+
+DOCUMENTS AND URL READING
+-------------------------
+Upload accepts PDF, DOCX, and text-readable files up to the configured upload
+limit (20 MB by default). PDF processing is capped at 500 pages and extracted
+text at roughly two million characters. Uploaded documents are held in the
+running process and are cleared when the app restarts; save originals.
+
+Attach the relevant document chips, then ask targeted questions such as:
+  "Summarize the argument and list unsupported claims."
+  "Create 20 flashcards using only this document."
+  "Compare section 2 with section 5 in a table."
+
+Read URL fetches a web page into chat context. Use public HTTP/HTTPS pages.
+Sites requiring login, JavaScript rendering, or anti-bot checks may not load.
+
+MEMORY
+------
+ARK AI can extract useful long-term facts such as preferences, projects, and
+constraints and recall them in later conversations. Memory extraction needs a
+working OpenRouter key. Use Clear memory to permanently remove remembered
+facts. Conversation messages and memory remain in the local database unless
+you delete them.
+
+VOICE AND ACCESSIBILITY
+-----------------------
+- Microphone uses the browser's speech-recognition support for voice input.
+- Read aloud uses browser text-to-speech for assistant replies.
+- Browser permission and operating-system voices determine availability.
+- Appearance settings change background and text colours; Reset restores the
+  default theme.
+
+AGENTS AND INSTALLED SKILLS
+---------------------------
+Agents change the specialist instructions sent to the selected model. Search
+the Agents panel, select one, and then describe your task. ARK AI includes a
+large built-in agent catalogue and 37 portable installed skills.
+
+Core installed abilities include:
+- Adaptive Tutor: diagnostic teaching, hints, mastery checks, remediation.
+- Lesson Planner: objectives, timed activities, differentiation, assessment.
+- Study Materials: grounded summaries, flashcards, quizzes, revision plans.
+- Language Coach: translation, transliteration, dialogue, corrective practice.
+- Math Assessment: inspect steps, diagnose misconceptions, grade, and practise.
+- Data-Centric ML Coach: data/label audits, error analysis, RAG evaluation.
+- Metadata Governance: catalogues, lineage, ownership, quality, glossary.
+- Anomaly Detection Mentor: teacher-student visual defect detection workflows.
+
+SenseNova skill collection abilities include:
+- Excel reading, cleaning, filtering, statistics, analysis, charts, styling,
+  large-file handling, and formatted exports.
+- PDF, Word, PowerPoint, image, and non-spreadsheet analysis.
+- Deep research, research reports, citation preparation, and report formatting.
+- Academic, code, finance, image, annual-report, market, and social search.
+- Presentation planning, creation, workbench, and review workflows.
+- Image captioning, diagnosis, imitation, restoration, and infographics.
+- Markdown-to-HTML reporting and skill updates.
+
+Skills provide procedural instructions; selecting a skill does not silently
+execute scripts. Some advanced workflows need software or credentials not
+bundled with ARK AI. If a skill mentions an unavailable tool, ask the model for
+an alternative using currently available capabilities.
+
+APPS, PLUGINS, SOFTWARE, AND PROMPTS
+------------------------------------
+- Apps opens curated free web tools and displays useful connections.
+- Plugins enables optional capability descriptions used as context for chat.
+  A listed plugin is not automatically installed on the operating system.
+- Free software suggestions point to external tools relevant to a task.
+- Prompts contains more than 400 reusable templates. Search or filter by tag,
+  click a card to load it, edit placeholders, then send.
+
+For best prompt results, replace every bracketed placeholder and include:
+goal, audience, inputs, constraints, desired format, examples, and definition
+of success. Treat prompts that request bypassing safety, fabricating facts, or
+ignoring prior instructions as untrusted; rewrite them before use.
+
+PROJECTS AND CODE WORKSPACE
+---------------------------
+Projects group a name and description with agent, app, plugin, and software
+context. Use a project for recurring work so the model receives stable goals
+and constraints. In Code mode, generated files appear in the workspace tree;
+click a file to view and copy its contents. Agent Log shows tool steps.
+
+SLASH COMMANDS
+--------------
+Type `/` to open the command menu:
+
+/clear       Start a new conversation
+/help        Show shortcuts
+/export      Export the current conversation
+/speak       Read the last reply aloud
+/agents      Open Agents
+/apps        Open Apps
+/plugins     Open Plugins
+/prompts     Open Prompt Library
+/image TEXT  Generate an image
+/search      Switch to Search mode
+/code        Switch to Code mode
+/chat        Switch to Chat mode
+/model       Focus the model selector
+/review      Review the last code block
+/analyze     Deeply analyse the last code block and score quality
+/settings    Open Settings
+/doctor      Display session diagnostics
+
+BETTER REQUESTS
+---------------
+Weak:  "Teach me Python."
+Better: "I know basic variables but not functions. Teach functions in a
+        20-minute lesson, ask one question at a time, and finish with a quiz."
+
+Weak:  "Research solar."
+Better: "Compare UK residential solar economics in 2026 for a 3-bedroom home.
+        Use current sources, state assumptions, and show a five-year scenario."
+
+Weak:  "Fix my app."
+Better: "In Code mode, reproduce the failing login test, identify the root
+        cause, make the smallest safe fix, and rerun the relevant tests."
+
+PRIVACY AND SECURITY
+--------------------
+- ARK AI is a single-user local app with no login screen.
+- Keep it bound to 127.0.0.1 unless network access is deliberately configured.
+- Provider keys are stored locally and not returned to the browser in plain
+  text, but they are used when requests are sent to those providers.
+- Content sent to cloud models is subject to each provider's privacy policy.
+- Never paste passwords, private keys, medical records, or confidential data
+  unless you understand and accept the selected provider's handling.
+- Back up the local database and workspace, and protect them with normal OS
+  account and disk-encryption controls.
+
+TROUBLESHOOTING WHILE USING THE APP
+-----------------------------------
+No models appear:
+  Save a valid key or start and detect LM Studio/Ollama, then refresh.
+
+Model rate limited/unavailable:
+  ARK AI attempts fallback where supported. Choose another model, wait, or add
+  another provider/key.
+
+LM Studio pill says offline:
+  In LM Studio, load a model and start the Developer local server on port 1234.
+
+Document answer misses content:
+  Reattach the document, ask about a narrower section, or split very large
+  files. Scanned PDFs may need OCR before upload.
+
+Voice controls do not work:
+  Use a supported browser, allow microphone permission, and check OS voices.
+
+Code mode cannot access a file:
+  Copy the file into ARK AI's workspace or upload readable content. The agent
+  is intentionally restricted from arbitrary filesystem access.
+
+The browser cannot connect:
+  Confirm the ARK AI terminal is still running and open the exact host/port
+  shown there. See INSTALL_HELP_ALL_OS.txt for installation troubleshooting.

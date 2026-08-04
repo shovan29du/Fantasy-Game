@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Worldweaver — Multiverse Tabletop</title>
+  <meta name="description" content="A 2D multiverse tabletop RPG command board.">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">W</span><div><strong>WORLDWEAVER</strong><small>MULTIVERSE TABLETOP</small></div></div>
+    <div class="world-readout"><span class="eyebrow">CURRENT REALITY</span><b id="worldName">Aethoria Prime</b><span id="worldTags">Fantasy · Magic 8 · Tech 2</span></div>
+    <div class="top-actions">
+      <button id="journalBtn" class="ghost">◫ Journal</button>
+      <a id="arkCompanionBtn" class="ghost" href="http://127.0.0.1:5000" target="_blank" rel="noopener" title="Opens the standalone Ark AI companion workspace (run separately, see companion/ark-ai)">⚡ Ark AI Companion</a>
+      <button id="saveBtn" class="gold">Save game</button>
+      <span class="online"><i></i> LOCAL</span>
+    </div>
+  </header>
+
+  <main class="game-grid">
+    <aside class="panel party-panel">
+      <div class="panel-title"><span>PARTY</span><small>4 / 6</small></div>
+      <div id="partyList"></div>
+      <button class="add-member">＋ Recruit companion</button>
+
+      <div class="section-head"><span>ACTIVE QUESTS</span><b>3</b></div>
+      <div id="questList"></div>
+    </aside>
+
+    <section class="map-column">
+      <nav class="map-tabs" aria-label="Map scale">
+        <button data-scale="local" class="active">Local <kbd>1</kbd></button>
+        <button data-scale="area">Area <kbd>2</kbd></button>
+        <button data-scale="world">World <kbd>3</kbd></button>
+        <button data-scale="universe">Universe <kbd>4</kbd></button>
+      </nav>
+      <div class="map-frame">
+        <div class="map-toolbar">
+          <div><span class="eyebrow" id="scaleLabel">LOCAL MAP</span><strong id="locationName">Thornwatch Crossing</strong></div>
+          <div class="map-controls"><button id="zoomOut" aria-label="Zoom out">−</button><span id="zoomText">100%</span><button id="zoomIn" aria-label="Zoom in">＋</button></div>
+        </div>
+        <div id="map" class="map map-local" tabindex="0" aria-label="Game map. Use WASD or arrow keys to move.">
+          <div class="fog fog-one"></div><div class="fog fog-two"></div>
+          <div class="road road-a"></div><div class="road road-b"></div>
+          <button class="map-node town" style="--x:22%;--y:28%" data-label="Thornwatch" title="Thornwatch">♜</button>
+          <button class="map-node ruins" style="--x:72%;--y:23%" data-label="Ashen Ruins" title="Ashen Ruins">⌂</button>
+          <button class="map-node camp" style="--x:66%;--y:71%" data-label="Ranger Camp" title="Ranger Camp">▲</button>
+          <button id="portal" class="portal" style="--x:84%;--y:50%" title="Reality portal"><span></span></button>
+          <div id="playerToken" class="player-token" style="--x:42%;--y:52%"><span>AS</span><i></i></div>
+          <div class="map-hint">WASD / ARROWS TO MOVE · CLICK A DESTINATION</div>
+        </div>
+        <div class="map-footer"><span>☀ Dawn · Day 17</span><span>☁ Mistwood · 12°C</span><span>⚔ Threat: <b>Moderate</b></span></div>
+      </div>
+
+      <section class="action-dock">
+        <div class="dock-head"><span>ACTION BAR</span><div><button class="active" data-filter="all">All</button><button data-filter="attack">Attack</button><button data-filter="defence">Defence</button><button data-filter="utility">Utility</button></div></div>
+        <div id="actionBar" class="actions"></div>
+      </section>
+    </section>
+
+    <aside class="panel detail-panel">
+      <nav class="detail-tabs">
+        <button class="active" data-panel="character">Character</button><button data-panel="inventory">Inventory</button><button data-panel="spells">Spellbook</button><button data-panel="skills">Skills</button>
+      </nav>
+      <div id="detailContent"></div>
+    </aside>
+  </main>
+
+  <section id="chatPanel" class="chat-panel">
+    <div class="chat-head"><div><span class="orb"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div><button id="closeChat">×</button></div>
+    <div id="chatLog" class="chat-log"><p class="gm"><b>WORLDWEAVER</b>The portal hums beyond the ridge. Its runes point to a reality where steel towers touch a violet sky. What do you do?</p></div>
+    <form id="chatForm"><input id="chatInput" placeholder="Speak, investigate, or describe an action…" autocomplete="off"><button>Send</button></form>
+  </section>
+  <button id="chatToggle" class="chat-toggle">✦ <span>Ask Worldweaver</span></button>
+  <div id="toast" class="toast" role="status"></div>
+
+  <script src="/static/game.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,40 @@
+﻿# AiChat Pro â€” Python dependencies
+#
+# Install everything (recommended for first run):
+#   pip install -r requirements.txt
+#
+# â•â•â• Required â€” the app will not start without these â•â•â•
+fastapi>=0.111.0       # Backend API server for the React frontend
+uvicorn[standard]>=0.30.0  # Local ASGI server
+requests>=2.28.0
+python-multipart>=0.0.9   # FastAPI file uploads for chat import
+
+# â•â•â• Strongly recommended â•â•â•
+bcrypt>=4.0.0        # secure password hashing (falls back to unsalted SHA-256 if missing â€” do not skip this)
+Pillow>=9.0.0         # character portrait handling
+psutil>=5.9.0         # CPU/RAM/Disk dashboard in Settings > Stability
+networkx>=3.0         # memory relationship graph + map pathfinding
+
+# â•â•â• Optional â€” Voice (Settings > Stability will report these as missing if unused) â•â•â•
+edge-tts>=6.1.0        # text-to-speech (free, no API key)
+SpeechRecognition>=3.10.0   # speech-to-text for the chat voice input widget
+# pyttsx3>=2.90         # offline TTS fallback if edge-tts is unavailable
+# gTTS>=2.5.0           # online TTS fallback if edge-tts is unavailable
+# openai-whisper        # higher-quality local speech-to-text (core/voice_system.py)
+# pvporcupine           # wake-word detection (core/voice_system.py)
+
+# â•â•â• Optional â€” Knowledge base document import (modules/settings.py > Knowledge) â•â•â•
+# pypdf>=4.0.0          # index .pdf files
+# python-docx>=1.1.0    # index/export .docx files
+# reportlab>=4.0.0      # export chats to PDF
+
+# â•â•â• Optional â€” Vector memory (core/memory_engine.py, core/knowledge_base.py) â•â•â•
+# chromadb>=0.4.0
+# sentence-transformers>=2.2.0
+
+# â•â•â• Optional integrations that are NOT Python packages â•â•â•
+# LM Studio  â€” local LLM server, http://127.0.0.1:1234/v1 by default
+# ComfyUI    â€” local image generation, http://127.0.0.1:8188 by default
+# Automatic1111/SD WebUI â€” local image generation, http://127.0.0.1:7860 by default
+# FFmpeg     â€” required on PATH for the Animation/Video tools in Media Production
+

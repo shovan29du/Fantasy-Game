@@ -1,0 +1,136 @@
+============================================================
+ARK AI - INSTALLATION HELP FOR WINDOWS, macOS AND LINUX
+============================================================
+
+This ZIP is self-contained application source. Extract the whole archive to
+a permanent folder before installing. Do not run an installer from inside the
+ZIP preview.
+
+REQUIREMENTS
+------------
+- Python 3.10 or newer with pip and venv support.
+- Internet access for the first dependency installation.
+- A modern browser.
+- About 500 MB free disk space is recommended for Python dependencies.
+- Optional: LM Studio or Ollama for private local models.
+
+UNIVERSAL INSTALL (ANY OPERATING SYSTEM)
+----------------------------------------
+Open a terminal in the extracted ARK AI folder and run:
+
+  python full_install.py
+
+If `python` is unavailable, try `python3 full_install.py`.
+
+Optional installer flags:
+
+  python full_install.py --dev
+  python full_install.py --network
+  python full_install.py --postgres postgresql://user:pass@host:5432/database
+  python full_install.py --no-shortcuts
+
+`--network` makes the server reachable beyond this computer and creates an
+access token. Keep that token secret. Localhost-only mode is recommended.
+
+WINDOWS 10/11
+-------------
+1. Extract the ZIP, preferably to Documents or another permanent folder.
+2. Double-click `install_ark_ai.bat`.
+3. Accept the prompts for optional developer tools, PostgreSQL, and network
+   access. Press N or Return for the recommended local SQLite setup.
+4. Launch with an `Ark_Ai` shortcut or `run_ark_ai.bat`.
+
+The installer creates shortcuts on the normal Desktop, every detected
+OneDrive Desktop, and the current user's Start Menu. It does not require
+administrator rights.
+
+If SmartScreen appears, choose More info -> Run anyway only if this ZIP came
+from a source you trust. If Python is missing, install Python 3.10+ and enable
+"Add Python to PATH" during setup.
+
+macOS
+-----
+1. Extract the ZIP to a permanent folder.
+2. Double-click `install_ark_ai.command`.
+3. If macOS blocks it, Control-click the file, choose Open, then confirm.
+4. Launch with `Ark_Ai.command` on the Desktop.
+
+Terminal alternative:
+
+  cd "/path/to/Ark AI"
+  chmod +x install_ark_ai.command
+  ./install_ark_ai.command
+
+If Python is missing, install Python 3.10+ from python.org or Homebrew.
+
+LINUX
+-----
+1. Extract the ZIP to a permanent folder.
+2. Open a terminal in that folder.
+3. Run:
+
+  chmod +x install_ark_ai.sh run.sh
+  ./install_ark_ai.sh
+
+4. Launch with `./run.sh` or the `Ark_Ai.desktop` Desktop launcher.
+
+On Debian/Ubuntu, missing venv support can be installed with:
+
+  sudo apt install python3 python3-venv python3-pip
+
+Use the equivalent packages for Fedora, Arch, or your distribution. ARK AI's
+installer itself does not require root access.
+
+STARTING AND STOPPING
+---------------------
+- Windows: run `run_ark_ai.bat`.
+- macOS: use the Desktop `Ark_Ai.command` launcher.
+- Linux: run `./run.sh` or use `Ark_Ai.desktop`.
+- Universal: activate `venv`, then run `python app.py`.
+- Open http://127.0.0.1:5000 if the browser does not open automatically.
+- Stop ARK AI by closing its terminal window or pressing Ctrl+C.
+
+FILES AND USER DATA
+-------------------
+- `venv/` contains installed Python dependencies.
+- `.env` contains local server configuration and secrets.
+- `ark_ai.db` contains settings, conversations, memory, and usage information.
+- `workspace/` contains files created through Code mode.
+
+Back up `.env`, `ark_ai.db`, and `workspace/` before moving or upgrading.
+Never publish `.env` or your database.
+
+UPGRADING
+---------
+Extract a newer ZIP into a separate folder. On Windows, use
+`upgrade_ark_ai.bat`; it preserves local configuration, databases, workspace,
+and the virtual environment. On macOS/Linux, back up the files listed above,
+copy them into the new folder, and rerun the appropriate installer.
+
+COMMON INSTALLATION PROBLEMS
+----------------------------
+Python not found:
+  Install Python 3.10+ and reopen the terminal.
+
+Virtual environment creation fails:
+  Install your OS Python venv package, remove the incomplete `venv` folder,
+  and rerun the installer.
+
+Dependency installation fails:
+  Check internet access, proxy/firewall settings, free disk space, and system
+  clock. Then rerun the installer; it is safe to repeat.
+
+Port 5000 is already in use:
+  Set `ARK_AI_PORT=5001` in `.env`, then restart and open port 5001.
+
+Page opens but online models fail:
+  Open Settings and save a valid provider key, or start LM Studio/Ollama and
+  click Detect.
+
+Remote device receives 401:
+  Network mode requires the generated `ARK_AI_TOKEN` in the
+  `X-Ark-Ai-Token` request header. Do not expose ARK AI directly to the public
+  internet; use a trusted reverse proxy and HTTPS.
+
+More Windows-specific detail is in README_INSTALL_WINDOWS.txt.
+Application usage is covered in ARK_AI_USER_GUIDE.txt.

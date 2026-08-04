@@ -1,0 +1,1558 @@
+"""FastAPI backend for the React AiChat Pro frontend."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from backend.app.domain.characters import (
+    ALIGNMENTS,
+    ALL_PRESET_SOURCES,
+    BODY_TYPES,
+    CHARACTER_TAGS,
+    DND_BACKGROUNDS,
+    DND_RACES,
+    EMOTION_STYLES,
+    GENDERS,
+    IMAGE_STYLES,
+    MAGIC_TYPES,
+    POWER_SYSTEMS,
+    PROFESSIONS,
+    QUIRKS_LIST,
+    SKILLS_LIST,
+    TRAITS_LIST,
+    WEAPON_TYPES,
+    random_backstory,
+    random_goals,
+    random_scenario,
+)
+from core.auto_fill import auto_fill_character
+from core.character_search import fetch_character_card, search_characters
+from backend.app.services.scenario_template_service import (
+    delete_scenario_template,
+    list_scenario_templates,
+    render_template_scenario,
+    save_scenario_template,
+)
+from backend.app.chat_io.character_builder import build_characters_from_chat
+from backend.app.chat_io.importer import import_chat_file, import_chat_url
+from core.storage import get_conn, init_db, now_iso
+from core.chat_engine import (
+    build_system_prompt,
+    clear_session,
+    delete_message,
+    edit_message,
+    export_chat_html,
+    export_chat_json,
+    export_chat_txt,
+    generate_suggestions,
+    get_moments,
+    get_history,
+    save_message,
+    search_messages,
+    send_to_llm,
+    tag_moment,
+)
+from core.image_gen import PHOTO_STYLES, download_image, generate_image_url
+from core.knowledge_base import delete_document, index_file, index_folder, list_indexed, search_knowledge
+from core.lorebook import create_entry, delete_entry, list_entries, toggle_entry
+from core.levelling import (
+    STAT_NAMES,
+    add_skill_to_character,
+    award_xp,
+    get_full_sheet,
+    increase_stat,
+    xp_progress,
+)
+from core.media_pipeline import ANIMATION_EFFECTS, create_animation, get_provider_options, list_jobs, queue_media_job
+from core.memory_engine import MemoryEngine
+from core.quest_system import (
+    abandon_quest,
+    complete_quest,
+    generate_dynamic_quest,
+    get_active_quests,
+    get_quest_history,
+    update_progress,
+)
+from core.relationship_engine import (
+    ensure_relationship,
+    get_event_history,
+    get_relationship,
+    list_all_relationships,
+    record_interaction,
+)
+from core.storage import delete_character, delete_world, get_setting, set_setting
+from core.world_engine import (
+    add_law,
+    advance_world_tick,
+    create_faction,
+    create_world,
+    generate_dungeon,
+    generate_npc,
+    get_diplomacy,
+    get_laws,
+    get_locations,
+    get_random_events,
+    get_resources,
+    get_timeline,
+    get_weather_log,
+    get_world,
+    list_campaign_saves,
+    list_dungeons,
+    list_factions,
+    list_npcs,
+    list_worlds,
+    save_campaign,
+    set_diplomacy,
+    simulate_combat,
+)
+from core.web_search import search_web
+from backend.app.companion_studio.gpu_modules import router as companion_gpu_router
+
+ROOT = Path(__file__).resolve().parents[2]
+REACT_DIST = ROOT / "frontend" / "react_app" / "dist"
+
+app = FastAPI(title="AiChat Pro API", version="1.0.0")
+app.include_router(companion_gpu_router, prefix="/api/companion-studio")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+memory_engine = MemoryEngine()
+
+
+class ScenarioTemplateIn(BaseModel):
+    name: str
+    scenario: str
+
+
+class CharacterIn(BaseModel):
+    name: str
+    age: int = 25
+    gender: str = ""
+    race: str = ""
+    alignment: str = "True Neutral"
+    background: str = ""
+    profession: str = ""
+    scenario: str = ""
+    backstory: str = ""
+    goals: str = ""
+    tags: list[str] = []
+    skin: str = ""
+    hair: str = ""
+    eyes: str = ""
+    body_type: str = ""
+    height: str = ""
+    bust_chest: str = ""
+    waist: str = ""
+    hips: str = ""
+    looks: int = 5
+    charisma_stat: int = 10
+    strength: int = 10
+    dexterity: int = 10
+    intelligence: int = 10
+    wisdom: int = 10
+    constitution: int = 10
+    speed: int = 10
+    luck: int = 10
+    weapon_training: list[str] = []
+    magic_type: list[str] = []
+    power_system: list[str] = []
+    spells: list[str] = []
+    skills: list[str] = []
+    traits: list[str] = []
+    quirks: list[str] = []
+    emotion_styles: list[str] = []
+    languages: list[str] = []
+    level: int = 1
+    xp: int = 0
+    photo_path: str = ""
+    identity_stability: int = 50
+
+
+class ChatMessageIn(BaseModel):
+    role: str = "user"
+    content: str
+    session_id: str = "default"
+
+
+class WorldIn(BaseModel):
+    name: str
+    magic: str = "medium"
+    tech: str = "middle_age"
+    space: str = "fantasy"
+    num_locs: int = 8
+
+
+class SettingIn(BaseModel):
+    key: str
+    value: str
+
+
+class MediaJobIn(BaseModel):
+    job_type: str
+    input_path: str = ""
+    params: dict = {}
+
+
+class ChatImportUrlIn(BaseModel):
+    url: str
+
+
+class ChatImportLoadIn(BaseModel):
+    messages: list[dict]
+    session_id: str = "imported"
+
+
+class CharacterInferIn(BaseModel):
+    messages: list[dict]
+    scenario: str = ""
+    main_character_name: str = ""
+
+
+class CharacterImportIn(BaseModel):
+    character: dict
+
+
+class CharacterSearchIn(BaseModel):
+    query: str = ""
+    tags: list[str] = []
+    nsfw: bool = True
+    sort: str = "star_count"
+    page: int = 1
+    count: int = 20
+
+
+class WebCharacterImportIn(BaseModel):
+    result: dict
+
+
+class GeneralWebSearchIn(BaseModel):
+    query: str
+    count: int = 10
+
+
+class PhotoIn(BaseModel):
+    character_id: int | None = None
+    character: dict = {}
+    style: str = "Anime Portrait"
+
+
+class ChatSendIn(BaseModel):
+    content: str
+    session_id: str = "default"
+    user_name: str = "User"
+    user_sex: str = ""
+    user_age: int | None = None
+    character_id: int | None = None
+    character_name: str = ""
+    world_id: int | None = None
+    participants: list[str] = []
+    temperature: float = 0.7
+
+
+class ChatEditIn(BaseModel):
+    content: str
+
+
+class ChatSaveIn(BaseModel):
+    session_id: str = "default"
+    save_name: str
+    character_name: str = ""
+
+
+class QuestGenerateIn(BaseModel):
+    character_name: str
+    character_id: int | None = None
+    world_id: int | None = None
+    session_id: str = "default"
+
+
+class QuestProgressIn(BaseModel):
+    progress: int
+
+
+class RelationshipIn(BaseModel):
+    character_name: str
+    sentiment: str = "neutral"
+    note: str = ""
+
+
+class XpIn(BaseModel):
+    amount: int = 5
+    reason: str = "chat"
+
+
+class StatSpendIn(BaseModel):
+    stat: str
+    amount: int = 1
+
+
+class SkillLearnIn(BaseModel):
+    skill: str
+
+
+class MemoryIn(BaseModel):
+    fact: str
+    source: str = "manual"
+    memory_type: str = "episodic"
+    character_name: str = ""
+    importance: float = 0.7
+
+
+class ImageIn(BaseModel):
+    prompt: str
+    style: str = ""
+    width: int = 768
+    height: int = 512
+    save_to_chat: bool = True
+    session_id: str = "default"
+
+
+class AnimateIn(BaseModel):
+    image_path: str
+    effect: str = "ken_burns"
+    duration: int = 5
+    session_id: str = "default"
+
+
+class NpcIn(BaseModel):
+    world_id: int
+    name: str = ""
+    profession: str = ""
+    personality: str = ""
+
+
+class FactionIn(BaseModel):
+    world_id: int
+    name: str
+    alignment: str = "True Neutral"
+    leader: str = ""
+    territory: str = ""
+
+
+class DiplomacyIn(BaseModel):
+    world_id: int
+    faction_a: str
+    faction_b: str
+    relation: str = "neutral"
+    trade: bool = False
+    treaty: str = ""
+
+
+class DungeonIn(BaseModel):
+    world_id: int | None = None
+    name: str = ""
+    dtype: str = "random"
+    levels: int = 1
+    rooms_per: int = 5
+
+
+class CombatIn(BaseModel):
+    attacker: dict = {"name": "Hero", "strength": 10}
+    defender: dict = {"name": "Goblin", "constitution": 10}
+
+
+class LawIn(BaseModel):
+    name: str
+    description: str = ""
+    penalty: str = "Fine"
+
+
+class CampaignSaveIn(BaseModel):
+    save_name: str
+
+
+class MediaItemIn(BaseModel):
+    character_name: str = "Unassigned"
+    media_type: str
+    title: str
+    file_path: str = ""
+    description: str = ""
+    tags: list[str] = []
+    source: str = "manual"
+    character_id: int | None = None
+
+
+class AchievementIn(BaseModel):
+    character_name: str = "Unassigned"
+    title: str
+    description: str = ""
+    icon: str = "🏆"
+    character_id: int | None = None
+
+
+class MemorySnapshotIn(BaseModel):
+    character_name: str = "Unassigned"
+    title: str
+    content: str = ""
+    emotion: str = ""
+    character_id: int | None = None
+
+
+class LoreEntryIn(BaseModel):
+    title: str
+    content: str
+    keywords: list[str] = []
+    world_id: int = 0
+    always_active: bool = False
+
+
+class BoolSettingIn(BaseModel):
+    key: str
+    value: bool
+
+
+@app.on_event("startup")
+def startup() -> None:
+    init_db()
+
+
+@app.get("/api/health")
+def health() -> dict:
+    return {"ok": True, "app": "AiChat Pro"}
+
+
+@app.get("/api/options")
+def options() -> dict:
+    return {
+        "races": DND_RACES,
+        "backgrounds": DND_BACKGROUNDS,
+        "genders": GENDERS,
+        "bodyTypes": BODY_TYPES,
+        "professions": PROFESSIONS,
+        "weaponTypes": WEAPON_TYPES,
+        "magicTypes": MAGIC_TYPES,
+        "powerSystems": POWER_SYSTEMS,
+        "traits": TRAITS_LIST,
+        "quirks": QUIRKS_LIST,
+        "skills": SKILLS_LIST,
+        "tags": CHARACTER_TAGS,
+        "emotionStyles": EMOTION_STYLES,
+        "alignments": ALIGNMENTS,
+        "imageStyles": IMAGE_STYLES,
+        "presetSources": ALL_PRESET_SOURCES,
+    }
+
+
+@app.get("/api/random/prompts")
+def random_prompts(race: str = "", profession: str = "") -> dict:
+    return {
+        "backstory": random_backstory(race, profession),
+        "scenario": random_scenario(),
+        "goals": random_goals(profession),
+    }
+
+
+@app.get("/api/characters")
+def list_characters() -> list[dict]:
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT * FROM characters ORDER BY id DESC LIMIT 100").fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/characters")
+def create_character(character: CharacterIn) -> dict:
+    return {"id": _insert_character(character.model_dump()), "saved": True}
+
+
+@app.post("/api/characters/import")
+def import_character(payload: CharacterImportIn) -> dict:
+    character = auto_fill_character(dict(payload.character))
+    return {"id": _insert_character(character), "saved": True, "character": character}
+
+
+@app.post("/api/characters/random")
+def random_character() -> dict:
+    import random
+
+    race = random.choice(list(DND_RACES.keys()))
+    gender = random.choice(GENDERS[:3])
+    profession = random.choice(PROFESSIONS[:30])
+    character = auto_fill_character(
+        {
+            "name": f"{random.choice(['Aldric','Lyra','Rowan','Nova','Kael','Seraphina','Quinn','Riven'])}_{random.randint(10,99)}",
+            "race": race,
+            "gender": gender,
+            "profession": profession,
+            "alignment": random.choice(ALIGNMENTS),
+            "background": random.choice(DND_BACKGROUNDS[:-1]),
+            "backstory": random_backstory(race, profession),
+            "scenario": random_scenario(),
+            "goals": random_goals(profession),
+        }
+    )
+    return {"character": character}
+
+
+@app.get("/api/characters/{character_id}/export")
+def export_character(character_id: int) -> dict:
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM characters WHERE id=?", (character_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Character not found.")
+        data = dict(row)
+        data.pop("id", None)
+        return data
+    finally:
+        conn.close()
+
+
+@app.post("/api/characters/photo")
+def character_photo(payload: PhotoIn) -> dict:
+    character = payload.character
+    if payload.character_id:
+        character = get_full_sheet(payload.character_id) or {}
+    if not character:
+        raise HTTPException(status_code=400, detail="Provide character_id or character data.")
+    from core.image_gen import generate_character_image
+
+    path = generate_character_image(character, style_key=payload.style)
+    if payload.character_id and path:
+        conn = get_conn()
+        try:
+            conn.execute("UPDATE characters SET photo_path=? WHERE id=?", (str(path), payload.character_id))
+            conn.commit()
+        finally:
+            conn.close()
+    return {"path": path}
+
+
+@app.get("/api/explore/library")
+def explore_library(query: str = "", race: str = "All", tags: str = "", limit: int = 50, page: int = 1) -> dict:
+    from core.character_data import get_library
+
+    library = get_library()
+    wanted_tags = [tag.strip() for tag in tags.split(",") if tag.strip()]
+    filtered = library
+    if query:
+        q = query.lower()
+        filtered = [c for c in filtered if q in c.get("name", "").lower() or q in c.get("race", "").lower() or q in c.get("profession", "").lower()]
+    if wanted_tags:
+        filtered = [c for c in filtered if any(tag in c.get("tags", []) for tag in wanted_tags)]
+    if race and race != "All":
+        filtered = [c for c in filtered if c.get("race", "") == race]
+    start = max(0, page - 1) * limit
+    return {"total": len(library), "filtered": len(filtered), "characters": filtered[start:start + limit]}
+
+
+@app.post("/api/explore/library/import")
+def import_library_character(payload: CharacterImportIn) -> dict:
+    character = auto_fill_character(dict(payload.character))
+    return {"id": _insert_character(character), "saved": True}
+
+
+@app.post("/api/explore/library/import-all")
+def import_library_characters(payload: dict) -> dict:
+    count = 0
+    for character in payload.get("characters", []):
+        _insert_character(auto_fill_character(dict(character)))
+        count += 1
+    return {"imported": count}
+
+
+@app.post("/api/explore/character-search")
+def explore_character_search(payload: CharacterSearchIn) -> dict:
+    results, error = search_characters(
+        query=payload.query,
+        tags=payload.tags,
+        nsfw=payload.nsfw,
+        sort=payload.sort,
+        page=payload.page,
+        count=payload.count,
+    )
+    return {"results": results, "error": error}
+
+
+@app.post("/api/explore/character-search/import")
+def import_web_character(payload: WebCharacterImportIn) -> dict:
+    result = payload.result
+    card = fetch_character_card(result.get("full_path", "")) if result.get("full_path") else None
+    if card and (card.get("description") or card.get("personality")):
+        character = {
+            "name": card.get("name") or result.get("name", "Unknown"),
+            "personality": card.get("personality", ""),
+            "backstory": card.get("description") or result.get("tagline", ""),
+            "scenario": card.get("scenario") or card.get("first_mes", ""),
+            "tags": list(dict.fromkeys((card.get("tags") or []) + result.get("tags", []))),
+        }
+    else:
+        character = {
+            "name": result.get("name", "Unknown"),
+            "backstory": result.get("tagline", ""),
+            "tags": result.get("tags", []),
+        }
+    character = auto_fill_character(character)
+    return {"id": _insert_character(character), "saved": True, "character": character, "full_card": bool(card)}
+
+
+@app.post("/api/explore/web-search")
+def explore_general_web_search(payload: GeneralWebSearchIn) -> dict:
+    results, error = search_web(payload.query, count=payload.count)
+    return {"results": results, "error": error}
+
+
+def _insert_character(character: dict) -> int:
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """
+            INSERT INTO characters
+              (name,age,gender,race,alignment,background,personality,skin,hair,eyes,body_type,height,measurements,looks,
+               charisma_stat,strength,dexterity,intelligence,wisdom,constitution,speed,luck,profession,weapon_training,
+               magic_type,power_system,spells,skills,traits,backstory,scenario,goals,quirks,level,xp,photo_path,
+               emotion_styles,identity_stability,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                character.get("name", "Unknown"),
+                character.get("age", 25),
+                character.get("gender", ""),
+                character.get("race", ""),
+                character.get("alignment", "True Neutral"),
+                character.get("background", ""),
+                json.dumps(character.get("tags", [])) if isinstance(character.get("tags", []), list) else character.get("tags", "[]"),
+                character.get("skin", ""),
+                character.get("hair", ""),
+                character.get("eyes", ""),
+                character.get("body_type", ""),
+                character.get("height", ""),
+                json.dumps(
+                    {
+                        "bust_chest": character.get("bust_chest", ""),
+                        "waist": character.get("waist", ""),
+                        "hips": character.get("hips", ""),
+                        "languages": character.get("languages", []),
+                    }
+                ),
+                character.get("looks", 5),
+                character.get("charisma_stat", 10),
+                character.get("strength", 10),
+                character.get("dexterity", 10),
+                character.get("intelligence", 10),
+                character.get("wisdom", 10),
+                character.get("constitution", 10),
+                character.get("speed", 10),
+                character.get("luck", 10),
+                character.get("profession", ""),
+                json.dumps(character.get("weapon_training", [])),
+                json.dumps(character.get("magic_type", [])),
+                json.dumps(character.get("power_system", [])),
+                json.dumps(character.get("spells", [])),
+                json.dumps(character.get("skills", [])),
+                json.dumps(character.get("traits", [])),
+                character.get("backstory", ""),
+                character.get("scenario", ""),
+                character.get("goals", ""),
+                json.dumps(character.get("quirks", [])),
+                character.get("level", 1),
+                character.get("xp", 0),
+                character.get("photo_path", ""),
+                json.dumps(character.get("emotion_styles", [])),
+                character.get("identity_stability", 50),
+                now_iso(),
+            ),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+@app.get("/api/scenario-templates")
+def scenario_templates() -> list[dict]:
+    return list_scenario_templates()
+
+
+@app.post("/api/scenario-templates")
+def create_scenario_template(payload: ScenarioTemplateIn) -> dict:
+    save_scenario_template(payload.name, payload.scenario)
+    return {"saved": True}
+
+
+@app.post("/api/scenario-templates/render")
+def render_scenario_template(payload: ScenarioTemplateIn) -> dict:
+    scenario, character_name = render_template_scenario(payload.scenario)
+    return {"scenario": scenario, "characterName": character_name, "userName": "User"}
+
+
+@app.delete("/api/scenario-templates/{template_id}")
+def remove_scenario_template(template_id: int) -> dict:
+    delete_scenario_template(template_id)
+    return {"deleted": True}
+
+
+@app.delete("/api/characters/{character_id}")
+def remove_character(character_id: int) -> dict:
+    return {"deleted": delete_character(character_id)}
+
+
+@app.get("/api/chat/history")
+def chat_history(session_id: str = "default", limit: int = 100) -> list[dict]:
+    return get_history(session_id, limit)
+
+
+@app.post("/api/chat/messages")
+def create_chat_message(message: ChatMessageIn) -> dict:
+    save_message(message.role, message.content, message.session_id)
+    return {"saved": True}
+
+
+@app.post("/api/chat/send")
+def send_chat(payload: ChatSendIn) -> dict:
+    character = get_full_sheet(payload.character_id) if payload.character_id else None
+    character_name = payload.character_name or ((character or {}).get("name") if character else "Character")
+    world = get_world(payload.world_id) if payload.world_id else None
+    relationship = ensure_relationship(character_name) if character_name else None
+    user_line = f"**{payload.user_name or 'User'}:** {payload.content}"
+    save_message("user", user_line, payload.session_id)
+    history = get_history(payload.session_id, limit=50)
+    system_prompt = build_system_prompt(character=character, world=world, relationship=relationship, user_name=payload.user_name or "User")
+    profile_bits = [payload.user_name or "User"]
+    if payload.user_sex:
+        profile_bits.append(payload.user_sex)
+    if payload.user_age:
+        profile_bits.append(f"age {payload.user_age}")
+    system_prompt += f"\n[Player: {', '.join(profile_bits)}]"
+    participants = payload.participants or ([character_name] if character_name else [])
+    if len(participants) > 1:
+        system_prompt += "\n[MULTI-PERSPECTIVE: Write responses for each character with their name prefix. Characters in scene: " + ", ".join(participants) + ".]"
+    elif character_name:
+        system_prompt += f"\n[Always prefix responses with **{character_name}:** to show who is speaking.]"
+    quests = get_active_quests(character_name) if character_name else []
+    if quests:
+        system_prompt += "\n[Quests: " + "; ".join(q["title"][:30] for q in quests[:3]) + "]"
+    try:
+        from core.companion_soul import build_soul_prompt
+        soul_context = build_soul_prompt(character_name)
+        if soul_context:
+            system_prompt += f"\n{soul_context}"
+    except Exception:
+        pass
+    try:
+        from core.lorebook import build_lorebook_context
+        lore_context = build_lorebook_context(payload.content, payload.world_id or 0)
+        if lore_context:
+            system_prompt += f"\n{lore_context}"
+    except Exception:
+        pass
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend({"role": msg["role"], "content": msg["content"]} for msg in history[-40:])
+    try:
+        memory_context = memory_engine.build_memory_context(query=payload.content, character_name=character_name)
+        if memory_context:
+            messages[-1]["content"] += f"\n[Memory: {memory_context}]"
+    except Exception:
+        pass
+    try:
+        response = send_to_llm(messages, temperature=payload.temperature)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
+    save_message("assistant", response, payload.session_id)
+    if character_name:
+        sentiment = "positive" if any(word in payload.content.lower() for word in ["love", "kiss", "hug", "thank", "happy"]) else "neutral"
+        if any(word in payload.content.lower() for word in ["hate", "attack", "kill", "angry"]):
+            sentiment = "negative"
+        if any(word in payload.content.lower() for word in ["flirt", "seduce", "intimate", "desire"]):
+            sentiment = "flirt"
+        record_interaction(character_name, sentiment, payload.content[:80])
+        try:
+            from core.companion_soul import update_affect
+            update_affect(character_name, sentiment)
+        except Exception:
+            pass
+    if payload.character_id:
+        award_xp(payload.character_id, 5, "chat")
+    _sync_world_from_text(payload.world_id, response)
+    return {"reply": response, "session_id": payload.session_id}
+
+
+@app.post("/api/chat/regen")
+def regenerate_chat(payload: ChatSendIn) -> dict:
+    last_user = payload.content
+    if not last_user:
+        for message in reversed(get_history(payload.session_id, limit=50)):
+            if message.get("role") == "user":
+                last_user = message.get("content", "")
+                break
+    payload.content = last_user
+    payload.temperature = 0.95
+    return send_chat(payload)
+
+
+@app.delete("/api/chat/messages/{message_id}")
+def remove_chat_message(message_id: int) -> dict:
+    delete_message(message_id)
+    return {"deleted": True}
+
+
+@app.patch("/api/chat/messages/{message_id}")
+def update_chat_message(message_id: int, payload: ChatEditIn) -> dict:
+    edit_message(message_id, payload.content)
+    return {"updated": True}
+
+
+@app.post("/api/chat/messages/{message_id}/moment")
+def mark_chat_moment(message_id: int) -> dict:
+    tag_moment(message_id, True)
+    return {"tagged": True}
+
+
+@app.delete("/api/chat/session/{session_id}")
+def remove_chat_session(session_id: str) -> dict:
+    clear_session(session_id)
+    return {"cleared": True}
+
+
+@app.get("/api/chat/search")
+def chat_search(query: str, session_id: str = "default") -> list[dict]:
+    return search_messages(query, session_id)
+
+
+@app.get("/api/chat/suggestions")
+def chat_suggestions(character_name: str = "the character") -> list[str]:
+    return generate_suggestions(character_name)
+
+
+@app.get("/api/chat/moments")
+def chat_moments(session_id: str = "default") -> list[dict]:
+    return get_moments(session_id)
+
+
+@app.get("/api/chat/saves")
+def chat_saves(limit: int = 25) -> list[dict]:
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT * FROM chat_saves WHERE save_name NOT LIKE '__auto%' ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/chat/saves")
+def create_chat_save(payload: ChatSaveIn) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO chat_saves (session_id, save_name, character_name, created_at) VALUES (?, ?, ?, ?)",
+            (payload.session_id, payload.save_name, payload.character_name, now_iso()),
+        )
+        conn.commit()
+        return {"saved": True}
+    finally:
+        conn.close()
+
+
+@app.get("/api/chat/export/{fmt}", response_class=PlainTextResponse)
+def chat_export(fmt: str, session_id: str = "default", character_name: str = "") -> str:
+    if fmt == "txt":
+        return export_chat_txt(session_id)
+    if fmt == "json":
+        return export_chat_json(session_id, character_name)
+    if fmt == "html":
+        return export_chat_html(session_id)
+    raise HTTPException(status_code=400, detail="Format must be txt, json, or html.")
+
+
+@app.post("/api/chat/import/file")
+async def import_chat_upload(file: UploadFile = File(...)) -> dict:
+    suffix = Path(file.filename or "chat.txt").suffix.lower()
+    if suffix not in {".txt", ".json", ".pdf", ".docx"}:
+        raise HTTPException(status_code=400, detail="Supported files: txt, json, pdf, docx.")
+    import_dir = ROOT / "data" / "imports"
+    import_dir.mkdir(parents=True, exist_ok=True)
+    path = import_dir / f"{now_iso().replace(':', '-')}_{Path(file.filename or 'chat').name}"
+    path.write_bytes(await file.read())
+    messages = import_chat_file(str(path))
+    return {"messages": messages, "count": len(messages), "path": str(path.relative_to(ROOT))}
+
+
+@app.post("/api/chat/import/url")
+def import_chat_link(payload: ChatImportUrlIn) -> dict:
+    messages = import_chat_url(payload.url)
+    return {"messages": messages, "count": len(messages)}
+
+
+@app.post("/api/chat/import/load")
+def load_imported_chat(payload: ChatImportLoadIn) -> dict:
+    saved = 0
+    for message in payload.messages:
+        speaker = str(message.get("speaker", "")).lower()
+        role = "user" if speaker in {"user", "player", "me"} else "assistant"
+        text = message.get("text") or message.get("content") or ""
+        if text:
+            save_message(role, f"**{message.get('speaker', role)}:** {text}", payload.session_id)
+            saved += 1
+    return {"saved": saved, "session_id": payload.session_id}
+
+
+@app.post("/api/chat/import/infer-characters")
+def infer_imported_characters(payload: CharacterInferIn) -> dict:
+    characters = build_characters_from_chat(
+        payload.messages,
+        scenario=payload.scenario,
+        main_character_name=payload.main_character_name,
+    )
+    return {"characters": characters, "count": len(characters)}
+
+
+@app.get("/api/knowledge/documents")
+def knowledge_documents() -> list[dict]:
+    return list_indexed()
+
+
+@app.get("/api/knowledge/search")
+def knowledge_search(query: str, n: int = 5) -> list[dict]:
+    return search_knowledge(query, n)
+
+
+@app.post("/api/knowledge/index")
+def knowledge_index() -> dict:
+    count = index_folder()
+    return {"indexed": count}
+
+
+@app.post("/api/knowledge/index/file")
+async def knowledge_index_file(file: UploadFile = File(...)) -> dict:
+    knowledge_dir = ROOT / "knowledge" / "uploads"
+    knowledge_dir.mkdir(parents=True, exist_ok=True)
+    path = knowledge_dir / Path(file.filename or "document.txt").name
+    path.write_bytes(await file.read())
+    return {"indexed": index_file(str(path)), "path": str(path.relative_to(ROOT))}
+
+
+@app.post("/api/knowledge/options-doc")
+def knowledge_options_doc() -> dict:
+    from core.character_data import generate_character_options_doc
+
+    docs_dir = ROOT / "knowledge" / "generated"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    path = docs_dir / "character_options.md"
+    path.write_text(generate_character_options_doc(), encoding="utf-8")
+    return {"indexed": index_file(str(path)), "path": str(path.relative_to(ROOT))}
+
+
+@app.get("/api/knowledge/lorebook")
+def lorebook_entries(world_id: int = 0) -> list[dict]:
+    return list_entries(world_id)
+
+
+@app.post("/api/knowledge/lorebook")
+def create_lorebook_entry(payload: LoreEntryIn) -> dict:
+    create_entry(
+        payload.title,
+        payload.content,
+        payload.keywords,
+        world_id=payload.world_id,
+        always_active=payload.always_active,
+    )
+    return {"saved": True}
+
+
+@app.delete("/api/knowledge/lorebook/{entry_id}")
+def remove_lorebook_entry(entry_id: int) -> dict:
+    delete_entry(entry_id)
+    return {"deleted": True}
+
+
+@app.post("/api/knowledge/lorebook/{entry_id}/toggle")
+def toggle_lorebook_entry(entry_id: int, enabled: bool = True) -> dict:
+    toggle_entry(entry_id, enabled)
+    return {"updated": True}
+
+
+@app.delete("/api/knowledge/documents/{document_id}")
+def remove_knowledge_document(document_id: int) -> dict:
+    delete_document(document_id)
+    return {"deleted": True}
+
+
+@app.get("/api/worlds")
+def worlds() -> list[dict]:
+    return list_worlds()
+
+
+@app.post("/api/worlds")
+def create_new_world(payload: WorldIn) -> dict:
+    return create_world(payload.name, payload.magic, payload.tech, payload.space, payload.num_locs)
+
+
+@app.get("/api/worlds/{world_id}")
+def world_detail(world_id: int) -> dict:
+    world = get_world(world_id)
+    if not world:
+        raise HTTPException(status_code=404, detail="World not found.")
+    return world
+
+
+@app.get("/api/worlds/{world_id}/locations")
+def world_locations(world_id: int) -> list[dict]:
+    return get_locations(world_id)
+
+
+@app.post("/api/worlds/{world_id}/tick")
+def world_tick(world_id: int) -> dict:
+    return advance_world_tick(world_id)
+
+
+@app.get("/api/worlds/{world_id}/npcs")
+def world_npcs(world_id: int) -> list[dict]:
+    return list_npcs(world_id)
+
+
+@app.post("/api/worlds/{world_id}/npcs")
+def create_world_npc(world_id: int, payload: NpcIn | None = None) -> dict:
+    custom = None
+    if payload:
+        custom = {k: v for k, v in payload.model_dump().items() if k != "world_id" and v}
+    return generate_npc(world_id, custom)
+
+
+@app.get("/api/worlds/{world_id}/factions")
+def world_factions(world_id: int) -> list[dict]:
+    return list_factions(world_id)
+
+
+@app.post("/api/worlds/{world_id}/factions")
+def create_world_faction(world_id: int, payload: FactionIn) -> dict:
+    return create_faction(world_id, payload.name, payload.alignment, payload.leader, payload.territory)
+
+
+@app.get("/api/worlds/{world_id}/dungeons")
+def world_dungeons(world_id: int) -> list[dict]:
+    return list_dungeons(world_id)
+
+
+@app.post("/api/worlds/{world_id}/dungeons")
+def create_world_dungeon(world_id: int, payload: DungeonIn) -> dict:
+    return generate_dungeon(world_id, payload.name, payload.dtype, payload.levels, payload.rooms_per)
+
+
+@app.post("/api/worlds/combat")
+def world_combat(payload: CombatIn) -> dict:
+    return simulate_combat(payload.attacker, payload.defender)
+
+
+@app.get("/api/worlds/{world_id}/resources")
+def world_resources(world_id: int) -> list[dict]:
+    return get_resources(world_id)
+
+
+@app.get("/api/worlds/{world_id}/laws")
+def world_laws(world_id: int) -> list[dict]:
+    return get_laws(world_id)
+
+
+@app.post("/api/worlds/{world_id}/laws")
+def create_world_law(world_id: int, payload: LawIn) -> dict:
+    add_law(world_id, payload.name, payload.description, payload.penalty)
+    return {"saved": True}
+
+
+@app.get("/api/worlds/{world_id}/diplomacy")
+def world_diplomacy(world_id: int) -> list[dict]:
+    return get_diplomacy(world_id)
+
+
+@app.post("/api/worlds/{world_id}/diplomacy")
+def create_world_diplomacy(world_id: int, payload: DiplomacyIn) -> dict:
+    set_diplomacy(world_id, payload.faction_a, payload.faction_b, payload.relation, payload.trade, payload.treaty)
+    return {"saved": True}
+
+
+@app.get("/api/worlds/{world_id}/events")
+def world_events(world_id: int, limit: int = 20) -> list[dict]:
+    return get_random_events(world_id, limit)
+
+
+@app.get("/api/worlds/{world_id}/timeline")
+def world_timeline(world_id: int) -> list[dict]:
+    return get_timeline(world_id)
+
+
+@app.get("/api/worlds/{world_id}/weather")
+def world_weather(world_id: int, limit: int = 20) -> list[dict]:
+    return get_weather_log(world_id, limit)
+
+
+@app.get("/api/worlds/{world_id}/saves")
+def world_saves(world_id: int) -> list[dict]:
+    return list_campaign_saves(world_id)
+
+
+@app.post("/api/worlds/{world_id}/saves")
+def create_world_save(world_id: int, payload: CampaignSaveIn) -> dict:
+    return {"saved": save_campaign(world_id, payload.save_name)}
+
+
+@app.delete("/api/worlds/{world_id}")
+def remove_world(world_id: int) -> dict:
+    return {"deleted": delete_world(world_id)}
+
+
+@app.get("/api/media/providers")
+def media_providers() -> list[dict]:
+    return get_provider_options()
+
+
+@app.get("/api/media/jobs")
+def media_jobs(status: str = "", limit: int = 20) -> list[dict]:
+    return list_jobs(status or None, limit)
+
+
+@app.post("/api/media/jobs")
+def create_media_job(payload: MediaJobIn) -> dict:
+    return {"job_id": queue_media_job(payload.job_type, payload.input_path, payload.params)}
+
+
+@app.get("/api/media/gallery")
+def media_gallery(character_name: str = "", media_type: str = "", limit: int = 200) -> list[dict]:
+    conn = get_conn()
+    try:
+        query = "SELECT * FROM media_items WHERE 1=1"
+        args: list = []
+        if character_name and character_name != "All":
+            query += " AND character_name=?"
+            args.append(character_name)
+        if media_type:
+            query += " AND media_type=?"
+            args.append(media_type)
+        query += " ORDER BY id DESC LIMIT ?"
+        args.append(limit)
+        return [dict(row) for row in conn.execute(query, args).fetchall()]
+    finally:
+        conn.close()
+
+
+@app.post("/api/media/gallery")
+def create_media_item(payload: MediaItemIn) -> dict:
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO media_items (character_id,character_name,media_type,title,description,file_path,tags,source,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (payload.character_id, payload.character_name, payload.media_type, payload.title, payload.description, payload.file_path, json.dumps(payload.tags), payload.source, now_iso()),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "saved": True}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/media/gallery/{media_id}")
+def delete_media_item(media_id: int) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM media_items WHERE id=?", (media_id,))
+        conn.commit()
+        return {"deleted": True}
+    finally:
+        conn.close()
+
+
+@app.get("/api/media/achievements")
+def media_achievements(character_name: str = "") -> list[dict]:
+    conn = get_conn()
+    try:
+        if character_name and character_name != "All":
+            rows = conn.execute("SELECT * FROM achievements WHERE character_name=? ORDER BY id DESC", (character_name,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM achievements ORDER BY id DESC").fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/media/achievements")
+def create_achievement(payload: AchievementIn) -> dict:
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO achievements (character_id,character_name,title,description,badge_icon,created_at) VALUES (?,?,?,?,?,?)",
+            (payload.character_id, payload.character_name, payload.title, payload.description, payload.icon, now_iso()),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "saved": True}
+    finally:
+        conn.close()
+
+
+@app.get("/api/media/memory-snapshots")
+def media_memory_snapshots(character_name: str = "") -> list[dict]:
+    conn = get_conn()
+    try:
+        if character_name and character_name != "All":
+            rows = conn.execute("SELECT * FROM memory_snapshots WHERE character_name=? ORDER BY id DESC", (character_name,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM memory_snapshots ORDER BY id DESC").fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/media/memory-snapshots")
+def create_memory_snapshot(payload: MemorySnapshotIn) -> dict:
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO memory_snapshots (character_id,character_name,title,content,emotion,created_at) VALUES (?,?,?,?,?,?)",
+            (payload.character_id, payload.character_name, payload.title, payload.content, payload.emotion, now_iso()),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "saved": True}
+    finally:
+        conn.close()
+
+
+@app.get("/api/relationships")
+def relationships() -> list[dict]:
+    return list_all_relationships()
+
+
+@app.get("/api/relationships/{character_name}")
+def relationship_detail(character_name: str) -> dict:
+    return get_relationship(character_name) or ensure_relationship(character_name)
+
+
+@app.get("/api/relationships/{character_name}/events")
+def relationship_events(character_name: str, limit: int = 30) -> list[dict]:
+    return get_event_history(character_name, limit)
+
+
+@app.post("/api/relationships/interaction")
+def relationship_interaction(payload: RelationshipIn) -> dict:
+    return record_interaction(payload.character_name, payload.sentiment, payload.note)
+
+
+@app.get("/api/quests/active")
+def active_quests(character_name: str = "") -> list[dict]:
+    return get_active_quests(character_name)
+
+
+@app.get("/api/quests/history")
+def quest_history(character_name: str = "", limit: int = 20) -> list[dict]:
+    return get_quest_history(character_name, limit)
+
+
+@app.post("/api/quests/generate")
+def generate_story_quest(payload: QuestGenerateIn) -> dict:
+    history = get_history(payload.session_id, limit=50)
+    world = get_world(payload.world_id) if payload.world_id else None
+    character = get_full_sheet(payload.character_id) if payload.character_id else None
+    quest = generate_dynamic_quest(payload.character_name, history=history, world=world, character=character)
+    if payload.character_id and quest:
+        _add_quest_item(payload.character_id, quest)
+    return {"quest": quest}
+
+
+@app.post("/api/quests/{quest_id}/progress")
+def progress_quest(quest_id: int, payload: QuestProgressIn) -> dict:
+    update_progress(quest_id, payload.progress)
+    return {"updated": True}
+
+
+@app.post("/api/quests/{quest_id}/complete")
+def finish_quest(quest_id: int, character_id: int | None = None) -> dict:
+    complete_quest(quest_id)
+    if character_id:
+        award_xp(character_id, 50, "quest")
+    return {"completed": True}
+
+
+@app.delete("/api/quests/{quest_id}")
+def remove_quest(quest_id: int) -> dict:
+    abandon_quest(quest_id)
+    return {"abandoned": True}
+
+
+@app.get("/api/characters/{character_id}/sheet")
+def character_sheet(character_id: int) -> dict:
+    sheet = get_full_sheet(character_id)
+    if not sheet:
+        raise HTTPException(status_code=404, detail="Character not found.")
+    xp = sheet.get("xp", 0) or 0
+    _, into, need, fraction = xp_progress(xp)
+    sheet["xp_progress"] = {"into": into, "need": need, "fraction": fraction}
+    return sheet
+
+
+@app.post("/api/characters/{character_id}/xp")
+def add_character_xp(character_id: int, payload: XpIn) -> dict:
+    award_xp(character_id, payload.amount, payload.reason)
+    return {"sheet": get_full_sheet(character_id)}
+
+
+@app.post("/api/characters/{character_id}/stats")
+def spend_character_stat(character_id: int, payload: StatSpendIn) -> dict:
+    if payload.stat not in STAT_NAMES:
+        raise HTTPException(status_code=400, detail=f"Unknown stat. Use one of: {', '.join(STAT_NAMES)}")
+    ok = increase_stat(character_id, payload.stat, payload.amount)
+    return {"updated": ok, "sheet": get_full_sheet(character_id)}
+
+
+@app.post("/api/characters/{character_id}/skills")
+def learn_character_skill(character_id: int, payload: SkillLearnIn) -> dict:
+    ok = add_skill_to_character(character_id, payload.skill)
+    return {"updated": ok, "sheet": get_full_sheet(character_id)}
+
+
+@app.get("/api/characters/{character_id}/inventory")
+def character_inventory(character_id: int) -> dict:
+    conn = get_conn()
+    try:
+        items = conn.execute("SELECT * FROM inventory WHERE character_id=? ORDER BY item_type, item_name", (character_id,)).fetchall()
+        economy = conn.execute("SELECT gold, credits, tokens FROM economy WHERE character_id=?", (character_id,)).fetchone()
+        return {"economy": dict(economy) if economy else {"gold": 0, "credits": 0, "tokens": 0}, "items": [dict(row) for row in items]}
+    finally:
+        conn.close()
+
+
+@app.get("/api/memory/facts")
+def memory_facts() -> dict:
+    facts = memory_engine.get_all_facts()
+    return {"facts": facts, "graph": memory_engine.get_graph_stats()}
+
+
+@app.post("/api/memory/facts")
+def create_memory_fact(payload: MemoryIn) -> dict:
+    memory_engine.store_fact(
+        payload.fact,
+        payload.source,
+        memory_type=payload.memory_type,
+        character_name=payload.character_name,
+        importance=payload.importance,
+    )
+    return {"saved": True}
+
+
+@app.post("/api/memory/decay")
+def decay_memory() -> dict:
+    memory_engine.apply_decay()
+    return {"applied": True}
+
+
+@app.get("/api/media/image-styles")
+def media_image_styles() -> list[str]:
+    return list(PHOTO_STYLES.keys())
+
+
+@app.post("/api/media/image")
+def create_image(payload: ImageIn) -> dict:
+    prompt = f"{PHOTO_STYLES.get(payload.style, '')}, {payload.prompt}" if payload.style else payload.prompt
+    path = download_image(prompt, width=payload.width, height=payload.height)
+    url = "" if path else generate_image_url(prompt, payload.width, payload.height)
+    if payload.save_to_chat:
+        save_message("assistant", f"🖼️ *[{payload.prompt[:80]}]*", payload.session_id)
+    return {"path": path, "url": url, "prompt": prompt}
+
+
+@app.get("/api/media/animation-effects")
+def media_animation_effects() -> list[str]:
+    return list(ANIMATION_EFFECTS.keys())
+
+
+@app.post("/api/media/animate")
+def animate_image(payload: AnimateIn) -> dict:
+    output = create_animation(payload.image_path, effect=payload.effect, duration=payload.duration)
+    if output:
+        save_message("assistant", f"🎞️ *[Animated: {payload.effect}, {payload.duration}s]*", payload.session_id)
+    return {"path": output}
+
+
+@app.post("/api/voice/speak")
+def voice_speak(payload: ChatEditIn) -> dict:
+    try:
+        from core.edge_voice import get_voice_for_character, speak_text
+        path = speak_text(payload.content, voice=get_voice_for_character())
+        return {"path": path}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"TTS unavailable: {exc}") from exc
+
+
+@app.get("/api/settings/value/{key}")
+def read_setting(key: str, default: str = "") -> dict:
+    return {"key": key, "value": get_setting(key, default)}
+
+
+@app.post("/api/settings")
+def write_setting(payload: SettingIn) -> dict:
+    set_setting(payload.key, payload.value)
+    return {"saved": True}
+
+
+@app.post("/api/settings/bool")
+def write_bool_setting(payload: BoolSettingIn) -> dict:
+    from core.storage import set_bool_setting
+
+    set_bool_setting(payload.key, payload.value)
+    return {"saved": True}
+
+
+@app.get("/api/settings/dashboard")
+def settings_dashboard() -> dict:
+    conn = get_conn()
+    try:
+        counts = {}
+        for table in ["characters", "worlds", "messages", "knowledge_documents", "media_items", "quests", "relationships"]:
+            counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        return {"counts": counts}
+    finally:
+        conn.close()
+
+
+@app.post("/api/settings/import-test")
+def settings_import_test() -> dict:
+    from core.import_test import test_imports
+
+    passed, failures = test_imports()
+    return {"ok": len(failures) == 0, "passed": passed, "failures": failures}
+
+
+@app.get("/api/settings/db-integrity")
+def settings_db_integrity() -> dict:
+    conn = get_conn()
+    try:
+        rows = conn.execute("PRAGMA integrity_check").fetchall()
+        return {"result": [row[0] for row in rows]}
+    finally:
+        conn.close()
+
+
+@app.post("/api/settings/backup")
+def settings_create_backup() -> dict:
+    from core.backup_restore import create_backup
+
+    return {"path": create_backup()}
+
+
+@app.get("/api/settings/backups")
+def settings_backups() -> list[dict]:
+    from core.backup_restore import list_backups
+
+    return list_backups()
+
+
+@app.get("/api/settings/model")
+def settings_model() -> dict:
+    from core.chat_engine import get_active_model
+
+    return {"active_model": get_active_model()}
+
+
+@app.post("/api/settings/model")
+def settings_set_model(payload: SettingIn) -> dict:
+    from core.chat_engine import set_active_model
+
+    set_active_model(payload.value)
+    return {"saved": True}
+
+
+@app.get("/api/settings/system-preamble")
+def settings_system_preamble() -> dict:
+    from core.chat_engine import get_system_preamble
+
+    return {"value": get_system_preamble()}
+
+
+@app.post("/api/settings/system-preamble")
+def settings_set_system_preamble(payload: SettingIn) -> dict:
+    from core.chat_engine import set_system_preamble
+
+    set_system_preamble(payload.value)
+    return {"saved": True}
+
+
+@app.get("/api/settings/soul/{character_name}")
+def settings_soul(character_name: str) -> dict:
+    from core.companion_soul import get_soul
+
+    return get_soul(character_name)
+
+
+@app.post("/api/settings/soul/{character_name}")
+def settings_save_soul(character_name: str, payload: dict) -> dict:
+    from core.companion_soul import save_soul
+
+    save_soul(character_name, payload)
+    return {"saved": True}
+
+
+def _sync_world_from_text(world_id: int | None, text: str) -> None:
+    if not world_id:
+        return
+    conn = get_conn()
+    try:
+        lowered = text.lower()
+        for keyword, weather in {"storm": "storm", "rain": "rain", "snow": "snow", "sunny": "clear", "fog": "fog"}.items():
+            if keyword in lowered:
+                conn.execute("UPDATE worlds SET weather=? WHERE id=?", (weather, world_id))
+                break
+        for keyword, time_of_day in {"dawn": "dawn", "morning": "morning", "noon": "midday", "evening": "evening", "night": "night", "midnight": "midnight"}.items():
+            if keyword in lowered:
+                conn.execute("UPDATE worlds SET time_of_day=? WHERE id=?", (time_of_day, world_id))
+                break
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _add_quest_item(character_id: int, quest: dict) -> None:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO inventory (character_id,item_name,item_type,quantity,value,description,source,created_at) VALUES (?,?,?,?,?,?,?,?)",
+            (
+                character_id,
+                f"Quest: {quest.get('title', '')[:25]}",
+                "quest_item",
+                1,
+                10,
+                quest.get("description", "")[:60],
+                "quest",
+                now_iso(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+ASSETS_DIR = REACT_DIST / "assets"
+if ASSETS_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
+
+@app.get("/styles.css", include_in_schema=False)
+def worldweaver_styles():
+    return FileResponse(REACT_DIST / "styles.css", media_type="text/css")
+
+
+@app.get("/game.js", include_in_schema=False)
+def worldweaver_script():
+    return FileResponse(REACT_DIST / "game.js", media_type="application/javascript")
+
+
+@app.get("/worldweaver-icon.png", include_in_schema=False)
+def worldweaver_icon():
+    return FileResponse(REACT_DIST / "worldweaver-icon.png", media_type="image/png")
+
+@app.get("/{path:path}")
+def frontend(path: str = ""):
+    index = REACT_DIST / "index.html"
+    if index.exists():
+        return FileResponse(index)
+    raise HTTPException(
+        status_code=503,
+        detail="React frontend has not been built. Run full_install.py or npm run build in frontend/react_app.",
+    )

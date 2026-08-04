@@ -1,0 +1,14 @@
+﻿:root {
+  color: #e8eefc;
+  background: #08111f;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+body { margin: 0; }
+.shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+.sidebar { padding: 24px; background: #0d1a2e; border-right: 1px solid #22324d; }
+.sidebar h1 { margin: 0 0 24px; font-size: 24px; }
+.sidebar button { display: block; width: 100%; margin: 8px 0; padding: 12px; color: inherit; background: #14243d; border: 1px solid #2a3c5d; border-radius: 12px; text-align: left; }
+.workspace { padding: 48px; }
+.eyebrow { color: #8fb7ff; text-transform: uppercase; letter-spacing: .12em; font-size: 12px; }
+code { background: #14243d; padding: 2px 6px; border-radius: 6px; }

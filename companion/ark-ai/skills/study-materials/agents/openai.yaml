@@ -1,0 +1,4 @@
+interface:
+  display_name: "Study Materials"
+  short_description: "Summaries, flashcards, and quizzes"
+  default_prompt: "Turn my material into a summary, flashcards, and a quiz."

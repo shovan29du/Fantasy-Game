@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lesson Planner"
+  short_description: "Structured multi-level lesson planning"
+  default_prompt: "Build a practical lesson plan for my learners."

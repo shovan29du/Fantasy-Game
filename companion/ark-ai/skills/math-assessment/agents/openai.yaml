@@ -1,0 +1,4 @@
+interface:
+  display_name: "Math Assessment"
+  short_description: "Grade math work and diagnose misconceptions"
+  default_prompt: "Assess this math work and build a targeted practice plan."

@@ -1,0 +1,103 @@
+# Chat Feature Import Audit
+
+Old Streamlit chat features now mapped to React/FastAPI APIs. Streamlit UI code was not restored.
+
+## Old Chat Features Reviewed
+- AI chat send with system prompt
+- Multi-perspective participants
+- Chat history display
+- Load earlier messages
+- Edit/delete/rollback messages
+- Tag starred moments
+- Export TXT/JSON/HTML
+- Manual and auto chat saves
+- Suggestions buttons
+- Relationship metrics/events
+- Quest generate/progress/complete/abandon/history
+- Character sheet XP and level status
+- Stat/skill point spending
+- Inventory/economy display
+- Memory facts/graph/decay/auto-store
+- Image generation
+- Video link generation
+- Animate generated image
+- Voice text-to-speech
+- Speech-to-text upload
+- World weather/time sync
+- Plugin hooks
+- Companion soul context
+- Lorebook context
+- Narrative prompt context
+
+## New Chat/API Coverage
+- GET /api/health
+- GET /api/options
+- GET /api/random/prompts
+- GET /api/characters
+- POST /api/characters
+- GET /api/scenario-templates
+- POST /api/scenario-templates
+- POST /api/scenario-templates/render
+- DELETE /api/scenario-templates/{template_id}
+- DELETE /api/characters/{character_id}
+- GET /api/chat/history
+- POST /api/chat/messages
+- POST /api/chat/send
+- POST /api/chat/regen
+- DELETE /api/chat/messages/{message_id}
+- PATCH /api/chat/messages/{message_id}
+- POST /api/chat/messages/{message_id}/moment
+- DELETE /api/chat/session/{session_id}
+- GET /api/chat/search
+- GET /api/chat/suggestions
+- GET /api/chat/moments
+- GET /api/chat/saves
+- POST /api/chat/saves
+- GET /api/chat/export/{fmt}
+- POST /api/chat/import/file
+- POST /api/chat/import/url
+- POST /api/chat/import/load
+- POST /api/chat/import/infer-characters
+- GET /api/knowledge/documents
+- GET /api/knowledge/search
+- POST /api/knowledge/index
+- DELETE /api/knowledge/documents/{document_id}
+- GET /api/worlds
+- POST /api/worlds
+- GET /api/worlds/{world_id}
+- GET /api/worlds/{world_id}/locations
+- DELETE /api/worlds/{world_id}
+- GET /api/media/providers
+- GET /api/media/jobs
+- POST /api/media/jobs
+- GET /api/relationships
+- GET /api/relationships/{character_name}
+- GET /api/relationships/{character_name}/events
+- POST /api/relationships/interaction
+- GET /api/quests/active
+- GET /api/quests/history
+- POST /api/quests/generate
+- POST /api/quests/{quest_id}/progress
+- POST /api/quests/{quest_id}/complete
+- DELETE /api/quests/{quest_id}
+- GET /api/characters/{character_id}/sheet
+- POST /api/characters/{character_id}/xp
+- POST /api/characters/{character_id}/stats
+- POST /api/characters/{character_id}/skills
+- GET /api/characters/{character_id}/inventory
+- GET /api/memory/facts
+- POST /api/memory/facts
+- POST /api/memory/decay
+- GET /api/media/image-styles
+- POST /api/media/image
+- GET /api/media/animation-effects
+- POST /api/media/animate
+- POST /api/voice/speak
+- GET /api/settings/{key}
+- POST /api/settings
+- GET /{path:path}
+
+## Notes
+- Streamlit was fully replaced by React static UI served by FastAPI.
+- LLM chat uses the existing local-first chat engine and returns a normal JSON response.
+- STT upload remains listed as old behavior; TTS is exposed through `/api/voice/speak`.

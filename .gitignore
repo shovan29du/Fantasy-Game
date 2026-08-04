@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+env/
+build/
+dist/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Runtime data (keep folder structure via .gitkeep, ignore generated content)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+logs/*.log
+logs/*
+!logs/.gitkeep
+backups/*.zip
+backups/*
+!backups/.gitkeep
+media/images/*
+media/picture/*
+media/video/*
+media/animation/*
+media/achievement/*
+media/memory/*
+!media/**/.gitkeep
+voices/*
+!voices/.gitkeep
+knowledge/*
+!knowledge/.gitkeep
+# Curated reference content ships with the repo; user-uploaded/indexed files don't.
+!knowledge/dnd/
+!knowledge/dnd/*.md
+!knowledge/aichat_pro_character_options.md
+config/*.json
+config/local.json
+!config/.gitkeep
+
+# Local env / secrets
+.env
+.env.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/

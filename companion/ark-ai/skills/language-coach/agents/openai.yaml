@@ -1,0 +1,4 @@
+interface:
+  display_name: "Language Coach"
+  short_description: "Translation and speaking practice"
+  default_prompt: "Coach me through a language lesson with pronunciation practice."
