@@ -18,15 +18,19 @@ log = get_logger(__name__)
 # of the persistent memory facts pulled in separately (see memory_engine).
 RECENT_HISTORY_MESSAGES = 30
 
-from backend.app.domain import multiverse, weapons, worldscale
+import uuid
+
+from backend.app.domain import multiverse, scenarios, weapons, worldscale
 from backend.app.domain.characters import (
     ALIGNMENTS,
     ALL_PRESET_SOURCES,
+    ANIME_PRESETS,
     BODY_TYPES,
     CHARACTER_TAGS,
     DND_BACKGROUNDS,
     DND_RACES,
     EMOTION_STYLES,
+    GAME_PRESETS,
     GENDERS,
     IMAGE_STYLES,
     MAGIC_TYPES,
@@ -48,6 +52,7 @@ from backend.app.services.scenario_template_service import (
     render_template_scenario,
     save_scenario_template,
 )
+from backend.app.world.prebuilt import create_prebuilt_world, get_prebuilt_by_category
 from backend.app.chat_io.character_builder import build_characters_from_chat
 from backend.app.chat_io.importer import import_chat_file, import_chat_url
 from core.storage import get_conn, init_db, now_iso
@@ -283,6 +288,7 @@ class ChatSendIn(BaseModel):
     world_id: int | None = None
     participants: list[str] = []
     temperature: float = 0.7
+    extra_context: str = ""
 
 
 class ChatEditIn(BaseModel):
@@ -293,6 +299,15 @@ class ChatSaveIn(BaseModel):
     session_id: str = "default"
     save_name: str
     character_name: str = ""
+    world_id: int | None = None
+    character_id: int | None = None
+
+
+class ScenarioStartIn(BaseModel):
+    category: str
+    scenario_name: str = ""
+    scenario_type: str = "prebuilt"  # prebuilt | preset | custom
+    custom_text: str = ""
 
 
 class QuestGenerateIn(BaseModel):
@@ -798,6 +813,11 @@ def send_chat(payload: ChatSendIn) -> dict:
             system_prompt += f"\n{lore_context}"
     except Exception:
         pass
+    if payload.extra_context:
+        # Kept out of the saved message content so chat history stays clean
+        # when reloaded -- this is prompt context only, not part of what the
+        # player actually said.
+        system_prompt += f"\n[Context: {payload.extra_context}]"
     messages = [{"role": "system", "content": system_prompt}]
     # Keep at least the last 30 turns in context so replies stay consistent
     # with recent events, on top of the persistent memory facts below.
@@ -910,13 +930,46 @@ def create_chat_save(payload: ChatSaveIn) -> dict:
     conn = get_conn()
     try:
         conn.execute(
-            "INSERT INTO chat_saves (session_id, save_name, character_name, created_at) VALUES (?, ?, ?, ?)",
-            (payload.session_id, payload.save_name, payload.character_name, now_iso()),
+            "INSERT INTO chat_saves (session_id, save_name, character_name, world_id, character_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (payload.session_id, payload.save_name, payload.character_name, payload.world_id, payload.character_id, now_iso()),
         )
         conn.commit()
         return {"saved": True}
     finally:
         conn.close()
+
+
+@app.get("/api/scenarios/categories")
+def scenario_categories() -> list[dict]:
+    result = []
+    for category in scenarios.CATEGORIES:
+        entry = dict(category)
+        if category.get("presets") == "anime":
+            entry["scenarios"] = [{"type": "preset", "name": name} for name in ANIME_PRESETS]
+        elif category.get("presets") == "game":
+            entry["scenarios"] = [{"type": "preset", "name": name} for name in GAME_PRESETS]
+        else:
+            entry["scenarios"] = [{"type": "prebuilt", "name": name} for name in get_prebuilt_by_category(category["key"])]
+        result.append(entry)
+    return result
+
+
+@app.post("/api/scenarios/start")
+def start_scenario(payload: ScenarioStartIn) -> dict:
+    defaults = scenarios.category_defaults(payload.category)
+    session_id = f"game-{uuid.uuid4().hex[:12]}"
+    if payload.scenario_type == "prebuilt" and payload.scenario_name:
+        world = create_prebuilt_world(payload.scenario_name, reality_type=defaults["reality_type"])
+        if world.get("error"):
+            raise HTTPException(status_code=404, detail=world["error"])
+    else:
+        name = payload.scenario_name or f"{defaults['label']} Reality"
+        world = create_world(name, defaults["magic"], defaults["tech"], defaults["space"], 8,
+                              reality_type=defaults["reality_type"])
+        if payload.scenario_type == "custom" and payload.custom_text.strip():
+            create_entry("Opening Scenario", payload.custom_text.strip(), ["opening", "scenario"],
+                          world_id=world["id"], always_active=True)
+    return {"world": world, "session_id": session_id}
 
 
 @app.get("/api/chat/export/{fmt}", response_class=PlainTextResponse)

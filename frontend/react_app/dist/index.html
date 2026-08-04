@@ -29,6 +29,7 @@
     <div class="brand"><span class="brand-mark">W</span><div><strong>WORLDWEAVER</strong><small>MULTIVERSE TABLETOP</small></div></div>
     <div class="world-readout"><span class="eyebrow">CURRENT REALITY</span><b id="worldName">Aethoria Prime</b><span id="worldTags">Fantasy · Magic 8 · Tech 2</span></div>
     <div class="top-actions">
+      <button id="switchGameBtn" class="ghost" title="New game or load a saved one">⇄ Switch game</button>
       <button id="journalBtn" class="ghost">◫ Journal</button>
       <button id="saveBtn" class="gold">Save game</button>
       <span class="online"><i></i> LOCAL</span>
@@ -127,6 +128,33 @@
         <div id="webSearchResults" class="entity-list"></div>
       </section>
     </div>
+    <div class="workspace-grid" style="margin-top:16px">
+      <section class="studio-card wide-card">
+        <div class="card-title"><b>Import character package</b><small>Character, chat, memory &amp; achievements together</small></div>
+        <nav class="detail-tabs" style="margin-bottom:14px">
+          <button class="active" data-import-mode="json">JSON</button>
+          <button data-import-mode="link">Link</button>
+          <button data-import-mode="text">Text</button>
+        </nav>
+        <div id="importMode-json" class="import-mode">
+          <p class="empty-state" style="text-align:left;border:none;padding:0 0 10px">Paste a character JSON object, or a full export with <code>character</code>, <code>messages</code>, <code>memory</code>, and <code>achievements</code>/<code>events</code> keys.</p>
+          <label class="wide" style="display:block;margin-bottom:10px">Upload a .json file<input id="importJsonFile" type="file" accept=".json"></label>
+          <textarea id="importJsonText" rows="6" style="width:100%;background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:10px" placeholder='{"character": {"name": "..."}, "messages": [...], "memory": [...], "achievements": [...]}'></textarea>
+          <div class="form-actions" style="margin-top:10px"><button id="importJsonBtn" class="gold">Import JSON</button></div>
+        </div>
+        <div id="importMode-link" class="import-mode" hidden>
+          <p class="empty-state" style="text-align:left;border:none;padding:0 0 10px">Fetches a chat log or character card from a URL, infers the character(s), and loads the conversation.</p>
+          <input id="importLinkInput" style="width:100%;background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:10px" placeholder="https://...">
+          <div class="form-actions" style="margin-top:10px"><button id="importLinkBtn" class="gold">Import from link</button></div>
+        </div>
+        <div id="importMode-text" class="import-mode" hidden>
+          <p class="empty-state" style="text-align:left;border:none;padding:0 0 10px">Paste a chat log or character description. Characters are inferred from the text.</p>
+          <textarea id="importTextInput" rows="6" style="width:100%;background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:10px" placeholder="Paste chat log or character text here..."></textarea>
+          <div class="form-actions" style="margin-top:10px"><button id="importTextBtn" class="gold">Import text</button></div>
+        </div>
+        <div id="importResult"></div>
+      </section>
+    </div>
   </section>
 
   <section id="view-worlds" class="app-view workspace-view">
@@ -206,6 +234,64 @@
       <button id="exitSceneBtn" class="gold">✕ Exit</button>
     </div>
     <div id="sceneLoading" class="scene-loading">Generating scene…</div>
+  </section>
+  <section id="playStart" class="scene-overlay start-overlay">
+    <div class="start-panel">
+      <button id="closeStartBtn" class="ghost" style="position:absolute;top:20px;right:24px" hidden>✕</button>
+      <div id="startStep-choice" class="start-step">
+        <h2>Welcome to the multiverse</h2>
+        <p>Begin a new campaign, or return to one already in progress.</p>
+        <div class="start-actions">
+          <button id="startNewGameBtn" class="gold">▶ New Game</button>
+          <button id="startLoadGameBtn" class="ghost">📂 Load Saved Game</button>
+        </div>
+      </div>
+
+      <div id="startStep-category" class="start-step" hidden>
+        <button class="ghost back-btn" data-back="choice">‹ Back</button>
+        <h2>Choose a genre</h2>
+        <div id="categoryGrid" class="start-grid"></div>
+        <div class="start-divider">or</div>
+        <div class="start-actions">
+          <button id="showTemplatesBtn" class="ghost">✎ Scenario templates</button>
+          <button id="randomScenarioBtn" class="ghost">🎲 Random scenario</button>
+        </div>
+      </div>
+
+      <div id="startStep-scenario" class="start-step" hidden>
+        <button class="ghost back-btn" data-back="category">‹ Back</button>
+        <h2 id="scenarioStepTitle">Choose a scenario</h2>
+        <div id="scenarioGrid" class="start-grid"></div>
+        <form id="customScenarioForm" class="studio-form">
+          <label class="wide">Or write your own opening scenario<textarea name="text" rows="3" placeholder="You wake up in..."></textarea></label>
+          <div class="form-actions wide"><button class="gold">Start with this</button></div>
+        </form>
+      </div>
+
+      <div id="startStep-templates" class="start-step" hidden>
+        <button class="ghost back-btn" data-back="category">‹ Back</button>
+        <h2>Scenario templates</h2>
+        <div id="templateList" class="start-grid"></div>
+        <form id="newTemplateForm" class="studio-form">
+          <label class="wide">Template name<input name="name" required placeholder="Haunted heist"></label>
+          <label class="wide">Scenario (use {character} / {user} as placeholders)<textarea name="scenario" required rows="3" placeholder="{character} infiltrates a haunted manor while {user} watches the perimeter..."></textarea></label>
+          <div class="form-actions wide"><button class="gold">Save template</button></div>
+        </form>
+      </div>
+
+      <div id="startStep-random" class="start-step" hidden>
+        <button class="ghost back-btn" data-back="category">‹ Back</button>
+        <h2>Random scenario</h2>
+        <p id="randomScenarioText" class="empty-state"></p>
+        <div class="form-actions"><button id="rerollScenarioBtn" class="ghost">🎲 Reroll</button><button id="useRandomScenarioBtn" class="gold">Start with this</button></div>
+      </div>
+
+      <div id="startStep-load" class="start-step" hidden>
+        <button class="ghost back-btn" data-back="choice">‹ Back</button>
+        <h2>Saved games</h2>
+        <div id="savedGameList" class="start-grid"></div>
+      </div>
+    </div>
   </section>
   <section id="chatPanel" class="chat-panel">
     <div class="chat-head"><div><span class="orb"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div><button id="closeChat">×</button></div>

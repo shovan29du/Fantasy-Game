@@ -14,7 +14,7 @@ DB_PATH = DATA_DIR / "aichat_pro.db"
 
 # Bump whenever a new entry is added to _MIGRATIONS or _TABLES so the
 # schema_version table reflects the schema the app expects.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 def get_conn():
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
@@ -191,6 +191,10 @@ _MIGRATIONS = [
     ("characters", "power_tier", "INTEGER DEFAULT 2"),
     ("worlds", "ratings_json", "TEXT DEFAULT '{}'"),
     ("worlds", "reality_type", "TEXT DEFAULT 'Prime Reality'"),
+    # New/saved game selection needs a save to resolve back to the exact
+    # world + character it was made in, not just free-text labels.
+    ("chat_saves", "world_id", "INTEGER"),
+    ("chat_saves", "character_id", "INTEGER"),
 ]
 
 def _create_tables(conn):
