@@ -10,6 +10,14 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from core.logging_setup import get_logger
+
+log = get_logger(__name__)
+
+# Minimum number of recent chat turns kept in the LLM context window, on top
+# of the persistent memory facts pulled in separately (see memory_engine).
+RECENT_HISTORY_MESSAGES = 30
+
 from backend.app.domain import multiverse, weapons, worldscale
 from backend.app.domain.characters import (
     ALIGNMENTS,
@@ -43,6 +51,7 @@ from backend.app.services.scenario_template_service import (
 from backend.app.chat_io.character_builder import build_characters_from_chat
 from backend.app.chat_io.importer import import_chat_file, import_chat_url
 from core.storage import get_conn, init_db, now_iso
+from shared_config import MEDIA_DIR
 from core.chat_engine import (
     build_system_prompt,
     clear_session,
@@ -790,7 +799,9 @@ def send_chat(payload: ChatSendIn) -> dict:
     except Exception:
         pass
     messages = [{"role": "system", "content": system_prompt}]
-    messages.extend({"role": msg["role"], "content": msg["content"]} for msg in history[-40:])
+    # Keep at least the last 30 turns in context so replies stay consistent
+    # with recent events, on top of the persistent memory facts below.
+    messages.extend({"role": msg["role"], "content": msg["content"]} for msg in history[-RECENT_HISTORY_MESSAGES:])
     try:
         memory_context = memory_engine.build_memory_context(query=payload.content, character_name=character_name)
         if memory_context:
@@ -802,6 +813,18 @@ def send_chat(payload: ChatSendIn) -> dict:
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
     save_message("assistant", response, payload.session_id)
+    if not response.startswith(("[LM Studio error]", "[Error]")):
+        try:
+            # Auto-accumulate memory from actual play so later replies stay
+            # consistent even after the recent-message window scrolls past
+            # this exchange -- build_memory_context() surfaces this back later.
+            memory_engine.store_fact(
+                f"{payload.user_name or 'Player'} said: {payload.content[:200]} | "
+                f"{character_name or 'AI'} replied: {response[:200]}",
+                source="auto", character_name=character_name or "",
+            )
+        except Exception:
+            log.debug("Auto memory storage failed", exc_info=True)
     if character_name:
         sentiment = "positive" if any(word in payload.content.lower() for word in ["love", "kiss", "hug", "thank", "happy"]) else "neutral"
         if any(word in payload.content.lower() for word in ["hate", "attack", "kill", "angry"]):
@@ -1491,7 +1514,15 @@ def media_image_styles() -> list[str]:
 def create_image(payload: ImageIn) -> dict:
     prompt = f"{PHOTO_STYLES.get(payload.style, '')}, {payload.prompt}" if payload.style else payload.prompt
     path = download_image(prompt, width=payload.width, height=payload.height)
-    url = "" if path else generate_image_url(prompt, payload.width, payload.height)
+    if path:
+        # `path` is an absolute filesystem path under MEDIA_DIR; the /media
+        # static mount serves it back out at the matching relative URL.
+        try:
+            url = "/media/" + str(Path(path).relative_to(MEDIA_DIR)).replace("\\", "/")
+        except ValueError:
+            url = generate_image_url(prompt, payload.width, payload.height)
+    else:
+        url = generate_image_url(prompt, payload.width, payload.height)
     if payload.save_to_chat:
         save_message("assistant", f"🖼️ *[{payload.prompt[:80]}]*", payload.session_id)
     return {"path": path, "url": url, "prompt": prompt}
@@ -1671,6 +1702,9 @@ def _add_quest_item(character_id: int, quest: dict) -> None:
 ASSETS_DIR = REACT_DIST / "assets"
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
+if MEDIA_DIR.exists():
+    app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 
 
 @app.get("/styles.css", include_in_schema=False)

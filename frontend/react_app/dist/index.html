@@ -59,12 +59,10 @@
         <div id="map" class="map map-local" tabindex="0" aria-label="Game map. Use WASD or arrow keys to move.">
           <div class="fog fog-one"></div><div class="fog fog-two"></div>
           <div class="road road-a"></div><div class="road road-b"></div>
-          <button class="map-node town" style="--x:22%;--y:28%" data-label="Thornwatch" title="Thornwatch">♜</button>
-          <button class="map-node ruins" style="--x:72%;--y:23%" data-label="Ashen Ruins" title="Ashen Ruins">⌂</button>
-          <button class="map-node camp" style="--x:66%;--y:71%" data-label="Ranger Camp" title="Ranger Camp">▲</button>
+          <div id="mapNodes"></div>
           <button id="portal" class="portal" style="--x:84%;--y:50%" title="Reality portal"><span></span></button>
           <div id="playerToken" class="player-token" style="--x:42%;--y:52%"><span>AS</span><i></i></div>
-          <div class="map-hint">WASD / ARROWS TO MOVE · CLICK A DESTINATION</div>
+          <div class="map-hint">WASD / ARROWS TO MOVE · CLICK A LOCATION TO ENTER</div>
         </div>
         <div class="map-footer"><span>☀ Dawn · Day 17</span><span>☁ Mistwood · 12°C</span><span>⚔ Threat: <b>Moderate</b></span></div>
       </div>
@@ -118,6 +116,14 @@
 
   <section id="view-settings" class="app-view workspace-view"><header class="workspace-head"><div><span class="eyebrow">LOCAL CONFIGURATION</span><h1>Settings</h1><p>Manage LM Studio, interface preferences, and system health.</p></div></header><div class="settings-grid"><section class="studio-card"><div class="card-title"><b>LM Studio</b><span id="modelBadge" class="status-badge">Checking</span></div><div class="setting-row"><div><b>Local API</b><small>http://127.0.0.1:1234/v1</small></div><button id="checkModel">Check connection</button></div><div class="setting-row"><div><b>Active model</b><small id="activeModel">Local model selected by LM Studio</small></div></div></section><section class="studio-card"><div class="card-title"><b>Game preferences</b></div><label class="toggle-row"><span><b>Reduced motion</b><small>Limit portal and interface animation</small></span><input id="reducedMotion" type="checkbox"></label><label class="toggle-row"><span><b>Compact interface</b><small>Show more information on screen</small></span><input id="compactMode" type="checkbox"></label></section><section class="studio-card"><div class="card-title"><b>System health</b></div><div id="systemHealth" class="health-list"><span>Database <i class="good">Ready</i></span><span>Backend <i class="good">Ready</i></span><span>Frontend <i class="good">Ready</i></span></div></section></div></section>
   </div>
+  <section id="sceneOverlay" class="scene-overlay">
+    <div id="sceneBg" class="scene-bg"></div>
+    <div class="scene-topbar">
+      <div><strong id="sceneTitle">Location</strong><small id="sceneSubtitle"></small></div>
+      <button id="exitSceneBtn" class="gold">✕ Exit</button>
+    </div>
+    <div id="sceneLoading" class="scene-loading">Generating scene…</div>
+  </section>
   <section id="chatPanel" class="chat-panel">
     <div class="chat-head"><div><span class="orb"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div><button id="closeChat">×</button></div>
     <div id="chatLog" class="chat-log"><p class="gm"><b>WORLDWEAVER</b>The portal hums beyond the ridge. Its runes point to a reality where steel towers touch a violet sky. What do you do?</p></div>
