@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from core.storage import get_conn, now_iso
 from core.db_migration import migrate_db
+from backend.app.domain import worldscale as _worldscale
 
 TERRAINS=["Forest","Desert","Mountain","Ocean","Swamp","Volcano","Plains","City","Ruins","Space","Underground","Tundra","Jungle","Savanna","Canyon"]
 MAGIC_LEVELS=["none","low","medium","high","legendary"]
@@ -30,7 +31,7 @@ _NB=["andir","eth","ius","on","ar","iel","wyn","ax","oth","ren","is","or","un","
 def _rn(): return random.choice(_NA)+random.choice(_NB)
 
 # ── WORLD CRUD ──
-def create_world(name, magic="medium", tech="middle_age", space="fantasy", num_locs=8):
+def create_world(name, magic="medium", tech="middle_age", space="fantasy", num_locs=8, ratings=None, reality_type="Prime Reality"):
     migrate_db()
     locs=[]
     for i in range(num_locs):
@@ -38,10 +39,13 @@ def create_world(name, magic="medium", tech="middle_age", space="fantasy", num_l
         locs.append({"name":f"{t} of {_rn()}","terrain":t,"x":random.randint(0,100),"y":random.randint(0,100),
             "description":f"A {t.lower()} region with unique features.","population":random.randint(50,500),
             "resources":{random.choice(RESOURCES):random.randint(50,200) for _ in range(2)}})
-    wd={"name":name,"magic_level":magic,"tech_level":tech,"space_alignment":space,"locations":locs}
+    ratings=_worldscale.normalize_ratings(ratings) if ratings else _worldscale.default_ratings_from_tiers(magic,tech,space)
+    reality_type=reality_type or "Prime Reality"
+    wd={"name":name,"magic_level":magic,"tech_level":tech,"space_alignment":space,"locations":locs,
+        "ratings":ratings,"reality_type":reality_type}
     conn=get_conn()
-    cur=conn.execute("INSERT INTO worlds (name,magic_level,tech_level,space_alignment,world_json,created_at) VALUES (?,?,?,?,?,?)",
-        (name,magic,tech,space,json.dumps(wd),now_iso()))
+    cur=conn.execute("INSERT INTO worlds (name,magic_level,tech_level,space_alignment,world_json,ratings_json,reality_type,created_at) VALUES (?,?,?,?,?,?,?,?)",
+        (name,magic,tech,space,json.dumps(wd),json.dumps(ratings),reality_type,now_iso()))
     wid=cur.lastrowid
     for loc in locs:
         conn.execute("INSERT INTO world_locations (world_id,name,loc_type,terrain,description,x,y,resources_json,population) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -58,6 +62,16 @@ def create_world(name, magic="medium", tech="middle_age", space="fantasy", num_l
     conn.commit(); conn.close()
     wd["id"]=wid; return wd
 
+def _parse_ratings(ratings_json, magic_level, tech_level, space_alignment):
+    try:
+        ratings=json.loads(ratings_json or "{}")
+    except Exception:
+        log.debug("suppressed error", exc_info=True)
+        ratings={}
+    if not ratings:
+        ratings=_worldscale.default_ratings_from_tiers(magic_level,tech_level,space_alignment)
+    return ratings
+
 def get_world(wid):
     migrate_db()
     conn=get_conn(); row=conn.execute("SELECT * FROM worlds WHERE id=?",(wid,)).fetchone(); conn.close()
@@ -67,12 +81,21 @@ def get_world(wid):
     except Exception:
         log.debug("suppressed error", exc_info=True)
         d["world_json"]={}
+    d["ratings"]=_parse_ratings(d.get("ratings_json"),d.get("magic_level"),d.get("tech_level"),d.get("space_alignment"))
+    d["reality_type"]=d.get("reality_type") or "Prime Reality"
     return d
 
 def list_worlds():
     migrate_db()
-    conn=get_conn(); rows=conn.execute("SELECT id,name,magic_level,tech_level,world_tick,weather,time_of_day,population,created_at FROM worlds ORDER BY id DESC").fetchall()
-    conn.close(); return [dict(r) for r in rows]
+    conn=get_conn(); rows=conn.execute("SELECT id,name,magic_level,tech_level,space_alignment,ratings_json,reality_type,world_tick,weather,time_of_day,population,created_at FROM worlds ORDER BY id DESC").fetchall()
+    conn.close()
+    out=[]
+    for r in rows:
+        d=dict(r)
+        d["ratings"]=_parse_ratings(d.get("ratings_json"),d.get("magic_level"),d.get("tech_level"),d.get("space_alignment"))
+        d["reality_type"]=d.get("reality_type") or "Prime Reality"
+        out.append(d)
+    return out
 
 def get_locations(wid):
     conn=get_conn(); rows=conn.execute("SELECT * FROM world_locations WHERE world_id=?",(wid,)).fetchall()

@@ -6,6 +6,7 @@ from __future__ import annotations
 import json, math, random
 from core.storage import get_conn, now_iso
 from core.logging_setup import get_logger
+from backend.app.domain import multiverse as _multiverse
 
 log = get_logger(__name__)
 
@@ -270,6 +271,11 @@ def get_full_sheet(cid):
     except Exception:
         log.debug("suppressed error", exc_info=True)
         ch["meas"]={}
+    try: ch["reality_signature"]=json.loads(ch.get("reality_signature","{}") or "{}")
+    except Exception:
+        log.debug("suppressed error", exc_info=True)
+        ch["reality_signature"]={}
+    ch["power_tier_info"]=_multiverse.describe_power_tier(ch.get("power_tier",2) or 2)
     xp=ch.get("xp",0) or 0
     lv,into,need,frac=xp_progress(xp)
     ch.update({"calc_lv":lv,"xp_into":into,"xp_need":need,"xp_frac":frac})

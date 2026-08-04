@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Worldweaver — Multiverse Tabletop</title>
+  <link rel="icon" type="image/png" href="/worldweaver-icon.png">
+  <meta name="description" content="A 2D multiverse tabletop RPG command board.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <aside class="app-sidebar">
+    <div class="side-logo"><img src="/worldweaver-icon.png" alt=""><div><b>Worldweaver</b><small>AI COMPANION RPG</small></div></div>
+    <nav class="side-nav" aria-label="Main sections">
+      <button data-view="play"><span>▶</span>Play Game</button>
+      <button class="active" data-view="characters"><span>♙</span>Characters</button>
+      <button data-view="worlds"><span>◎</span>World</button>
+      <button data-view="media"><span>▣</span>Media</button>
+      <button data-view="knowledge"><span>◇</span>Knowledge</button>
+      <button data-view="settings"><span>⚙</span>Settings</button>
+      <a class="side-link" href="http://127.0.0.1:5000" target="_blank" rel="noopener" title="Opens the standalone Ark AI companion workspace (run separately, see companion/ark-ai)"><span>⚡</span>Ark AI Companion</a>
+    </nav>
+    <div class="side-status"><i></i><div><b>Local systems</b><small>Database ready</small></div></div>
+  </aside>
+  <div class="app-content">
+  <div id="view-play" class="app-view">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">W</span><div><strong>WORLDWEAVER</strong><small>MULTIVERSE TABLETOP</small></div></div>
+    <div class="world-readout"><span class="eyebrow">CURRENT REALITY</span><b id="worldName">Aethoria Prime</b><span id="worldTags">Fantasy · Magic 8 · Tech 2</span></div>
+    <div class="top-actions">
+      <button id="journalBtn" class="ghost">◫ Journal</button>
+      <button id="saveBtn" class="gold">Save game</button>
+      <span class="online"><i></i> LOCAL</span>
+    </div>
+  </header>
+
+  <main class="game-grid">
+    <aside class="panel party-panel">
+      <div class="panel-title"><span>PARTY</span><small>4 / 6</small></div>
+      <div id="partyList"></div>
+      <button class="add-member">＋ Recruit companion</button>
+
+      <div class="section-head"><span>ACTIVE QUESTS</span><b>3</b></div>
+      <div id="questList"></div>
+    </aside>
+
+    <section class="map-column">
+      <nav class="map-tabs" aria-label="Map scale">
+        <button data-scale="local" class="active">Local <kbd>1</kbd></button>
+        <button data-scale="area">Area <kbd>2</kbd></button>
+        <button data-scale="world">World <kbd>3</kbd></button>
+        <button data-scale="universe">Universe <kbd>4</kbd></button>
+      </nav>
+      <div class="map-frame">
+        <div class="map-toolbar">
+          <div><span class="eyebrow" id="scaleLabel">LOCAL MAP</span><strong id="locationName">Thornwatch Crossing</strong></div>
+          <div class="map-controls"><button id="zoomOut" aria-label="Zoom out">−</button><span id="zoomText">100%</span><button id="zoomIn" aria-label="Zoom in">＋</button></div>
+        </div>
+        <div id="map" class="map map-local" tabindex="0" aria-label="Game map. Use WASD or arrow keys to move.">
+          <div class="fog fog-one"></div><div class="fog fog-two"></div>
+          <div class="road road-a"></div><div class="road road-b"></div>
+          <button class="map-node town" style="--x:22%;--y:28%" data-label="Thornwatch" title="Thornwatch">♜</button>
+          <button class="map-node ruins" style="--x:72%;--y:23%" data-label="Ashen Ruins" title="Ashen Ruins">⌂</button>
+          <button class="map-node camp" style="--x:66%;--y:71%" data-label="Ranger Camp" title="Ranger Camp">▲</button>
+          <button id="portal" class="portal" style="--x:84%;--y:50%" title="Reality portal"><span></span></button>
+          <div id="playerToken" class="player-token" style="--x:42%;--y:52%"><span>AS</span><i></i></div>
+          <div class="map-hint">WASD / ARROWS TO MOVE · CLICK A DESTINATION</div>
+        </div>
+        <div class="map-footer"><span>☀ Dawn · Day 17</span><span>☁ Mistwood · 12°C</span><span>⚔ Threat: <b>Moderate</b></span></div>
+      </div>
+
+      <section class="action-dock">
+        <div class="dock-head"><span>ACTION BAR</span><div><button class="active" data-filter="all">All</button><button data-filter="attack">Attack</button><button data-filter="defence">Defence</button><button data-filter="utility">Utility</button></div></div>
+        <div id="actionBar" class="actions"></div>
+      </section>
+    </section>
+
+    <aside class="panel detail-panel">
+      <nav class="detail-tabs">
+        <button class="active" data-panel="character">Character</button><button data-panel="inventory">Inventory</button><button data-panel="spells">Spellbook</button><button data-panel="skills">Skills</button>
+      </nav>
+      <div id="detailContent"></div>
+    </aside>
+  </main>
+
+  </div>
+
+  <section id="view-characters" class="app-view workspace-view active">
+    <header class="workspace-head"><div><span class="eyebrow">COMPANION STUDIO</span><h1>Characters</h1><p>Create heroes, rivals, companions, gods, aliens, and alternate selves.</p></div><button id="newCharacterBtn" class="gold">＋ New character</button></header>
+    <div class="workspace-grid character-workspace">
+      <section class="studio-card character-form-card">
+        <div class="card-title"><div><span class="step-dot">1</span><b>Character creation</b></div><small>SRD-compatible</small></div>
+        <form id="characterForm" class="studio-form">
+          <label class="wide">Character name<input name="name" required placeholder="Ari Solwyn"></label>
+          <label>Race / ancestry<select name="race" id="raceSelect"></select></label>
+          <label>Profession<select name="profession" id="professionSelect"></select></label>
+          <label>Background<select name="background" id="backgroundSelect"></select></label>
+          <label>Alignment<select name="alignment" id="alignmentSelect"></select></label>
+          <label>Level<input name="level" type="number" min="1" max="20" value="1"></label>
+          <label>Origin reality<select name="scenario"><option>Aethoria Prime</option><option>Neon Shard-9</option><option>Earth-Z</option><option>Celestia Drift</option><option>Mirror Universe</option></select></label>
+          <label class="wide">Backstory<textarea name="backstory" rows="4" placeholder="Their history, defining choice, secret, or debt..."></textarea></label>
+          <label class="wide">Goals<textarea name="goals" rows="2" placeholder="What do they want, and what will they sacrifice?"></textarea></label>
+          <div class="form-actions wide"><button type="button" id="randomCharacter" class="ghost">↻ Randomise</button><button type="submit" class="gold">Save character</button></div>
+        </form>
+      </section>
+      <section class="studio-card library-card"><div class="card-title"><b>Saved characters</b><button id="refreshCharacters">↻</button></div><div id="characterLibrary" class="entity-list"><div class="empty-state">Loading character archive...</div></div></section>
+    </div>
+  </section>
+
+  <section id="view-worlds" class="app-view workspace-view">
+    <header class="workspace-head"><div><span class="eyebrow">REALITY ENGINE</span><h1>Worlds</h1><p>Build universes with independent magic, technology, science, and danger.</p></div></header>
+    <div class="workspace-grid"><section class="studio-card"><div class="card-title"><b>Create a world</b></div><form id="worldForm" class="studio-form"><label class="wide">World name<input name="name" required placeholder="The Crimson Continuum"></label><label>Magic level<select name="magic"><option>none</option><option>low</option><option selected>medium</option><option>high</option><option>cosmic</option></select></label><label>Technology<select name="tech"><option>primitive</option><option selected>middle_age</option><option>modern</option><option>cyberpunk</option><option>futuristic</option></select></label><label>Genre<select name="space"><option>fantasy</option><option>zombie</option><option>supernatural</option><option>mystery</option><option>apocalyptic</option><option>cyberpunk</option><option>alien_space</option><option>mirror_universe</option></select></label><label>Locations<input name="num_locs" type="number" min="3" max="30" value="8"></label><div class="form-actions wide"><button class="gold">Create world</button></div></form></section><section class="studio-card"><div class="card-title"><b>Known realities</b><button id="refreshWorlds">↻</button></div><div id="worldLibrary" class="entity-list"></div></section></div>
+  </section>
+
+  <section id="view-media" class="app-view workspace-view"><header class="workspace-head"><div><span class="eyebrow">CREATIVE ENGINE</span><h1>Media</h1><p>Portraits, scene art, animation, voice, memories, and achievements.</p></div></header><div class="feature-grid"><article><span>▧</span><b>Character portraits</b><p>Create visual identities in anime, fantasy, realistic, or cyberpunk styles.</p><button data-feature="portraits">Open generator</button></article><article><span>▶</span><b>Animation studio</b><p>Animate campaign images with local effects and optional GPU engines.</p><button data-feature="animation">View engines</button></article><article><span>◉</span><b>Voice studio</b><p>Give companions voices using local or Edge TTS providers.</p><button data-feature="voice">Voice settings</button></article><article><span>★</span><b>Campaign gallery</b><p>Store generated scenes, achievements, and memory snapshots.</p><button data-feature="gallery">Browse gallery</button></article></div></section>
+
+  <section id="view-knowledge" class="app-view workspace-view"><header class="workspace-head"><div><span class="eyebrow">LORE & MEMORY</span><h1>Knowledge</h1><p>Give the Worldweaver consistent rules, lore, factions, and campaign memory.</p></div></header><div class="workspace-grid"><section class="studio-card"><div class="card-title"><b>Add lorebook entry</b></div><form id="loreForm" class="studio-form"><label class="wide">Title<input name="title" required placeholder="The Law of Broken Portals"></label><label class="wide">Content<textarea name="content" required rows="7" placeholder="Facts the AI should remember..."></textarea></label><label class="wide">Keywords<input name="keywords" placeholder="portal, aethoria, rift"></label><div class="form-actions wide"><button class="gold">Save lore</button></div></form></section><section class="studio-card"><div class="card-title"><b>Active knowledge</b><button id="refreshLore">↻</button></div><div id="loreLibrary" class="entity-list"></div></section></div></section>
+
+  <section id="view-settings" class="app-view workspace-view"><header class="workspace-head"><div><span class="eyebrow">LOCAL CONFIGURATION</span><h1>Settings</h1><p>Manage LM Studio, interface preferences, and system health.</p></div></header><div class="settings-grid"><section class="studio-card"><div class="card-title"><b>LM Studio</b><span id="modelBadge" class="status-badge">Checking</span></div><div class="setting-row"><div><b>Local API</b><small>http://127.0.0.1:1234/v1</small></div><button id="checkModel">Check connection</button></div><div class="setting-row"><div><b>Active model</b><small id="activeModel">Local model selected by LM Studio</small></div></div></section><section class="studio-card"><div class="card-title"><b>Game preferences</b></div><label class="toggle-row"><span><b>Reduced motion</b><small>Limit portal and interface animation</small></span><input id="reducedMotion" type="checkbox"></label><label class="toggle-row"><span><b>Compact interface</b><small>Show more information on screen</small></span><input id="compactMode" type="checkbox"></label></section><section class="studio-card"><div class="card-title"><b>System health</b></div><div id="systemHealth" class="health-list"><span>Database <i class="good">Ready</i></span><span>Backend <i class="good">Ready</i></span><span>Frontend <i class="good">Ready</i></span></div></section></div></section>
+  </div>
+  <section id="chatPanel" class="chat-panel">
+    <div class="chat-head"><div><span class="orb"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div><button id="closeChat">×</button></div>
+    <div id="chatLog" class="chat-log"><p class="gm"><b>WORLDWEAVER</b>The portal hums beyond the ridge. Its runes point to a reality where steel towers touch a violet sky. What do you do?</p></div>
+    <form id="chatForm"><input id="chatInput" placeholder="Speak, investigate, or describe an action…" autocomplete="off"><button>Send</button></form>
+  </section>
+  <button id="chatToggle" class="chat-toggle" style="display:none">✦ <span>Ask Worldweaver</span></button>
+  <div id="toast" class="toast" role="status"></div>
+
+  <script src="/game.js"></script>
+</body>
+</html>

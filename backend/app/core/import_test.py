@@ -38,6 +38,9 @@ UI_MODULES = [
     "backend.app.services.chat_service",
     "backend.app.services.character_service",
     "backend.app.services.scenario_template_service",
+    "backend.app.domain.worldscale",
+    "backend.app.domain.weapons",
+    "backend.app.domain.multiverse",
 ]
 
 def test_imports(modules: List[str] = None) -> Tuple[List[str], List[Tuple[str, str]]]:

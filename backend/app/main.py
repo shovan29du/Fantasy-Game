@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from backend.app.domain import multiverse, weapons, worldscale
 from backend.app.domain.characters import (
     ALIGNMENTS,
     ALL_PRESET_SOURCES,
@@ -63,6 +64,7 @@ from core.knowledge_base import delete_document, index_file, index_folder, list_
 from core.lorebook import create_entry, delete_entry, list_entries, toggle_entry
 from core.levelling import (
     STAT_NAMES,
+    add_feat_to_character,
     add_skill_to_character,
     award_xp,
     get_full_sheet,
@@ -176,6 +178,9 @@ class CharacterIn(BaseModel):
     xp: int = 0
     photo_path: str = ""
     identity_stability: int = 50
+    origin_world: str = ""
+    reality_type: str = "Prime Reality"
+    power_tier: int | None = None
 
 
 class ChatMessageIn(BaseModel):
@@ -190,6 +195,18 @@ class WorldIn(BaseModel):
     tech: str = "middle_age"
     space: str = "fantasy"
     num_locs: int = 8
+    ratings: dict[str, int] | None = None
+    reality_type: str = "Prime Reality"
+
+
+class MultiverseTravelIn(BaseModel):
+    origin_ratings: dict[str, int] | None = None
+    dest_ratings: dict[str, int] | None = None
+    origin_world_id: int | None = None
+    dest_world_id: int | None = None
+    dest_reality_type: str = "Prime Reality"
+    character_id: int | None = None
+    character_power_tier: int = 2
 
 
 class SettingIn(BaseModel):
@@ -298,6 +315,21 @@ class StatSpendIn(BaseModel):
 
 class SkillLearnIn(BaseModel):
     skill: str
+
+
+class FeatLearnIn(BaseModel):
+    feat: str
+
+
+class InventoryAddIn(BaseModel):
+    item_name: str
+    item_type: str = "misc"
+    quantity: int = 1
+    value: int = 0
+    description: str = ""
+    equip_slot: str = ""
+    weapon_tier: int | None = None
+    stat_bonuses: dict[str, int] = {}
 
 
 class MemoryIn(BaseModel):
@@ -605,6 +637,13 @@ def explore_general_web_search(payload: GeneralWebSearchIn) -> dict:
 
 
 def _insert_character(character: dict) -> int:
+    reality_signature = multiverse.generate_reality_signature(
+        character.get("origin_world") or character.get("scenario") or "",
+        character.get("reality_type") or "Prime Reality",
+    )
+    power_tier = character.get("power_tier")
+    if power_tier is None:
+        power_tier = multiverse.power_tier_for_level(character.get("level", 1))
     conn = get_conn()
     try:
         cur = conn.execute(
@@ -613,8 +652,8 @@ def _insert_character(character: dict) -> int:
               (name,age,gender,race,alignment,background,personality,skin,hair,eyes,body_type,height,measurements,looks,
                charisma_stat,strength,dexterity,intelligence,wisdom,constitution,speed,luck,profession,weapon_training,
                magic_type,power_system,spells,skills,traits,backstory,scenario,goals,quirks,level,xp,photo_path,
-               emotion_styles,identity_stability,created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               emotion_styles,identity_stability,reality_signature,power_tier,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 character.get("name", "Unknown"),
@@ -662,6 +701,8 @@ def _insert_character(character: dict) -> int:
                 character.get("photo_path", ""),
                 json.dumps(character.get("emotion_styles", [])),
                 character.get("identity_stability", 50),
+                json.dumps(reality_signature),
+                power_tier,
                 now_iso(),
             ),
         )
@@ -986,7 +1027,63 @@ def worlds() -> list[dict]:
 
 @app.post("/api/worlds")
 def create_new_world(payload: WorldIn) -> dict:
-    return create_world(payload.name, payload.magic, payload.tech, payload.space, payload.num_locs)
+    return create_world(payload.name, payload.magic, payload.tech, payload.space, payload.num_locs,
+                         ratings=payload.ratings, reality_type=payload.reality_type)
+
+
+@app.get("/api/worldscale/axes")
+def worldscale_axes() -> dict:
+    return {"axes": worldscale.WORLD_AXES, "levelLabels": worldscale.AXIS_LEVEL_LABELS}
+
+
+@app.get("/api/weapons/tiers")
+def weapon_tiers() -> list[dict]:
+    return weapons.WEAPON_TIERS
+
+
+@app.get("/api/multiverse/reality-types")
+def multiverse_reality_types() -> dict:
+    return multiverse.REALITY_TYPES
+
+
+@app.get("/api/multiverse/power-tiers")
+def multiverse_power_tiers() -> list[dict]:
+    return multiverse.POWER_TIERS
+
+
+@app.post("/api/multiverse/travel")
+def multiverse_travel(payload: MultiverseTravelIn) -> dict:
+    origin_ratings = payload.origin_ratings
+    if origin_ratings is None and payload.origin_world_id is not None:
+        origin_world = get_world(payload.origin_world_id)
+        origin_ratings = origin_world["ratings"] if origin_world else None
+    dest_ratings = payload.dest_ratings
+    dest_reality_type = payload.dest_reality_type
+    if dest_ratings is None and payload.dest_world_id is not None:
+        dest_world = get_world(payload.dest_world_id)
+        if dest_world:
+            dest_ratings = dest_world["ratings"]
+            dest_reality_type = dest_world.get("reality_type", dest_reality_type)
+    if origin_ratings is None or dest_ratings is None:
+        raise HTTPException(status_code=400, detail="Provide origin/dest ratings or world ids.")
+
+    character_power_tier = payload.character_power_tier
+    inventory_weapon_tiers: list[int] = []
+    if payload.character_id is not None:
+        sheet = get_full_sheet(payload.character_id)
+        if sheet:
+            character_power_tier = sheet.get("power_tier", character_power_tier) or character_power_tier
+        conn = get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT item_name FROM inventory WHERE character_id=? AND equip_slot IS NOT NULL AND equip_slot != ''",
+                (payload.character_id,)).fetchall()
+        finally:
+            conn.close()
+        inventory_weapon_tiers = [weapons.tier_for_weapon_name(row["item_name"]) for row in rows]
+
+    return multiverse.travel_report(origin_ratings, dest_ratings, dest_reality_type,
+                                     character_power_tier, inventory_weapon_tiers)
 
 
 @app.get("/api/worlds/{world_id}")
@@ -1307,13 +1404,56 @@ def learn_character_skill(character_id: int, payload: SkillLearnIn) -> dict:
     return {"updated": ok, "sheet": get_full_sheet(character_id)}
 
 
+@app.post("/api/characters/{character_id}/feats")
+def learn_character_feat(character_id: int, payload: FeatLearnIn) -> dict:
+    ok = add_feat_to_character(character_id, payload.feat)
+    return {"updated": ok, "sheet": get_full_sheet(character_id)}
+
+
+def _item_with_weapon_tier(row: dict) -> dict:
+    item = dict(row)
+    try:
+        bonuses = json.loads(item.get("stat_bonuses") or "{}")
+    except Exception:
+        bonuses = {}
+    tier = bonuses.get("weapon_tier")
+    item["weapon_tier"] = tier if tier is not None else weapons.tier_for_weapon_name(item.get("item_name", ""))
+    item["weapon_tier_info"] = weapons.describe_tier(item["weapon_tier"])
+    return item
+
+
 @app.get("/api/characters/{character_id}/inventory")
 def character_inventory(character_id: int) -> dict:
     conn = get_conn()
     try:
         items = conn.execute("SELECT * FROM inventory WHERE character_id=? ORDER BY item_type, item_name", (character_id,)).fetchall()
         economy = conn.execute("SELECT gold, credits, tokens FROM economy WHERE character_id=?", (character_id,)).fetchone()
-        return {"economy": dict(economy) if economy else {"gold": 0, "credits": 0, "tokens": 0}, "items": [dict(row) for row in items]}
+        return {"economy": dict(economy) if economy else {"gold": 0, "credits": 0, "tokens": 0},
+                "items": [_item_with_weapon_tier(row) for row in items]}
+    finally:
+        conn.close()
+
+
+@app.post("/api/characters/{character_id}/inventory")
+def add_inventory_item(character_id: int, payload: InventoryAddIn) -> dict:
+    weapon_tier = payload.weapon_tier
+    if weapon_tier is None and payload.item_type.lower() in ("weapon", "melee", "ranged"):
+        weapon_tier = weapons.tier_for_weapon_name(payload.item_name)
+    stat_bonuses = dict(payload.stat_bonuses)
+    if weapon_tier is not None:
+        stat_bonuses["weapon_tier"] = weapon_tier
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO inventory (character_id,item_name,item_type,quantity,value,description,equip_slot,stat_bonuses,source,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (character_id, payload.item_name, payload.item_type, payload.quantity, payload.value,
+             payload.description, payload.equip_slot or None, json.dumps(stat_bonuses), "manual", now_iso()),
+        )
+        conn.commit()
+        item_id = cur.lastrowid
+        row = conn.execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
+        return {"item": _item_with_weapon_tier(dict(row))}
     finally:
         conn.close()
 

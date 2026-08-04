@@ -14,7 +14,7 @@ DB_PATH = DATA_DIR / "aichat_pro.db"
 
 # Bump whenever a new entry is added to _MIGRATIONS or _TABLES so the
 # schema_version table reflects the schema the app expects.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 def get_conn():
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
@@ -184,6 +184,13 @@ _MIGRATIONS = [
     ("world_weather_log", "travel_blocked", "INTEGER DEFAULT 0"),
     ("world_weather_log", "food_modifier", "REAL DEFAULT 1.0"),
     ("world_weather_log", "army_modifier", "REAL DEFAULT 1.0"),
+    # Multiverse system: reality signature + power tier per character, and
+    # 0-10 world-scale ratings + reality type per world (see
+    # backend.app.domain.worldscale / domain.multiverse).
+    ("characters", "reality_signature", "TEXT DEFAULT '{}'"),
+    ("characters", "power_tier", "INTEGER DEFAULT 2"),
+    ("worlds", "ratings_json", "TEXT DEFAULT '{}'"),
+    ("worlds", "reality_type", "TEXT DEFAULT 'Prime Reality'"),
 ]
 
 def _create_tables(conn):
