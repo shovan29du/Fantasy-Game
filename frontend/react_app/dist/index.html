@@ -14,6 +14,7 @@
     <nav class="side-nav" aria-label="Main sections">
       <button data-view="play"><span>▶</span>Play Game</button>
       <button class="active" data-view="characters"><span>♙</span>Characters</button>
+      <button data-view="explore"><span>⌕</span>Explore</button>
       <button data-view="worlds"><span>◎</span>World</button>
       <button data-view="media"><span>▣</span>Media</button>
       <button data-view="knowledge"><span>◇</span>Knowledge</button>
@@ -105,16 +106,98 @@
     </div>
   </section>
 
+  <section id="view-explore" class="app-view workspace-view">
+    <header class="workspace-head"><div><span class="eyebrow">CHARACTER ATLAS</span><h1>Explore</h1><p>Browse the built-in character library, or search and import from the web.</p></div></header>
+    <div class="workspace-grid">
+      <section class="studio-card">
+        <div class="card-title"><b>Built-in library</b><small id="libraryCount"></small></div>
+        <form id="libraryFilterForm" class="studio-form">
+          <label class="wide">Search<input name="query" placeholder="Name, race, or profession"></label>
+          <label>Race<select name="race" id="libraryRaceSelect"><option value="All">All</option></select></label>
+          <div class="form-actions wide"><button type="button" id="importAllBtn" class="ghost">Import all shown</button><button class="gold">Search</button></div>
+        </form>
+        <div id="libraryResults" class="entity-list"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Web character search</b><small>Requires internet</small></div>
+        <form id="webSearchForm" class="studio-form">
+          <label class="wide">Search term<input name="query" required placeholder="e.g. rogue, dragon, cyberpunk"></label>
+          <div class="form-actions wide"><button class="gold">Search web</button></div>
+        </form>
+        <div id="webSearchResults" class="entity-list"></div>
+      </section>
+    </div>
+  </section>
+
   <section id="view-worlds" class="app-view workspace-view">
     <header class="workspace-head"><div><span class="eyebrow">REALITY ENGINE</span><h1>Worlds</h1><p>Build universes with independent magic, technology, science, and danger.</p></div></header>
     <div class="workspace-grid"><section class="studio-card"><div class="card-title"><b>Create a world</b></div><form id="worldForm" class="studio-form"><label class="wide">World name<input name="name" required placeholder="The Crimson Continuum"></label><label>Magic level<select name="magic"><option>none</option><option>low</option><option selected>medium</option><option>high</option><option>cosmic</option></select></label><label>Technology<select name="tech"><option>primitive</option><option selected>middle_age</option><option>modern</option><option>cyberpunk</option><option>futuristic</option></select></label><label>Genre<select name="space"><option>fantasy</option><option>zombie</option><option>supernatural</option><option>mystery</option><option>apocalyptic</option><option>cyberpunk</option><option>alien_space</option><option>mirror_universe</option></select></label><label>Locations<input name="num_locs" type="number" min="3" max="30" value="8"></label><div class="form-actions wide"><button class="gold">Create world</button></div></form></section><section class="studio-card"><div class="card-title"><b>Known realities</b><button id="refreshWorlds">↻</button></div><div id="worldLibrary" class="entity-list"></div></section></div>
   </section>
 
-  <section id="view-media" class="app-view workspace-view"><header class="workspace-head"><div><span class="eyebrow">CREATIVE ENGINE</span><h1>Media</h1><p>Portraits, scene art, animation, voice, memories, and achievements.</p></div></header><div class="feature-grid"><article><span>▧</span><b>Character portraits</b><p>Create visual identities in anime, fantasy, realistic, or cyberpunk styles.</p><button data-feature="portraits">Open generator</button></article><article><span>▶</span><b>Animation studio</b><p>Animate campaign images with local effects and optional GPU engines.</p><button data-feature="animation">View engines</button></article><article><span>◉</span><b>Voice studio</b><p>Give companions voices using local or Edge TTS providers.</p><button data-feature="voice">Voice settings</button></article><article><span>★</span><b>Campaign gallery</b><p>Store generated scenes, achievements, and memory snapshots.</p><button data-feature="gallery">Browse gallery</button></article></div></section>
+  <section id="view-media" class="app-view workspace-view">
+    <header class="workspace-head"><div><span class="eyebrow">CREATIVE ENGINE</span><h1>Media</h1><p>Portraits, scene art, voice, memories, and achievements.</p></div></header>
+    <div class="workspace-grid">
+      <section class="studio-card">
+        <div class="card-title"><b>Image generator</b></div>
+        <form id="mediaImageForm" class="studio-form">
+          <label class="wide">Prompt<textarea name="prompt" required rows="3" placeholder="A vampire scholar in a ruined library, dramatic lighting"></textarea></label>
+          <label>Style<select name="style" id="mediaStyleSelect"></select></label>
+          <div class="form-actions wide"><button class="gold">Generate</button></div>
+        </form>
+        <div id="mediaImagePreview"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Voice studio</b></div>
+        <form id="voiceForm" class="studio-form">
+          <label class="wide">Text to speak<textarea name="content" required rows="3" placeholder="The portal hums beyond the ridge..."></textarea></label>
+          <div class="form-actions wide"><button class="gold">Speak</button></div>
+        </form>
+        <div id="voicePlayer"></div>
+      </section>
+    </div>
+    <div class="workspace-grid" style="margin-top:16px">
+      <section class="studio-card">
+        <div class="card-title"><b>Campaign gallery</b><button id="refreshGallery">↻</button></div>
+        <div id="mediaGallery" class="entity-list"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Achievements</b><button id="refreshAchievements">↻</button></div>
+        <form id="achievementForm" class="studio-form"><label class="wide">Title<input name="title" required placeholder="First blood in the Ashen Ruins"></label><label class="wide">Description<input name="description" placeholder="What happened"></label><div class="form-actions wide"><button class="gold">Add</button></div></form>
+        <div id="achievementList" class="entity-list"></div>
+      </section>
+    </div>
+  </section>
 
-  <section id="view-knowledge" class="app-view workspace-view"><header class="workspace-head"><div><span class="eyebrow">LORE & MEMORY</span><h1>Knowledge</h1><p>Give the Worldweaver consistent rules, lore, factions, and campaign memory.</p></div></header><div class="workspace-grid"><section class="studio-card"><div class="card-title"><b>Add lorebook entry</b></div><form id="loreForm" class="studio-form"><label class="wide">Title<input name="title" required placeholder="The Law of Broken Portals"></label><label class="wide">Content<textarea name="content" required rows="7" placeholder="Facts the AI should remember..."></textarea></label><label class="wide">Keywords<input name="keywords" placeholder="portal, aethoria, rift"></label><div class="form-actions wide"><button class="gold">Save lore</button></div></form></section><section class="studio-card"><div class="card-title"><b>Active knowledge</b><button id="refreshLore">↻</button></div><div id="loreLibrary" class="entity-list"></div></section></div></section>
+  <section id="view-knowledge" class="app-view workspace-view"><header class="workspace-head"><div><span class="eyebrow">LORE & MEMORY</span><h1>Knowledge</h1><p>Give the Worldweaver consistent rules, lore, factions, and campaign memory.</p></div></header><div class="workspace-grid"><section class="studio-card"><div class="card-title"><b>Add lorebook entry</b></div><form id="loreForm" class="studio-form"><label class="wide">Title<input name="title" required placeholder="The Law of Broken Portals"></label><label class="wide">Content<textarea name="content" required rows="7" placeholder="Facts the AI should remember..."></textarea></label><label class="wide">Keywords<input name="keywords" placeholder="portal, aethoria, rift"></label><div class="form-actions wide"><button class="gold">Save lore</button></div></form></section><section class="studio-card"><div class="card-title"><b>Active knowledge</b><button id="refreshLore">↻</button></div><div id="loreLibrary" class="entity-list"></div></section></div>
+    <div class="workspace-grid" style="margin-top:16px">
+      <section class="studio-card">
+        <div class="card-title"><b>Document library</b><button id="reindexKnowledge" title="Index the bundled knowledge/ folder (D&amp;D SRD, character options)">↻ Reindex folder</button></div>
+        <form id="knowledgeSearchForm" class="studio-form"><label class="wide">Search documents<input name="query" placeholder="races, spellcasting, conditions..."></label><div class="form-actions wide"><button class="gold">Search</button></div></form>
+        <div id="knowledgeSearchResults" class="entity-list"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Indexed documents</b><button id="refreshKnowledgeDocs">↻</button></div>
+        <label class="wide" style="display:block;margin-bottom:10px">Upload a document<input id="knowledgeUpload" type="file"></label>
+        <div id="knowledgeDocs" class="entity-list"></div>
+      </section>
+    </div>
+  </section>
 
-  <section id="view-settings" class="app-view workspace-view"><header class="workspace-head"><div><span class="eyebrow">LOCAL CONFIGURATION</span><h1>Settings</h1><p>Manage LM Studio, interface preferences, and system health.</p></div></header><div class="settings-grid"><section class="studio-card"><div class="card-title"><b>LM Studio</b><span id="modelBadge" class="status-badge">Checking</span></div><div class="setting-row"><div><b>Local API</b><small>http://127.0.0.1:1234/v1</small></div><button id="checkModel">Check connection</button></div><div class="setting-row"><div><b>Active model</b><small id="activeModel">Local model selected by LM Studio</small></div></div></section><section class="studio-card"><div class="card-title"><b>Game preferences</b></div><label class="toggle-row"><span><b>Reduced motion</b><small>Limit portal and interface animation</small></span><input id="reducedMotion" type="checkbox"></label><label class="toggle-row"><span><b>Compact interface</b><small>Show more information on screen</small></span><input id="compactMode" type="checkbox"></label></section><section class="studio-card"><div class="card-title"><b>System health</b></div><div id="systemHealth" class="health-list"><span>Database <i class="good">Ready</i></span><span>Backend <i class="good">Ready</i></span><span>Frontend <i class="good">Ready</i></span></div></section></div></section>
+  <section id="view-settings" class="app-view workspace-view"><header class="workspace-head"><div><span class="eyebrow">LOCAL CONFIGURATION</span><h1>Settings</h1><p>Manage LM Studio, interface preferences, and system health.</p></div></header><div class="settings-grid"><section class="studio-card"><div class="card-title"><b>LM Studio</b><span id="modelBadge" class="status-badge">Checking</span></div><div class="setting-row"><div><b>Local API</b><small>http://127.0.0.1:1234/v1</small></div><button id="checkModel">Check connection</button></div><div class="setting-row"><div><b>Active model</b><small id="activeModel">Local model selected by LM Studio</small></div></div><form id="modelForm" class="studio-form"><label class="wide">Model id override<input name="value" id="modelIdInput" placeholder="local-model"></label><div class="form-actions wide"><button class="gold">Save model id</button></div></form></section><section class="studio-card"><div class="card-title"><b>Game preferences</b></div><label class="toggle-row"><span><b>Reduced motion</b><small>Limit portal and interface animation</small></span><input id="reducedMotion" type="checkbox"></label><label class="toggle-row"><span><b>Compact interface</b><small>Show more information on screen</small></span><input id="compactMode" type="checkbox"></label></section><section class="studio-card"><div class="card-title"><b>System health</b><button id="refreshHealth">↻</button></div><div id="systemHealth" class="health-list"></div></section></div>
+    <div class="settings-grid" style="margin-top:16px">
+      <section class="studio-card">
+        <div class="card-title"><b>Roleplay system prompt</b></div>
+        <form id="preambleForm" class="studio-form"><label class="wide">System preamble<textarea name="value" id="preambleInput" rows="8"></textarea></label><div class="form-actions wide"><button class="gold">Save preamble</button></div></form>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Backups &amp; maintenance</b></div>
+        <div class="setting-row"><div><b>Database backup</b><small id="backupStatus">No backup yet</small></div><button id="createBackup">Back up now</button></div>
+        <div class="setting-row"><div><b>Database integrity</b><small id="integrityStatus">Not checked</small></div><button id="checkIntegrity">Check</button></div>
+        <div class="setting-row"><div><b>Module import test</b><small id="importTestStatus">Not run</small></div><button id="runImportTest">Run</button></div>
+        <div id="backupList" class="entity-list"></div>
+      </section>
+    </div>
+  </section>
   </div>
   <section id="sceneOverlay" class="scene-overlay">
     <div id="sceneBg" class="scene-bg"></div>

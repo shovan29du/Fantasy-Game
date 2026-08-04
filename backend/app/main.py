@@ -1510,19 +1510,23 @@ def media_image_styles() -> list[str]:
     return list(PHOTO_STYLES.keys())
 
 
+def _media_url(path: str) -> str:
+    """Convert an absolute filesystem path under MEDIA_DIR into the relative
+    URL the /media static mount serves it back out at. Empty string if the
+    path is missing or falls outside MEDIA_DIR."""
+    if not path:
+        return ""
+    try:
+        return "/media/" + str(Path(path).relative_to(MEDIA_DIR)).replace("\\", "/")
+    except ValueError:
+        return ""
+
+
 @app.post("/api/media/image")
 def create_image(payload: ImageIn) -> dict:
     prompt = f"{PHOTO_STYLES.get(payload.style, '')}, {payload.prompt}" if payload.style else payload.prompt
     path = download_image(prompt, width=payload.width, height=payload.height)
-    if path:
-        # `path` is an absolute filesystem path under MEDIA_DIR; the /media
-        # static mount serves it back out at the matching relative URL.
-        try:
-            url = "/media/" + str(Path(path).relative_to(MEDIA_DIR)).replace("\\", "/")
-        except ValueError:
-            url = generate_image_url(prompt, payload.width, payload.height)
-    else:
-        url = generate_image_url(prompt, payload.width, payload.height)
+    url = _media_url(path) or generate_image_url(prompt, payload.width, payload.height)
     if payload.save_to_chat:
         save_message("assistant", f"🖼️ *[{payload.prompt[:80]}]*", payload.session_id)
     return {"path": path, "url": url, "prompt": prompt}
@@ -1538,7 +1542,7 @@ def animate_image(payload: AnimateIn) -> dict:
     output = create_animation(payload.image_path, effect=payload.effect, duration=payload.duration)
     if output:
         save_message("assistant", f"🎞️ *[Animated: {payload.effect}, {payload.duration}s]*", payload.session_id)
-    return {"path": output}
+    return {"path": output, "url": _media_url(output)}
 
 
 @app.post("/api/voice/speak")
@@ -1546,7 +1550,7 @@ def voice_speak(payload: ChatEditIn) -> dict:
     try:
         from core.edge_voice import get_voice_for_character, speak_text
         path = speak_text(payload.content, voice=get_voice_for_character())
-        return {"path": path}
+        return {"path": path, "url": _media_url(path)}
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"TTS unavailable: {exc}") from exc
 
