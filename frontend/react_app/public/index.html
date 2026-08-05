@@ -19,7 +19,6 @@
       <button data-view="settings"><span>⚙</span>Settings</button>
       <button data-view="media"><span>▣</span>Media</button>
       <button data-view="explore"><span>⌕</span>Explore</button>
-      <a class="side-link" href="http://127.0.0.1:5000" target="_blank" rel="noopener" title="Opens the standalone Ark AI companion workspace (run separately, see companion/ark-ai)"><span>⚡</span>Ark AI Companion</a>
     </nav>
     <div class="side-status"><i></i><div><b>Local systems</b><small>Database ready</small></div></div>
   </aside>
@@ -157,11 +156,16 @@
       <section class="studio-card character-form-card">
         <div class="card-title"><div><span class="step-dot">1</span><b>Character creation</b></div><small>SRD-compatible</small></div>
         <form id="characterForm" class="studio-form">
+          <div class="wide char-portrait-area">
+            <div id="charPortraitPreview" class="char-portrait-preview"><div class="empty-state" style="padding:16px;font-size:10px">No portrait — fill in the form then click Generate</div></div>
+            <button type="button" id="generatePortraitBtn" class="ghost" style="width:100%;margin-top:6px">✦ Generate portrait from description</button>
+          </div>
           <label class="wide">Character name<input name="name" required placeholder="Ari Solwyn"></label>
           <label>Race / ancestry<select name="race" id="raceSelect"></select></label>
           <label>Profession<select name="profession" id="professionSelect"></select></label>
           <label>Background<select name="background" id="backgroundSelect"></select></label>
           <label>Alignment<select name="alignment" id="alignmentSelect"></select></label>
+          <label>Gender<select name="gender" id="genderSelect"><option value="">— Select —</option><option value="Male">Male</option><option value="Female">Female</option></select></label>
           <label>Level<input name="level" type="number" min="1" max="20" value="1"></label>
           <label>Origin reality<select name="scenario"><option>Aethoria Prime</option><option>Neon Shard-9</option><option>Earth-Z</option><option>Celestia Drift</option><option>Mirror Universe</option></select></label>
           <label class="wide">Backstory<textarea name="backstory" rows="4" placeholder="Their history, defining choice, secret, or debt..."></textarea></label>

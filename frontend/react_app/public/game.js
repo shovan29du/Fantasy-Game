@@ -407,7 +407,7 @@ $$('.side-nav button').forEach(button=>button.onclick=()=>openView(button.datase
 
 let studioOptions={};
 function fillSelect(selector,values){const el=$(selector);if(!el)return;const list=Array.isArray(values)?values:Object.keys(values||{});el.innerHTML=list.map(value=>`<option value="${safe(value)}">${safe(value)}</option>`).join('')}
-async function loadCharacterStudio(){try{if(!Object.keys(studioOptions).length){studioOptions=await api('/api/options');fillSelect('#raceSelect',studioOptions.races);fillSelect('#professionSelect',studioOptions.professions);fillSelect('#backgroundSelect',studioOptions.backgrounds);fillSelect('#alignmentSelect',studioOptions.alignments)}const characters=await api('/api/characters');$('#characterLibrary').innerHTML=characters.length?characters.map(c=>`<article class="entity-card"><span class="entity-avatar">${safe((c.name||'?').slice(0,2).toUpperCase())}</span><div><b>${safe(c.name)}</b><small>${safe(c.race||'Unknown ancestry')} · ${safe(c.profession||'Adventurer')}</small></div><em>LV ${safe(c.level||1)}</em></article>`).join(''):'<div class="empty-state">No saved characters yet. Create your first companion.</div>'}catch(error){$('#characterLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
+async function loadCharacterStudio(){try{if(!Object.keys(studioOptions).length){studioOptions=await api('/api/options');fillSelect('#raceSelect',studioOptions.races);fillSelect('#professionSelect',studioOptions.professions);fillSelect('#backgroundSelect',studioOptions.backgrounds);fillSelect('#alignmentSelect',studioOptions.alignments)}const characters=await api('/api/characters');$('#characterLibrary').innerHTML=characters.length?characters.map(c=>{const av=c.photo_path?`<img src="${safe(c.photo_path)}" class="char-avatar-img" alt="portrait">`:`<span class="entity-avatar">${safe((c.name||'?').slice(0,2).toUpperCase())}</span>`;return`<article class="entity-card">${av}<div><b>${safe(c.name)}</b><small>${safe(c.gender?c.gender+' · ':'')}${safe(c.race||'Unknown ancestry')} · ${safe(c.profession||'Adventurer')}</small></div><em>LV ${safe(c.level||1)}</em></article>`}).join(''):'<div class="empty-state">No saved characters yet. Create your first companion.</div>'}catch(error){$('#characterLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
 $('#characterForm').onsubmit=async event=>{
  event.preventDefault();
  const formEl=event.currentTarget; // native currentTarget is cleared once we `await`, so capture it now
@@ -417,9 +417,11 @@ $('#characterForm').onsubmit=async event=>{
  payload.origin_world=state.worlds[state.worldIndex]?.name||'Aethoria Prime';
  payload.scenario=`Origin reality: ${payload.scenario}`;
  try{
+  payload.photo_path=$('#charPortraitPreview').dataset.photoUrl||'';
   const created=await api('/api/characters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   toast(`${payload.name} saved`);
   formEl.reset();
+  const box=$('#charPortraitPreview');box.innerHTML='<div class="empty-state" style="padding:16px;font-size:10px">No portrait — fill in the form then click Generate</div>';delete box.dataset.photoUrl;
   await loadCharacterStudio();
   // Character creation is a single shared flow: the same form used here in
   // the AI Companion library also becomes the Play view's active adventurer
@@ -432,7 +434,27 @@ $('#characterForm').onsubmit=async event=>{
   }
  }catch(error){toast(error.message)}
 };
-$('#randomCharacter').onclick=async()=>{try{const {character}=await api('/api/characters/random',{method:'POST'});const form=$('#characterForm');['name','race','profession','background','alignment','backstory','goals'].forEach(key=>{if(form.elements[key]&&character[key]!=null)form.elements[key].value=Array.isArray(character[key])?character[key].join(', '):character[key]});toast('Random character generated')}catch(error){toast(error.message)}};
+$('#randomCharacter').onclick=async()=>{try{const {character}=await api('/api/characters/random',{method:'POST'});const form=$('#characterForm');['name','race','gender','profession','background','alignment','backstory','goals'].forEach(key=>{if(form.elements[key]&&character[key]!=null)form.elements[key].value=Array.isArray(character[key])?character[key].join(', '):character[key]});toast('Random character generated')}catch(error){toast(error.message)}};
+$('#generatePortraitBtn').onclick=async()=>{
+ const form=$('#characterForm');
+ const data=Object.fromEntries(new FormData(form).entries());
+ const box=$('#charPortraitPreview');
+ box.innerHTML='<div class="empty-state" style="padding:16px;font-size:10px">Generating portrait…</div>';
+ try{
+  const parts=[];
+  if(data.gender&&data.gender!=='— Select —') parts.push(data.gender.toLowerCase());
+  if(data.race) parts.push(data.race);
+  if(data.profession) parts.push(data.profession);
+  if(data.backstory) parts.push(data.backstory.slice(0,100));
+  const prompt=parts.length?parts.join(', '):'fantasy portrait character';
+  const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Anime Portrait',width:512,height:768,save_to_chat:false})});
+  box.innerHTML=`<img src="${safe(result.url)}" alt="Character portrait">`;
+  box.dataset.photoUrl=result.url;
+ }catch(error){
+  box.innerHTML='<div class="empty-state" style="padding:16px;font-size:10px">Portrait failed</div>';
+  toast(error.message);
+ }
+};
 $('#refreshCharacters').onclick=loadCharacterStudio;$('#newCharacterBtn').onclick=()=>{$('#characterForm').scrollIntoView({behavior:'smooth'});$('#characterForm').elements.name.focus()};
 
 async function loadWorlds(){try{const items=await api('/api/worlds');$('#worldLibrary').innerHTML=items.length?items.map(w=>`<article class="entity-card"><span class="entity-avatar">◎</span><div><b>${safe(w.name)}</b><small>${safe(w.space_alignment||'multiverse')} · ${safe(w.reality_type||'Prime Reality')} · Magic ${safe(w.ratings?.magic ?? w.magic_level)}</small></div><em>${safe(w.time_of_day||'Active')}</em></article>`).join(''):'<div class="empty-state">No database worlds yet. The four play-map realities remain available.</div>'}catch(error){$('#worldLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
