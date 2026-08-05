@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -53,6 +54,7 @@ from backend.app.services.scenario_template_service import (
     save_scenario_template,
 )
 from backend.app.world.prebuilt import create_prebuilt_world, get_prebuilt_by_category
+from core import tactical_combat
 from backend.app.chat_io.character_builder import build_characters_from_chat
 from backend.app.chat_io.importer import import_chat_file, import_chat_url
 from core.storage import get_conn, init_db, now_iso
@@ -415,6 +417,27 @@ class DungeonIn(BaseModel):
 class CombatIn(BaseModel):
     attacker: dict = {"name": "Hero", "strength": 10}
     defender: dict = {"name": "Goblin", "constitution": 10}
+
+
+class CombatStartIn(BaseModel):
+    session_id: str = "default"
+    world_id: int | None = None
+    character_id: int | None = None
+
+
+class CombatMoveIn(BaseModel):
+    unit_id: int
+    x: int
+    y: int
+
+
+class CombatTargetIn(BaseModel):
+    unit_id: int
+    target_id: int
+
+
+class CombatUnitIn(BaseModel):
+    unit_id: int
 
 
 class LawIn(BaseModel):
@@ -1216,6 +1239,85 @@ def create_world_dungeon(world_id: int, payload: DungeonIn) -> dict:
 @app.post("/api/worlds/combat")
 def world_combat(payload: CombatIn) -> dict:
     return simulate_combat(payload.attacker, payload.defender)
+
+
+def _grant_combat_reward(character_id: int | None, world_id: int | None) -> dict:
+    if not character_id:
+        return {}
+    xp_result = award_xp(character_id, 30, "combat victory")
+    tier = 2
+    if world_id:
+        world = get_world(world_id)
+        if world:
+            tier = world.get("ratings", {}).get("weapon", 2)
+    tier_info = weapons.describe_tier(tier)
+    item_name = random.choice(tier_info["examples"])
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO inventory (character_id,item_name,item_type,quantity,value,description,equip_slot,stat_bonuses,source,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (character_id, item_name, "weapon", 1, 0, "Looted from a defeated foe.", None,
+             json.dumps({"weapon_tier": tier}), "combat", now_iso()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"xp_awarded": 30, "leveled_up": xp_result.get("levelled_up", False), "loot": item_name}
+
+
+def _combat_response(result: dict, character_id: int | None = None, world_id: int | None = None) -> dict:
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    reward = {}
+    if result.get("status") == "won":
+        reward = _grant_combat_reward(character_id or result.get("character_id"), world_id or result.get("world_id"))
+    return {**result, "reward": reward}
+
+
+@app.post("/api/combat/start")
+def combat_start(payload: CombatStartIn) -> dict:
+    danger = 4
+    if payload.world_id:
+        world = get_world(payload.world_id)
+        if world:
+            danger = world.get("ratings", {}).get("danger", 4)
+    result = tactical_combat.start_encounter(payload.session_id, payload.world_id, payload.character_id, danger)
+    return _combat_response(result, payload.character_id, payload.world_id)
+
+
+@app.get("/api/combat/active")
+def combat_active(session_id: str = "default") -> dict:
+    result = tactical_combat.get_active_encounter(session_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="No active encounter for this session.")
+    return result
+
+
+@app.get("/api/combat/{encounter_id}")
+def combat_get(encounter_id: int) -> dict:
+    result = tactical_combat.get_encounter(encounter_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Encounter not found.")
+    return result
+
+
+@app.post("/api/combat/{encounter_id}/move")
+def combat_move(encounter_id: int, payload: CombatMoveIn) -> dict:
+    result = tactical_combat.move_unit(encounter_id, payload.unit_id, payload.x, payload.y)
+    return _combat_response(result, result.get("character_id"), result.get("world_id"))
+
+
+@app.post("/api/combat/{encounter_id}/attack")
+def combat_attack(encounter_id: int, payload: CombatTargetIn) -> dict:
+    result = tactical_combat.attack_unit(encounter_id, payload.unit_id, payload.target_id)
+    return _combat_response(result, result.get("character_id"), result.get("world_id"))
+
+
+@app.post("/api/combat/{encounter_id}/end-turn")
+def combat_end_turn(encounter_id: int, payload: CombatUnitIn) -> dict:
+    result = tactical_combat.end_turn(encounter_id, payload.unit_id)
+    return _combat_response(result, result.get("character_id"), result.get("world_id"))
 
 
 @app.get("/api/worlds/{world_id}/resources")

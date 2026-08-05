@@ -293,6 +293,32 @@
       </div>
     </div>
   </section>
+  <section id="combatOverlay" class="scene-overlay combat-overlay">
+    <div class="combat-shell">
+      <header class="combat-head">
+        <div><strong>⚔ Tactical Combat</strong><small id="combatRoundInfo">Round 1</small></div>
+        <div id="combatOutcome" class="combat-outcome" hidden></div>
+      </header>
+      <div class="combat-body">
+        <aside class="combat-turnorder">
+          <div class="panel-title"><span>TURN ORDER</span></div>
+          <div id="combatTurnList"></div>
+        </aside>
+        <div class="combat-board-wrap">
+          <div id="combatBoard" class="combat-board"></div>
+          <div class="combat-hint" id="combatHint">Click a highlighted tile to move, or a highlighted enemy to attack.</div>
+          <div class="combat-actions">
+            <button id="combatEndTurnBtn" class="ghost">Hold position / End turn</button>
+            <button id="combatLeaveBtn" class="gold" hidden>Continue</button>
+          </div>
+        </div>
+        <aside class="combat-log-panel">
+          <div class="panel-title"><span>COMBAT LOG</span></div>
+          <div id="combatLog" class="combat-log"></div>
+        </aside>
+      </div>
+    </div>
+  </section>
   <section id="chatPanel" class="chat-panel">
     <div class="chat-head"><div><span class="orb"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div><button id="closeChat">×</button></div>
     <div id="chatLog" class="chat-log"><p class="gm"><b>WORLDWEAVER</b>The portal hums beyond the ridge. Its runes point to a reality where steel towers touch a violet sky. What do you do?</p></div>

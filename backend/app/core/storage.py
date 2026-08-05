@@ -14,7 +14,7 @@ DB_PATH = DATA_DIR / "aichat_pro.db"
 
 # Bump whenever a new entry is added to _MIGRATIONS or _TABLES so the
 # schema_version table reflects the schema the app expects.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 def get_conn():
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
@@ -124,6 +124,7 @@ _TABLES = [
     # Combat
     "CREATE TABLE IF NOT EXISTS combat_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, world_id INTEGER, attacker TEXT NOT NULL, defender TEXT NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL)",
     "CREATE TABLE IF NOT EXISTS combat_state (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, unit_name TEXT NOT NULL, unit_type TEXT DEFAULT 'player', hp INTEGER DEFAULT 100, max_hp INTEGER DEFAULT 100, x INTEGER DEFAULT 0, y INTEGER DEFAULT 0, status_effects TEXT DEFAULT '[]', initiative INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1)",
+    "CREATE TABLE IF NOT EXISTS combat_encounters (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, world_id INTEGER, character_id INTEGER, grid_width INTEGER DEFAULT 8, grid_height INTEGER DEFAULT 8, obstacles_json TEXT DEFAULT '[]', turn_order_json TEXT DEFAULT '[]', turn_index INTEGER DEFAULT 0, round_number INTEGER DEFAULT 1, status TEXT DEFAULT 'active', log_json TEXT DEFAULT '[]', created_at TEXT NOT NULL)",
     # Campaign / Timeline
     "CREATE TABLE IF NOT EXISTS campaign_events (id INTEGER PRIMARY KEY AUTOINCREMENT, world_id INTEGER, event_type TEXT NOT NULL, description TEXT NOT NULL, tick INTEGER DEFAULT 0, created_at TEXT NOT NULL)",
     "CREATE TABLE IF NOT EXISTS campaign_saves (id INTEGER PRIMARY KEY AUTOINCREMENT, world_id INTEGER NOT NULL, save_name TEXT NOT NULL, save_json TEXT NOT NULL, created_at TEXT NOT NULL)",
@@ -195,6 +196,12 @@ _MIGRATIONS = [
     # world + character it was made in, not just free-text labels.
     ("chat_saves", "world_id", "INTEGER"),
     ("chat_saves", "character_id", "INTEGER"),
+    # Tactical grid combat: links a unit row to its encounter, and caches
+    # the combat-relevant stats (str/con/dex modifiers, weapon tier, and the
+    # real character_id for the one human-controlled unit) computed once at
+    # encounter start rather than re-deriving them on every action.
+    ("combat_state", "encounter_id", "INTEGER"),
+    ("combat_state", "stats_json", "TEXT DEFAULT '{}'"),
 ]
 
 def _create_tables(conn):
@@ -276,7 +283,7 @@ def init_db():
 _CHARACTER_ID_TABLES = [
     "economy", "transactions", "inventory", "character_assets",
     "media_items", "achievements", "memory_snapshots",
-    "personality_snapshots", "skill_trees",
+    "personality_snapshots", "skill_trees", "combat_encounters",
 ]
 _CHARACTER_NAME_TABLES = [
     "relationships", "relationship_events", "quests", "memory_facts",
@@ -285,7 +292,7 @@ _WORLD_ID_TABLES = [
     "world_locations", "npcs", "factions", "dungeons", "market_prices",
     "combat_logs", "campaign_events", "campaign_saves", "npc_schedules",
     "world_weather_log", "world_resources", "diplomacy", "world_laws",
-    "random_events", "faction_wars", "ai_director",
+    "random_events", "faction_wars", "ai_director", "combat_encounters",
 ]
 
 

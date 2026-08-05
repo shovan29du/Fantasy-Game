@@ -21,7 +21,7 @@ const party=[
  {name:'Seraphine',role:'Tiefling · Seer',lv:6,hp:62,initials:'SE'},
 ];
 const actions=[
- {name:'Arc Slash',icon:'⚔',kind:'attack',cost:'2 AP',xp:5}, {name:'Fire Bolt',icon:'✦',kind:'attack',cost:'1 mana',xp:5},
+ {name:'Engage Enemies',icon:'⚔',kind:'attack',cost:'Tactical'}, {name:'Fire Bolt',icon:'✦',kind:'attack',cost:'1 mana',xp:5},
  {name:'Guard',icon:'◈',kind:'defence',cost:'1 AP'}, {name:'Aegis',icon:'⬡',kind:'defence',cost:'3 mana'},
  {name:'Blink',icon:'⌁',kind:'utility',cost:'2 mana'}, {name:'Inspect',icon:'⌕',kind:'utility',cost:'Free'},
  {name:'Loot',icon:'⚗',kind:'utility',cost:'Free'},
@@ -88,6 +88,7 @@ async function runAction(name){
  const action=actions.find(a=>a.name===name);
  if(!action){toast(`${name} readied`);return}
  if((action.kind==='attack'||name==='Loot')&&!state.characterId){goCreateCharacter();return}
+ if(name==='Engage Enemies'){await startCombat();return}
  if(action.kind==='attack'&&action.xp){
   const previousLevel=state.sheet?.calc_lv||1;
   try{const result=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:action.xp,reason:name})});
@@ -217,6 +218,7 @@ async function bindSession({sessionId,worldId,characterId}){
  await loadChatHistory();
  saveSessionToStorage();
  updateWorld();renderParty();renderQuests();
+ try{const active=await api(`/api/combat/active?session_id=${encodeURIComponent(state.sessionId)}`);openCombat(active)}catch{/* no combat in progress for this session */}
 }
 async function initPlay(){
  try{
@@ -566,6 +568,123 @@ $('#checkIntegrity').onclick=async()=>{try{const result=await api('/api/settings
 $('#runImportTest').onclick=async()=>{try{const result=await api('/api/settings/import-test',{method:'POST'});$('#importTestStatus').textContent=result.ok?`${result.passed.length} modules OK`:`${result.failures.length} failures`;toast(result.ok?'All modules import cleanly':'Some modules failed to import')}catch(error){toast(error.message)}};
 async function loadHealth(){try{const {counts}=await api('/api/settings/dashboard');$('#systemHealth').innerHTML=Object.entries(counts).map(([table,count])=>`<span>${safe(table)} <i class="good">${safe(count)}</i></span>`).join('')}catch(error){$('#systemHealth').innerHTML=`<span>Health check failed <i>${safe(error.message)}</i></span>`}}
 $('#refreshHealth').onclick=loadHealth;
+
+// ═══ Tactical combat: turn-based grid battle with obstacles ═══
+let combatState=null, combatReachable=new Set(), combatAttackable={};
+function tileKey(x,y){return `${x},${y}`}
+function lineClear(obstacleSet,x1,y1,x2,y2){
+ const steps=Math.max(Math.abs(x2-x1),Math.abs(y2-y1));
+ if(steps<=1)return true;
+ for(let i=1;i<steps;i++){const px=Math.round(x1+(x2-x1)*i/steps),py=Math.round(y1+(y2-y1)*i/steps);if(obstacleSet.has(tileKey(px,py)))return false}
+ return true;
+}
+async function startCombat(){
+ if(!state.characterId){goCreateCharacter();return}
+ try{
+  const world=state.worlds[state.worldIndex];
+  const result=await api('/api/combat/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.sessionId,world_id:world?.id,character_id:state.characterId})});
+  openCombat(result);
+ }catch(error){toast(error.message)}
+}
+function openCombat(encounter){combatState=encounter;$('#combatOverlay').classList.add('open');renderCombat()}
+function closeCombat(){$('#combatOverlay').classList.remove('open');combatState=null}
+function computeCombatAffordances(){
+ combatReachable=new Set();combatAttackable={};
+ if(!combatState||combatState.status!=='active')return;
+ const human=combatState.units.find(u=>u.stats?.is_human);
+ if(!human||combatState.current_unit_id!==human.id)return;
+ const obstacles=new Set(combatState.obstacles.map(([x,y])=>tileKey(x,y)));
+ const occupied=new Set(combatState.units.filter(u=>u.is_active&&u.id!==human.id).map(u=>tileKey(u.x,u.y)));
+ const visited=new Map();visited.set(tileKey(human.x,human.y),0);
+ const queue=[[human.x,human.y]];
+ while(queue.length){
+  const [cx,cy]=queue.shift();const d=visited.get(tileKey(cx,cy));
+  if(d>=3)continue;
+  for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+   if(dx===0&&dy===0)continue;
+   const nx=cx+dx,ny=cy+dy;
+   if(nx<0||ny<0||nx>=combatState.grid_width||ny>=combatState.grid_height)continue;
+   const key=tileKey(nx,ny);
+   if(obstacles.has(key)||occupied.has(key)||visited.has(key))continue;
+   visited.set(key,d+1);queue.push([nx,ny]);
+  }
+ }
+ visited.delete(tileKey(human.x,human.y));
+ combatReachable=new Set(visited.keys());
+ const tier=human.stats.weapon_tier??2;
+ const range=tier<=3?1:(tier<=6?3:5);
+ for(const u of combatState.units){
+  if(u.unit_type==='enemy'&&u.is_active){
+   const dist=Math.max(Math.abs(u.x-human.x),Math.abs(u.y-human.y));
+   if(dist<=range&&(range<=1||lineClear(obstacles,human.x,human.y,u.x,u.y)))combatAttackable[tileKey(u.x,u.y)]=u.id;
+  }
+ }
+}
+function renderCombat(){
+ if(!combatState)return;
+ computeCombatAffordances();
+ const obstacleSet=new Set(combatState.obstacles.map(([x,y])=>tileKey(x,y)));
+ const unitByTile={};
+ combatState.units.forEach(u=>{if(u.is_active)unitByTile[tileKey(u.x,u.y)]=u});
+ let html='';
+ for(let y=0;y<combatState.grid_height;y++){
+  for(let x=0;x<combatState.grid_width;x++){
+   const key=tileKey(x,y);
+   const classes=['combat-tile'];
+   if(obstacleSet.has(key))classes.push('obstacle');
+   if(combatReachable.has(key))classes.push('reachable');
+   if(key in combatAttackable)classes.push('attackable');
+   const unit=unitByTile[key];
+   let inner='';
+   if(unit){
+    const side=unit.unit_type==='player'?'side-player':'side-enemy';
+    const current=combatState.current_unit_id===unit.id?'current-turn':'';
+    const pct=Math.max(0,Math.round(unit.hp/unit.max_hp*100));
+    inner=`<div class="combat-unit ${side} ${current}" title="${safe(unit.unit_name)} (${unit.hp}/${unit.max_hp})">${safe(unit.unit_name.slice(0,2).toUpperCase())}<div class="hp-bar"><i style="width:${pct}%"></i></div></div>`;
+   }
+   html+=`<div class="${classes.join(' ')}" data-x="${x}" data-y="${y}">${inner}</div>`;
+  }
+ }
+ $('#combatBoard').innerHTML=html;
+ $$('#combatBoard .combat-tile').forEach(tile=>tile.onclick=()=>onCombatTileClick(+tile.dataset.x,+tile.dataset.y));
+ $('#combatTurnList').innerHTML=combatState.turn_order.map(uid=>combatState.units.find(u=>u.id===uid)).filter(Boolean).map(u=>{
+  const side=u.unit_type==='player'?'side-player':'side-enemy';
+  const current=combatState.current_unit_id===u.id?'current':'';
+  return `<div class="combat-turn-card ${side} ${current}"><div class="portrait combat-unit ${side}">${safe(u.unit_name.slice(0,2).toUpperCase())}</div><div><strong>${safe(u.unit_name)}</strong><small>${u.is_active?`${u.hp}/${u.max_hp} HP`:'Defeated'}</small></div></div>`;
+ }).join('');
+ $('#combatLog').innerHTML=(combatState.log||[]).slice().reverse().map(line=>`<div>${safe(line)}</div>`).join('');
+ $('#combatRoundInfo').textContent=`Round ${combatState.round_number}`;
+ const human=combatState.units.find(u=>u.stats?.is_human);
+ const isHumanTurn=combatState.status==='active'&&human&&combatState.current_unit_id===human.id;
+ $('#combatEndTurnBtn').disabled=!isHumanTurn;
+ $('#combatHint').textContent=combatState.status!=='active'?'':(isHumanTurn?'Click a highlighted tile to move, or a highlighted enemy to attack.':'Waiting for other combatants…');
+ const outcome=$('#combatOutcome');
+ if(combatState.status!=='active'){
+  outcome.hidden=false;outcome.className=`combat-outcome ${combatState.status}`;
+  outcome.textContent=combatState.status==='won'?`Victory!${combatState.reward?.loot?` +${combatState.reward.xp_awarded} XP, found: ${combatState.reward.loot}`:''}`:'Defeat… the enemies overwhelm you.';
+  $('#combatEndTurnBtn').hidden=true;$('#combatLeaveBtn').hidden=false;
+ }else{outcome.hidden=true;$('#combatEndTurnBtn').hidden=false;$('#combatLeaveBtn').hidden=true}
+}
+async function onCombatTileClick(x,y){
+ if(!combatState||combatState.status!=='active')return;
+ const human=combatState.units.find(u=>u.stats?.is_human);
+ if(!human||combatState.current_unit_id!==human.id)return;
+ const key=tileKey(x,y);
+ try{
+  let result=null;
+  if(key in combatAttackable)result=await api(`/api/combat/${combatState.id}/attack`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id,target_id:combatAttackable[key]})});
+  else if(combatReachable.has(key))result=await api(`/api/combat/${combatState.id}/move`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id,x,y})});
+  else return;
+  combatState=result;renderCombat();
+ }catch(error){toast(error.message)}
+}
+$('#combatEndTurnBtn').onclick=async()=>{
+ if(!combatState)return;
+ const human=combatState.units.find(u=>u.stats?.is_human);
+ if(!human)return;
+ try{const result=await api(`/api/combat/${combatState.id}/end-turn`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id})});combatState=result;renderCombat()}catch(error){toast(error.message)}
+};
+$('#combatLeaveBtn').onclick=async()=>{closeCombat();await refreshCharacterState();renderParty();showPanel('character')};
 
 openView('play');
 initPlay();

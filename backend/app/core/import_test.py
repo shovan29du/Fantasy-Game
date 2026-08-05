@@ -31,6 +31,7 @@ CORE_MODULES = [
     "core.media_pipeline",
     "core.character_search",
     "core.web_search",
+    "core.tactical_combat",
 ]
 
 UI_MODULES = [
