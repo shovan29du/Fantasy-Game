@@ -222,7 +222,7 @@ async function crossPortal(){
 
 function loadSessionFromStorage(){try{const raw=localStorage.getItem(SESSION_KEY);return raw?JSON.parse(raw):null}catch{return null}}
 function saveSessionToStorage(){localStorage.setItem(SESSION_KEY,JSON.stringify({sessionId:state.sessionId,worldId:state.worlds[0]?.id,characterId:state.characterId}))}
-function toWorldEntry(w){return {id:w.id,name:w.name,ratings:w.ratings||{},reality_type:w.reality_type||'Prime Reality',space:w.space_alignment||'unknown',place:'Uncharted',theme:'local'}}
+function toWorldEntry(w){const locs=(w.locations||w.world_json?.locations||[]);const first=locs[0];return {id:w.id,name:w.name,ratings:w.ratings||{},reality_type:w.reality_type||'Prime Reality',space:w.space_alignment||'unknown',place:first?first.name:(w.name||'Unknown Location'),theme:'local',startX:first?first.x:50,startY:first?first.y:50}}
 async function loadChatHistory(){
  try{
   const history=await api(`/api/chat/history?session_id=${encodeURIComponent(state.sessionId)}&limit=40`);
@@ -240,7 +240,7 @@ async function bindSession({sessionId,worldId,characterId}){
  if(characterId){state.characterId=characterId;await refreshCharacterState()}
  await loadChatHistory();
  saveSessionToStorage();
- updateWorld();renderParty();renderQuests();
+ updateWorld();if(world){move(world.startX??50,world.startY??50)}renderParty();renderQuests();
  try{const active=await api(`/api/combat/active?session_id=${encodeURIComponent(state.sessionId)}`);openCombat(active)}catch{/* no combat in progress for this session */}
 }
 async function initPlay(){
@@ -278,7 +278,7 @@ async function beginGame(payload){
   const opening=payload.custom_text?payload.custom_text:`You arrive in ${world.name}. The story begins...`;
   try{await api('/api/chat/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'assistant',content:opening,session_id:state.sessionId})})}catch{}
   await loadChatHistory();
-  updateWorld();renderParty();renderQuests();
+  updateWorld();move(world.startX??50,world.startY??50);renderParty();renderQuests();
   toast(`New game started: ${world.name}`);
  }catch(error){toast(error.message)}
 }

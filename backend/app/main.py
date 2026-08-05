@@ -1785,7 +1785,10 @@ def _media_url(path: str) -> str:
 @app.post("/api/media/image")
 def create_image(payload: ImageIn) -> dict:
     prompt = f"{PHOTO_STYLES.get(payload.style, '')}, {payload.prompt}" if payload.style else payload.prompt
-    path = download_image(prompt, width=payload.width, height=payload.height)
+    # Skip placeholder provider so that if server-side download fails we fall
+    # back to the direct Pollinations URL that the user's browser can load.
+    path = download_image(prompt, width=payload.width, height=payload.height,
+                          providers=["pollinations", "comfyui", "automatic1111"])
     url = _media_url(path) or generate_image_url(prompt, payload.width, payload.height)
     if payload.save_to_chat:
         save_message("assistant", f"🖼️ *[{payload.prompt[:80]}]*", payload.session_id)
