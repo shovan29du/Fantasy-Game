@@ -76,7 +76,7 @@
     </section>
 
     <aside id="chatPanel" class="chat-column">
-      <div class="chat-head"><div><span class="orb"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div></div>
+      <div class="chat-head"><div><span class="orb" id="chatAvatar"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div><button id="voiceToggleBtn" class="ghost" type="button" title="Speak the AI's replies aloud">🔈 Voice off</button></div>
       <div id="chatLog" class="chat-log"><p class="gm"><b>WORLDWEAVER</b>The portal hums beyond the ridge. Its runes point to a reality where steel towers touch a violet sky. What do you do?</p></div>
       <form id="chatForm"><input id="chatInput" placeholder="Speak, investigate, or describe an action…" autocomplete="off"><button>Send</button></form>
     </aside>
@@ -187,6 +187,25 @@
           <div class="form-actions wide"><button class="gold">Speak</button></div>
         </form>
         <div id="voicePlayer"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Text to Animation</b><small>image + pan/zoom</small></div>
+        <form id="mediaAnimationForm" class="studio-form">
+          <label class="wide">Prompt<textarea name="prompt" required rows="3" placeholder="A dragon circling a burning tower, storm clouds"></textarea></label>
+          <label>Style<select name="style" id="animationStyleSelect"></select></label>
+          <label>Effect<select name="effect" id="animationEffectSelect"></select></label>
+          <div class="form-actions wide"><button class="gold">Animate</button></div>
+        </form>
+        <div id="mediaAnimationPreview"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Text to Video</b><small>multi-scene slideshow</small></div>
+        <form id="mediaVideoForm" class="studio-form">
+          <label class="wide">Scenes (one per line)<textarea name="prompts" required rows="4" placeholder="Dawn breaks over the ruined city&#10;A lone survivor scavenges the wreckage&#10;A signal flare lights the sky"></textarea></label>
+          <label>Style<select name="style" id="videoStyleSelect"></select></label>
+          <div class="form-actions wide"><button class="gold">Render video</button></div>
+        </form>
+        <div id="mediaVideoPreview"></div>
       </section>
     </div>
     <div class="workspace-grid" style="margin-top:16px">

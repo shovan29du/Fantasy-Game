@@ -50,6 +50,12 @@ PREBUILT_WORLDS = {
     "Deep Space Frontier":{"magic":"none","tech":"futuristic","setting":"sci-fi","category":"alien_space","locations":9,"npcs":8,"factions":3,
         "faction_names":["Colonial Fleet","Xenarch Collective","Independent Traders"],
         "npc_profs":["Starship Captain","Xenobiologist","Alien Diplomat","Smuggler","Engineer","Scout","AI Core","Bounty Hunter"]},
+    "Crown & Shadows":{"magic":"none","tech":"renaissance","setting":"drama","category":"drama","locations":8,"npcs":10,"factions":4,
+        "faction_names":["Royal Court","Merchant Council","Church Synod","Exiled Bloodline"],
+        "npc_profs":["Monarch","Court Advisor","Spymaster","Heir Apparent","Ambassador","Noble Rival","Steward","Chronicler","Betrothed","Disgraced Knight"]},
+    "The Sterling Family":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":6,"npcs":8,"factions":3,
+        "faction_names":["Sterling Holdings","The Board","Estranged Kin"],
+        "npc_profs":["CEO","Estranged Sibling","Family Lawyer","Rival Executive","Journalist","Housekeeper","Therapist","Business Partner"]},
 }
 
 def get_prebuilt_list(): return list(PREBUILT_WORLDS.keys())

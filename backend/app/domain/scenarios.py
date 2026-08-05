@@ -14,6 +14,7 @@ CATEGORIES = [
     {"key": "zombie", "label": "Zombie Apocalypse", "magic": "none", "tech": "modern", "space": "post-apocalyptic", "reality_type": "Dead Universe"},
     {"key": "supernatural", "label": "Supernatural", "magic": "medium", "tech": "modern", "space": "mystery", "reality_type": "Parallel Universe"},
     {"key": "mystery", "label": "Mystery", "magic": "low", "tech": "modern", "space": "mystery", "reality_type": "Prime Reality"},
+    {"key": "drama", "label": "Drama", "magic": "none", "tech": "modern", "space": "drama", "reality_type": "Prime Reality"},
     {"key": "apocalyptic", "label": "Apocalyptic", "magic": "low", "tech": "post_collapse", "space": "post-apocalyptic", "reality_type": "Dead Universe"},
     {"key": "cyberpunk", "label": "Cyberpunk", "magic": "none", "tech": "cyberpunk", "space": "sci-fi", "reality_type": "Parallel Universe"},
     {"key": "alien_space", "label": "Alien Space", "magic": "none", "tech": "futuristic", "space": "sci-fi", "reality_type": "Alternate Reality"},

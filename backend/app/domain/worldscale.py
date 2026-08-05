@@ -72,7 +72,7 @@ _TECH_TIER_DEFAULTS = {
     "industrial": 5, "modern": 6, "futuristic": 9, "space_age": 9, "post_collapse": 2, "cyberpunk": 8,
 }
 _DANGER_BY_SETTING = {
-    "post-apocalyptic": 8, "horror": 8, "apocalyptic": 9, "superhero": 5, "sci-fi": 5, "fantasy": 4,
+    "post-apocalyptic": 8, "horror": 8, "apocalyptic": 9, "superhero": 5, "sci-fi": 5, "fantasy": 4, "drama": 1,
 }
 _HORROR_BY_SETTING = {
     "post-apocalyptic": 7, "horror": 9, "apocalyptic": 8,

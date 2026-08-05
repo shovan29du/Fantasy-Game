@@ -88,7 +88,15 @@ from core.levelling import (
     increase_stat,
     xp_progress,
 )
-from core.media_pipeline import ANIMATION_EFFECTS, create_animation, get_provider_options, list_jobs, queue_media_job
+from core.media_pipeline import (
+    ANIMATION_EFFECTS,
+    create_animation,
+    generate_animated_clip,
+    generate_scene_video,
+    get_provider_options,
+    list_jobs,
+    queue_media_job,
+)
 from core.memory_engine import MemoryEngine
 from core.quest_system import (
     abandon_quest,
@@ -389,6 +397,29 @@ class AnimateIn(BaseModel):
     image_path: str
     effect: str = "ken_burns"
     duration: int = 5
+    session_id: str = "default"
+
+
+class TextToAnimationIn(BaseModel):
+    prompt: str
+    style: str = ""
+    width: int = 768
+    height: int = 512
+    effect: str = "ken_burns"
+    duration: int = 5
+    save_to_chat: bool = True
+    session_id: str = "default"
+
+
+class TextToVideoIn(BaseModel):
+    prompt: str = ""
+    prompts: list[str] = []
+    scenes: int = 3
+    style: str = ""
+    width: int = 768
+    height: int = 512
+    duration_per_slide: int = 3
+    save_to_chat: bool = True
     session_id: str = "default"
 
 
@@ -1772,6 +1803,42 @@ def animate_image(payload: AnimateIn) -> dict:
     if output:
         save_message("assistant", f"🎞️ *[Animated: {payload.effect}, {payload.duration}s]*", payload.session_id)
     return {"path": output, "url": _media_url(output)}
+
+
+@app.post("/api/media/text-to-animation")
+def text_to_animation(payload: TextToAnimationIn) -> dict:
+    result = generate_animated_clip(payload.prompt, style_prefix=PHOTO_STYLES.get(payload.style, ""),
+                                     width=payload.width, height=payload.height,
+                                     effect=payload.effect, duration=payload.duration)
+    if not result:
+        raise HTTPException(status_code=502, detail="Could not render an animation (image generation or ffmpeg failed).")
+    if payload.save_to_chat:
+        save_message("assistant", f"🎬 *[Animated: {payload.prompt[:80]}]*", payload.session_id)
+    return {
+        "image_path": result["image_path"], "image_url": _media_url(result["image_path"]),
+        "video_path": result["video_path"], "video_url": _media_url(result["video_path"]),
+    }
+
+
+@app.post("/api/media/text-to-video")
+def text_to_video(payload: TextToVideoIn) -> dict:
+    prompts = [p.strip() for p in payload.prompts if p.strip()]
+    if not prompts and payload.prompt.strip():
+        prompts = [payload.prompt.strip()] * max(2, payload.scenes)
+    if not prompts:
+        raise HTTPException(status_code=400, detail="Provide a prompt or a list of scene prompts.")
+    result = generate_scene_video(prompts, style_prefix=PHOTO_STYLES.get(payload.style, ""),
+                                   width=payload.width, height=payload.height,
+                                   duration_per_slide=payload.duration_per_slide)
+    if not result:
+        raise HTTPException(status_code=502, detail="Could not render a video (image generation or ffmpeg failed).")
+    if payload.save_to_chat:
+        label = prompts[0][:80] + ("…" if len(prompts) > 1 else "")
+        save_message("assistant", f"🎥 *[Video: {label}]*", payload.session_id)
+    return {
+        "image_paths": result["image_paths"], "image_urls": [_media_url(p) for p in result["image_paths"]],
+        "video_path": result["video_path"], "video_url": _media_url(result["video_path"]),
+    }
 
 
 @app.post("/api/voice/speak")

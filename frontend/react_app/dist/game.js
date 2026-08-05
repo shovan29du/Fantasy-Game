@@ -27,7 +27,7 @@ const actions=[
  {name:'Loot',icon:'⚗',kind:'utility',cost:'Free'},
 ];
 
-let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:{},pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[]};
+let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:{},pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true'};
 const SESSION_KEY='worldweaver-session';
 const TERRAIN_ICONS={Forest:'♣',Desert:'▲',Mountain:'⛰',Ocean:'≈',Swamp:'♨',Volcano:'▲',Plains:'❦',City:'⌂',Ruins:'⌂',Space:'✦',Underground:'▼',Tundra:'❄',Jungle:'♣',Savanna:'❦',Canyon:'▲'};
 
@@ -352,7 +352,30 @@ function playerContextLine(){
  bits.push(`Party: ${party.map(p=>p.name).join(', ')}`);
  return `[${bits.join(' | ')}]`;
 }
-$('#chatForm').onsubmit=async e=>{e.preventDefault();const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;$('#chatLog').insertAdjacentHTML('beforeend',`<p class="player"><b>YOU</b>${safe(msg)}</p>`);input.value='';$('#aiStatus').textContent='Thinking...';try{const world=state.worlds[state.worldIndex];const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');$('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(data.reply)}</p>`);$('#aiStatus').textContent='LM Studio connected'}catch(error){$('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(error.message||'The local storyteller cannot be reached.')}</p>`);$('#aiStatus').textContent='Start LM Studio on port 1234'}$('#chatLog').scrollTop=$('#chatLog').scrollHeight};
+let chatAudio=null;
+function stopChatAudio(){if(chatAudio){chatAudio.pause();chatAudio=null}$('#chatAvatar').classList.remove('speaking')}
+async function speakReply(text){
+ if(!state.voiceEnabled||!text)return;
+ stopChatAudio();
+ try{
+  const result=await api('/api/voice/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:text})});
+  if(!result.url)return;
+  chatAudio=new Audio(result.url);
+  $('#chatAvatar').classList.add('speaking');
+  chatAudio.onended=chatAudio.onerror=()=>{$('#chatAvatar').classList.remove('speaking');chatAudio=null};
+  await chatAudio.play();
+ }catch{$('#chatAvatar').classList.remove('speaking')}
+}
+$('#voiceToggleBtn').onclick=()=>{
+ state.voiceEnabled=!state.voiceEnabled;
+ localStorage.setItem('companion-voice',state.voiceEnabled);
+ $('#voiceToggleBtn').classList.toggle('active',state.voiceEnabled);
+ $('#voiceToggleBtn').innerHTML=state.voiceEnabled?'🔊 Voice on':'🔈 Voice off';
+ if(!state.voiceEnabled)stopChatAudio();
+};
+$('#voiceToggleBtn').classList.toggle('active',state.voiceEnabled);
+$('#voiceToggleBtn').innerHTML=state.voiceEnabled?'🔊 Voice on':'🔈 Voice off';
+$('#chatForm').onsubmit=async e=>{e.preventDefault();const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;$('#chatLog').insertAdjacentHTML('beforeend',`<p class="player"><b>YOU</b>${safe(msg)}</p>`);input.value='';$('#aiStatus').textContent='Thinking...';try{const world=state.worlds[state.worldIndex];const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');$('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(data.reply)}</p>`);$('#aiStatus').textContent='LM Studio connected';speakReply(data.reply)}catch(error){$('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(error.message||'The local storyteller cannot be reached.')}</p>`);$('#aiStatus').textContent='Start LM Studio on port 1234'}$('#chatLog').scrollTop=$('#chatLog').scrollHeight};
 
 // ═══ AI Companion-style workspace navigation and studios ═══
 function openView(name){$$('.app-view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.side-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='characters')loadCharacterStudio();if(name==='explore')loadExplore();if(name==='worlds')loadWorlds();if(name==='knowledge'){loadLore();loadKnowledgeDocs()}if(name==='media')loadMediaTab();if(name==='settings'){checkModelStatus();loadSettingsExtras()}}
@@ -551,7 +574,14 @@ $('#knowledgeSearchForm').onsubmit=async e=>{
 // ═══ Media: generation, gallery, voice, achievements ═══
 let mediaStylesLoaded=false;
 async function loadMediaTab(){
- if(!mediaStylesLoaded){try{fillSelect('#mediaStyleSelect',await api('/api/media/image-styles'));mediaStylesLoaded=true}catch{}}
+ if(!mediaStylesLoaded){
+  try{
+   const styles=await api('/api/media/image-styles');
+   fillSelect('#mediaStyleSelect',styles);fillSelect('#animationStyleSelect',styles);fillSelect('#videoStyleSelect',styles);
+   fillSelect('#animationEffectSelect',await api('/api/media/animation-effects'));
+   mediaStylesLoaded=true;
+  }catch{}
+ }
  loadGallery();loadAchievements();
 }
 $('#mediaImageForm').onsubmit=async e=>{
@@ -571,7 +601,29 @@ $('#voiceForm').onsubmit=async e=>{
   player.innerHTML=result.url?`<audio controls src="${safe(result.url)}" style="width:100%;margin-top:8px"></audio>`:'<div class="empty-state">TTS engine unavailable on this install (needs edge-tts).</div>';
  }catch(error){player.innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}
 };
-async function loadGallery(){try{const items=await api('/api/media/gallery?limit=30');$('#mediaGallery').innerHTML=items.length?items.map(m=>`<article class="entity-card"><span class="entity-avatar">${m.media_type==='image'?'▧':'♪'}</span><div><b>${safe(m.title||'Untitled')}</b><small>${safe(m.character_name||'')}</small></div><button data-media-id="${m.id}" class="ghost">✕</button></article>`).join(''):'<div class="empty-state">No saved media yet.</div>';$$('[data-media-id]').forEach(btn=>btn.onclick=async()=>{try{await api(`/api/media/gallery/${btn.dataset.mediaId}`,{method:'DELETE'});loadGallery()}catch(error){toast(error.message)}})}catch(error){$('#mediaGallery').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
+$('#mediaAnimationForm').onsubmit=async e=>{
+ e.preventDefault();const formEl=e.currentTarget;const payload=Object.fromEntries(new FormData(formEl).entries());
+ const preview=$('#mediaAnimationPreview');preview.innerHTML='<div class="empty-state">Generating image and rendering animation…</div>';
+ try{
+  const result=await api('/api/media/text-to-animation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:payload.prompt,style:payload.style,effect:payload.effect,save_to_chat:false})});
+  preview.innerHTML=`<video controls loop src="${safe(result.video_url)}" style="max-width:100%;border:1px solid var(--line);margin-top:8px"></video><div class="form-actions" style="margin-top:8px"><button id="saveAnimToGalleryBtn" class="ghost">＋ Save to gallery</button></div>`;
+  $('#saveAnimToGalleryBtn').onclick=async()=>{try{await api('/api/media/gallery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({media_type:'video',title:payload.prompt.slice(0,60),file_path:result.video_path||result.video_url,character_name:state.sheet?.name||''})});toast('Saved to gallery');loadGallery()}catch(error){toast(error.message)}};
+ }catch(error){preview.innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}
+};
+$('#mediaVideoForm').onsubmit=async e=>{
+ e.preventDefault();const formEl=e.currentTarget;const payload=Object.fromEntries(new FormData(formEl).entries());
+ const prompts=(payload.prompts||'').split('\n').map(s=>s.trim()).filter(Boolean);
+ const preview=$('#mediaVideoPreview');
+ if(!prompts.length){preview.innerHTML='<div class="empty-state">Write at least one scene.</div>';return}
+ preview.innerHTML=`<div class="empty-state">Rendering ${prompts.length} scene${prompts.length===1?'':'s'}…</div>`;
+ try{
+  const result=await api('/api/media/text-to-video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompts,style:payload.style,save_to_chat:false})});
+  preview.innerHTML=`<video controls loop src="${safe(result.video_url)}" style="max-width:100%;border:1px solid var(--line);margin-top:8px"></video><div class="form-actions" style="margin-top:8px"><button id="saveVideoToGalleryBtn" class="ghost">＋ Save to gallery</button></div>`;
+  $('#saveVideoToGalleryBtn').onclick=async()=>{try{await api('/api/media/gallery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({media_type:'video',title:prompts[0].slice(0,60),file_path:result.video_path||result.video_url,character_name:state.sheet?.name||''})});toast('Saved to gallery');loadGallery()}catch(error){toast(error.message)}};
+ }catch(error){preview.innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}
+};
+const MEDIA_TYPE_ICONS={image:'▧',video:'🎬',voice:'♪'};
+async function loadGallery(){try{const items=await api('/api/media/gallery?limit=30');$('#mediaGallery').innerHTML=items.length?items.map(m=>`<article class="entity-card"><span class="entity-avatar">${MEDIA_TYPE_ICONS[m.media_type]||'♪'}</span><div><b>${safe(m.title||'Untitled')}</b><small>${safe(m.character_name||'')}</small></div><button data-media-id="${m.id}" class="ghost">✕</button></article>`).join(''):'<div class="empty-state">No saved media yet.</div>';$$('[data-media-id]').forEach(btn=>btn.onclick=async()=>{try{await api(`/api/media/gallery/${btn.dataset.mediaId}`,{method:'DELETE'});loadGallery()}catch(error){toast(error.message)}})}catch(error){$('#mediaGallery').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
 $('#refreshGallery').onclick=loadGallery;
 async function loadAchievements(){try{const items=await api('/api/media/achievements');$('#achievementList').innerHTML=items.length?items.map(a=>`<article class="entity-card"><span class="entity-avatar">★</span><div><b>${safe(a.title)}</b><small>${safe(a.description||'')}</small></div></article>`).join(''):'<div class="empty-state">No achievements yet.</div>'}catch(error){$('#achievementList').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
 $('#refreshAchievements').onclick=loadAchievements;

@@ -3,10 +3,10 @@ from backend.app.domain import scenarios
 from backend.app.world.prebuilt import PREBUILT_WORLDS, get_prebuilt_by_category
 
 
-def test_nine_categories_present():
+def test_ten_categories_present():
     keys = {c["key"] for c in scenarios.CATEGORIES}
     assert keys == {
-        "fantasy", "zombie", "supernatural", "mystery", "apocalyptic",
+        "fantasy", "zombie", "supernatural", "mystery", "drama", "apocalyptic",
         "cyberpunk", "alien_space", "anime", "game",
     }
 
@@ -19,7 +19,7 @@ def test_anime_and_game_categories_use_presets():
 
 
 def test_core_categories_have_no_presets_key():
-    for key in ["fantasy", "zombie", "supernatural", "mystery", "apocalyptic", "cyberpunk", "alien_space"]:
+    for key in ["fantasy", "zombie", "supernatural", "mystery", "drama", "apocalyptic", "cyberpunk", "alien_space"]:
         assert "presets" not in scenarios.CATEGORY_BY_KEY[key]
 
 
