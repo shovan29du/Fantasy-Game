@@ -376,6 +376,42 @@ $('#voiceToggleBtn').onclick=()=>{
 $('#voiceToggleBtn').classList.toggle('active',state.voiceEnabled);
 $('#voiceToggleBtn').innerHTML=state.voiceEnabled?'🔊 Voice on':'🔈 Voice off';
 
+
+// ── Attach file / zip to chat ──
+$('#attachBtn').onclick=()=>$('#chatFileInput').click();
+$('#chatFileInput').onchange=async()=>{
+ const f=$('#chatFileInput').files[0];
+ if(!f)return;
+ $('#chatFileInput').value='';
+ const fd=new FormData();fd.append('file',f);
+ $('#chatLog').insertAdjacentHTML('beforeend',`<p class="player"><b>YOU</b>📎 Attached: ${safe(f.name)}</p>`);
+ $('#aiStatus').textContent='Reading file…';
+ try{
+  const r=await fetch('/api/chat/attach',{method:'POST',body:fd});
+  const data=await r.json();
+  if(!r.ok)throw new Error(data.detail||'Upload failed');
+  const summary=data.summary;
+  const world=state.worlds[state.worldIndex];
+  const cr=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:summary,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});
+  const cd=await cr.json();
+  if(!cr.ok)throw new Error(cd.detail||'AI unavailable');
+  $('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(cd.reply)}</p>`);
+  $('#aiStatus').textContent='LM Studio connected';
+  speakReply(cd.reply);
+ }catch(err){
+  $('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(err.message||'Could not read file.')}</p>`);
+  $('#aiStatus').textContent='LM Studio link';
+ }
+ $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
+};
+// ── Download chat as zip ──
+$('#downloadZipBtn').onclick=()=>{
+ const sid=encodeURIComponent(state.sessionId||'default');
+ const a=document.createElement('a');
+ a.href=`/api/chat/export/zip?session_id=${sid}`;
+ a.download='worldweaver-chat.zip';
+ a.click();
+};
 // Chat voice INPUT: the browser's own Web Speech API (Chrome/Edge). No
 // server round-trip and no Python dependency -- Firefox has no
 // implementation, so the mic button just stays hidden there.

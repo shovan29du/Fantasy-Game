@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1065,6 +1065,65 @@ async def import_chat_upload(file: UploadFile = File(...)) -> dict:
     path.write_bytes(await file.read())
     messages = import_chat_file(str(path))
     return {"messages": messages, "count": len(messages), "path": str(path.relative_to(ROOT))}
+
+
+@app.post("/api/chat/attach")
+async def chat_attach_file(file: UploadFile = File(...)) -> dict:
+    import zipfile, io as _io
+    content = await file.read()
+    fname = file.filename or "file"
+    ext = Path(fname).suffix.lower()
+    lines: list[str] = [f"📎 Attached file: {fname}"]
+    if ext == ".zip":
+        try:
+            with zipfile.ZipFile(_io.BytesIO(content)) as zf:
+                names = zf.namelist()
+                lines.append(f"Contents ({len(names)} files):")
+                for n in names[:40]:
+                    lines.append(f"  • {n}")
+                if len(names) > 40:
+                    lines.append(f"  … and {len(names) - 40} more")
+                # preview first readable text file
+                for n in names:
+                    if Path(n).suffix.lower() in {".txt", ".md", ".json", ".csv", ".py", ".js", ".ts"}:
+                        try:
+                            preview = zf.read(n).decode("utf-8", errors="replace")[:1500]
+                            lines.append(f"\nPreview of {n}:\n{preview}")
+                        except Exception:
+                            pass
+                        break
+        except zipfile.BadZipFile:
+            lines.append("(could not read zip)")
+    elif ext in {".txt", ".md", ".csv", ".py", ".js", ".ts"}:
+        lines.append(content.decode("utf-8", errors="replace")[:3000])
+    elif ext == ".json":
+        try:
+            import json as _json
+            parsed = _json.loads(content)
+            lines.append(_json.dumps(parsed, indent=2)[:3000])
+        except Exception:
+            lines.append(content.decode("utf-8", errors="replace")[:3000])
+    else:
+        lines.append(f"({len(content):,} bytes — binary file, contents not shown)")
+    summary = "\n".join(lines)
+    return {"filename": fname, "summary": summary, "size": len(content)}
+
+
+@app.get("/api/chat/export/zip")
+async def export_session_zip(session_id: str = "default", character_name: str = "") -> StreamingResponse:
+    import zipfile, io as _io
+    buf = _io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("chat.txt", export_chat_txt(session_id))
+        zf.writestr("chat.json", export_chat_json(session_id, character_name))
+        zf.writestr("chat.html", export_chat_html(session_id))
+    buf.seek(0)
+    safe_sid = session_id[:12].replace("/", "-").replace("\\", "-")
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="worldweaver-{safe_sid}.zip"'},
+    )
 
 
 @app.post("/api/chat/import/url")
