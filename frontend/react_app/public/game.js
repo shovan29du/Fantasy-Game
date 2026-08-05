@@ -252,17 +252,17 @@ async function initPlay(){
  }catch(error){toast(`Play mode running offline: ${error.message}`)}
  renderParty();renderQuests();renderActions();showPanel('character');
  const saved=loadSessionFromStorage();
- if(saved){try{await bindSession(saved);return}catch{/* fall through to start screen */}}
+ if(saved){try{await bindSession(saved);hidePlayHub();return}catch{/* fall through to start screen */}}
  state.worlds=state.flavorWorlds;state.worldIndex=0;updateWorld();
- openPlayStart();
+ showPlayHub();
 }
 
-// ═══ Play start screen: New Game (category -> scenario) or Load Saved Game ═══
+// ═══ Play hub: New Game (category -> scenario) or Load Saved Game ═══
 function showStartStep(name){$$('.start-step').forEach(s=>s.hidden=(s.id!==`startStep-${name}`))}
-function openPlayStart(){$('#playStart').classList.add('open');showStartStep('choice');$('#closeStartBtn').hidden=!state.hasActiveGame}
-function closePlayStart(){$('#playStart').classList.remove('open');state.hasActiveGame=true}
-$('#closeStartBtn').onclick=closePlayStart;
-$('#switchGameBtn').onclick=openPlayStart;
+function showPlayHub(){$('#playHub').hidden=false;$('#gameArea').hidden=true;showStartStep('choice');$('#hubCloseBtn').hidden=!state.hasActiveGame}
+function hidePlayHub(){$('#playHub').hidden=true;$('#gameArea').hidden=false;state.hasActiveGame=true}
+$('#hubCloseBtn').onclick=hidePlayHub;
+$('#switchGameBtn').onclick=showPlayHub;
 $$('.back-btn').forEach(b=>b.onclick=()=>showStartStep(b.dataset.back));
 
 let categoriesCache=null;
@@ -274,7 +274,7 @@ async function beginGame(payload){
   state.worlds=[world,...state.flavorWorlds.filter(f=>f.id!==world.id)];
   state.worldIndex=0;
   saveSessionToStorage();
-  closePlayStart();
+  hidePlayHub();
   const opening=payload.custom_text?payload.custom_text:`You arrive in ${world.name}. The story begins...`;
   try{await api('/api/chat/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'assistant',content:opening,session_id:state.sessionId})})}catch{}
   await loadChatHistory();
@@ -313,7 +313,7 @@ async function rollRandomScenario(){try{const result=await api('/api/random/prom
 $('#rerollScenarioBtn').onclick=rollRandomScenario;
 $('#useRandomScenarioBtn').onclick=()=>beginGame({category:state.pendingCategory?.key||'fantasy',scenario_name:'Random Scenario',scenario_type:'custom',custom_text:state.randomScenarioText});
 
-async function loadSavedGame(save){try{await bindSession({sessionId:save.session_id,worldId:save.world_id,characterId:save.character_id});closePlayStart();toast(`Loaded: ${save.save_name}`)}catch(error){toast(error.message)}}
+async function loadSavedGame(save){try{await bindSession({sessionId:save.session_id,worldId:save.world_id,characterId:save.character_id});hidePlayHub();toast(`Loaded: ${save.save_name}`)}catch(error){toast(error.message)}}
 $('#startLoadGameBtn').onclick=async()=>{
  try{const saves=await api('/api/chat/saves');
   $('#savedGameList').innerHTML=saves.length?saves.map(s=>`<button data-save-id="${s.id}"><b>${safe(s.save_name)}</b><small>${safe(s.character_name||'')} · ${safe((s.created_at||'').slice(0,16))}</small></button>`).join(''):'<div class="empty-state">No saved games yet.</div>';
@@ -402,7 +402,7 @@ if(SpeechRecognitionApi){
 $('#chatForm').onsubmit=async e=>{e.preventDefault();const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;$('#chatLog').insertAdjacentHTML('beforeend',`<p class="player"><b>YOU</b>${safe(msg)}</p>`);input.value='';$('#aiStatus').textContent='Thinking...';try{const world=state.worlds[state.worldIndex];const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');$('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(data.reply)}</p>`);$('#aiStatus').textContent='LM Studio connected';speakReply(data.reply)}catch(error){$('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(error.message||'The local storyteller cannot be reached.')}</p>`);$('#aiStatus').textContent='Start LM Studio on port 1234'}$('#chatLog').scrollTop=$('#chatLog').scrollHeight};
 
 // ═══ AI Companion-style workspace navigation and studios ═══
-function openView(name){$$('.app-view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.side-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='characters')loadCharacterStudio();if(name==='explore')loadExplore();if(name==='worlds')loadWorlds();if(name==='knowledge'){loadLore();loadKnowledgeDocs()}if(name==='media')loadMediaTab();if(name==='settings'){checkModelStatus();loadSettingsExtras()}}
+function openView(name){$$('.app-view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.side-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='play'){$('#playHub').hidden=state.hasActiveGame;$('#gameArea').hidden=!state.hasActiveGame}if(name==='characters')loadCharacterStudio();if(name==='explore')loadExplore();if(name==='worlds')loadWorlds();if(name==='knowledge'){loadLore();loadKnowledgeDocs()}if(name==='media')loadMediaTab();if(name==='settings'){checkModelStatus();loadSettingsExtras()}}
 $$('.side-nav button').forEach(button=>button.onclick=()=>openView(button.dataset.view));
 
 let studioOptions={};
