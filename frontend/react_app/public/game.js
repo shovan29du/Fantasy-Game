@@ -27,7 +27,7 @@ const actions=[
  {name:'Loot',icon:'⚗',kind:'utility',cost:'Free'},
 ];
 
-let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:{},pendingCategory:null,randomScenarioText:'',hasActiveGame:false};
+let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:{},pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[]};
 const SESSION_KEY='worldweaver-session';
 const TERRAIN_ICONS={Forest:'♣',Desert:'▲',Mountain:'⛰',Ocean:'≈',Swamp:'♨',Volcano:'▲',Plains:'❦',City:'⌂',Ruins:'⌂',Space:'✦',Underground:'▼',Tundra:'❄',Jungle:'♣',Savanna:'❦',Canyon:'▲'};
 
@@ -126,13 +126,32 @@ const panels={
  inventory:()=>{
   if(!state.characterId) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
   const items=state.inventory.items||[];
-  if(!items.length) return `<div class="panel-title"><span>INVENTORY</span><small>0 items</small></div><div class="empty-state">Nothing carried yet — try the <b>Loot</b> utility action.</div>`;
-  return `<div class="panel-title"><span>INVENTORY</span><small>${items.length} items</small></div><div class="inventory-grid">${items.map(it=>`<button class="item" data-item-id="${it.id}">${it.equip_slot?'⚔':'◇'}${it.quantity>1?`<small>${it.quantity}</small>`:''}</button>`).join('')}</div><div class="item-info"><h3 id="itemName">Select an item</h3><p id="itemDesc">Click an item to inspect it.</p></div>`;
+  const invHtml=items.length?`<div class="panel-title"><span>INVENTORY</span><small>${items.length} items</small></div><div class="inventory-grid">${items.map(it=>`<button class="item" data-item-id="${it.id}">${it.equip_slot?'⚔':'◇'}${it.quantity>1?`<small>${it.quantity}</small>`:''}</button>`).join('')}</div><div class="item-info"><h3 id="itemName">Select an item</h3><p id="itemDesc">Click an item to inspect it.</p></div>`
+   :`<div class="panel-title"><span>INVENTORY</span><small>0 items</small></div><div class="empty-state">Nothing carried yet — try the <b>Loot</b> utility action.</div>`;
+  const equippedName=(items.find(it=>it.equip_slot==='weapon')||{}).item_name;
+  const cats=state.dndWeaponCategories.length?state.dndWeaponCategories:[...new Set(Object.values(state.dndWeapons).map(w=>w.category))].sort();
+  const armory=cats.map(cat=>{
+   const catWeapons=Object.entries(state.dndWeapons).filter(([,w])=>w.category===cat);
+   if(!catWeapons.length)return '';
+   return `<div class="armory-cat"><small>${safe(cat)}</small>${catWeapons.map(([name,w])=>`<button class="armory-item${name===equippedName?' equipped':''}" data-equip-weapon="${safe(name)}"><b>${safe(name)}</b><small>${safe(w.damage)} ${safe(w.damage_type)}${w.properties.length?` · ${w.properties.join(', ')}`:''}</small>${name===equippedName?'<em>Equipped</em>':''}</button>`).join('')}</div>`;
+  }).join('');
+  return `${invHtml}<div class="panel-title"><span>ARMORY</span><small>D&amp;D weapons</small></div><div class="armory-grid">${armory}</div>`;
  },
  spells:()=>{
-  const spells=state.sheet?.spells||[];
-  if(!spells.length) return '<div class="panel-title"><span>SPELLBOOK</span><small>0 prepared</small></div><div class="empty-state">No spells learned yet.</div>';
-  return `<div class="panel-title"><span>SPELLBOOK</span><small>${spells.length} prepared</small></div>${spells.map(sp=>`<div class="spell-row"><span class="rune">✦</span><span><b>${safe(sp)}</b><small>${safe((state.sheet.magic_type||[]).join(', ')||'Arcane')}</small></span></div>`).join('')}`;
+  const known=state.sheet?.spells||[];
+  const profession=state.sheet?.profession||'';
+  const knownHtml=known.length?known.map(name=>{
+   const sp=state.allSpells[name];
+   if(!sp)return `<div class="spell-row"><span class="rune">✦</span><span><b>${safe(name)}</b></span></div>`;
+   const level=sp.level===0?'Cantrip':`Level ${sp.level}`;
+   return `<div class="spell-row"><span class="rune">✦</span><span><b>${safe(name)}</b><small>${level} · ${safe(sp.school)} — ${safe(sp.description)}</small></span></div>`;
+  }).join(''):'<div class="empty-state">No spells learned yet.</div>';
+  const learnable=Object.entries(state.allSpells).filter(([name,sp])=>!known.includes(name)&&(!profession||sp.classes.includes(profession)));
+  const learnHtml=learnable.length?learnable.map(([name,sp])=>{
+   const level=sp.level===0?'Cantrip':`Level ${sp.level}`;
+   return `<button class="spell-row learnable" data-learn-spell="${safe(name)}"><span class="rune">＋</span><span><b>${safe(name)}</b><small>${level} · ${safe(sp.school)} — ${safe(sp.description)}</small></span></button>`;
+  }).join(''):'<div class="empty-state">No more spells for this class.</div>';
+  return `<div class="panel-title"><span>SPELLBOOK</span><small>${known.length} prepared</small></div>${knownHtml}<div class="panel-title"><span>LEARN A SPELL</span><small>${safe(profession||'Any class')}</small></div>${learnHtml}`;
  },
  skills:()=>{
   const s=state.sheet; if(!s) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
@@ -143,8 +162,12 @@ const panels={
 function showPanel(name){
  $('#detailContent').innerHTML=panels[name]();
  const createBtn=$('#goCreateCharacterBtn'); if(createBtn)createBtn.onclick=goCreateCharacter;
- if(name==='inventory')$$('[data-item-id]').forEach(el=>el.onclick=()=>{const item=(state.inventory.items||[]).find(i=>String(i.id)===el.dataset.itemId);if(!item)return;$('#itemName').textContent=item.item_name;const tierInfo=item.weapon_tier_info||{};$('#itemDesc').textContent=item.equip_slot?`Weapon tier ${item.weapon_tier} · ${tierInfo.era||''} — ${(tierInfo.properties||[]).join(', ')||'No special properties.'}`:(item.description||'A piece of multiverse adventuring gear.')});
+ if(name==='inventory'){
+  $$('[data-item-id]').forEach(el=>el.onclick=()=>{const item=(state.inventory.items||[]).find(i=>String(i.id)===el.dataset.itemId);if(!item)return;$('#itemName').textContent=item.item_name;const tierInfo=item.weapon_tier_info||{};$('#itemDesc').textContent=item.equip_slot?`Weapon tier ${item.weapon_tier} · ${tierInfo.era||''} — ${(tierInfo.properties||[]).join(', ')||'No special properties.'}`:(item.description||'A piece of multiverse adventuring gear.')});
+  $$('[data-equip-weapon]').forEach(el=>el.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/equip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({weapon_name:el.dataset.equipWeapon})});await refreshCharacterState();toast(`${el.dataset.equipWeapon} equipped`);showPanel('inventory')}catch(error){toast(error.message)}});
+ }
  if(name==='skills')$$('[data-feat]').forEach(el=>el.onclick=async()=>{try{const result=await api(`/api/characters/${state.characterId}/feats`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feat:el.dataset.feat})});state.sheet=result.sheet;toast(`${el.dataset.feat} learned`);showPanel('skills')}catch(error){toast(error.message)}});
+ if(name==='spells')$$('[data-learn-spell]').forEach(el=>el.onclick=async()=>{try{const result=await api(`/api/characters/${state.characterId}/spells`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spell:el.dataset.learnSpell})});state.sheet=result.sheet;toast(`${el.dataset.learnSpell} learned`);showPanel('spells')}catch(error){toast(error.message)}});
 }
 function worldTagsText(world){
  const r=world.ratings||{};
@@ -222,8 +245,9 @@ async function bindSession({sessionId,worldId,characterId}){
 }
 async function initPlay(){
  try{
-  const [flavorWorlds,characterId,weaponTiers]=await Promise.all([ensureWorlds(),getExistingCharacterId(),api('/api/weapons/tiers')]);
+  const [flavorWorlds,characterId,weaponTiers,spellData,weaponData]=await Promise.all([ensureWorlds(),getExistingCharacterId(),api('/api/weapons/tiers'),api('/api/spells'),api('/api/weapons/dnd')]);
   state.flavorWorlds=flavorWorlds; state.characterId=characterId; state.weaponTiers=weaponTiers;
+  state.allSpells=spellData.spells||{}; state.dndWeapons=weaponData.weapons||{}; state.dndWeaponCategories=weaponData.categories||[];
   if(state.characterId) await refreshCharacterState();
  }catch(error){toast(`Play mode running offline: ${error.message}`)}
  renderParty();renderQuests();renderActions();showPanel('character');
@@ -570,13 +594,29 @@ async function loadHealth(){try{const {counts}=await api('/api/settings/dashboar
 $('#refreshHealth').onclick=loadHealth;
 
 // ═══ Tactical combat: turn-based grid battle with obstacles ═══
-let combatState=null, combatReachable=new Set(), combatAttackable={};
+let combatState=null, combatReachable=new Set(), combatAttackable={}, combatSpellTargets={};
+const POWER_ATTACK_FEATS=new Set(['Great Weapon Master','Sharpshooter']);
 function tileKey(x,y){return `${x},${y}`}
 function lineClear(obstacleSet,x1,y1,x2,y2){
  const steps=Math.max(Math.abs(x2-x1),Math.abs(y2-y1));
  if(steps<=1)return true;
  for(let i=1;i<steps;i++){const px=Math.round(x1+(x2-x1)*i/steps),py=Math.round(y1+(y2-y1)*i/steps);if(obstacleSet.has(tileKey(px,py)))return false}
  return true;
+}
+function weaponRangeFor(weaponName,tier){
+ const weapon=weaponName?state.dndWeapons[weaponName]:null;
+ if(weapon){
+  if(/Ranged/.test(weapon.category))return 4;
+  if((weapon.properties||[]).includes('reach'))return 2;
+  return 1;
+ }
+ const t=tier??2;
+ return t<=3?1:(t<=6?3:5);
+}
+function selectedSpell(){
+ const select=$('#combatSpellSelect');
+ const name=select?select.value:'';
+ return name?{name,data:state.allSpells[name]}:null;
 }
 async function startCombat(){
  if(!state.characterId){goCreateCharacter();return}
@@ -589,7 +629,7 @@ async function startCombat(){
 function openCombat(encounter){combatState=encounter;$('#combatOverlay').classList.add('open');renderCombat()}
 function closeCombat(){$('#combatOverlay').classList.remove('open');combatState=null}
 function computeCombatAffordances(){
- combatReachable=new Set();combatAttackable={};
+ combatReachable=new Set();combatAttackable={};combatSpellTargets={};
  if(!combatState||combatState.status!=='active')return;
  const human=combatState.units.find(u=>u.stats?.is_human);
  if(!human||combatState.current_unit_id!==human.id)return;
@@ -610,9 +650,18 @@ function computeCombatAffordances(){
   }
  }
  visited.delete(tileKey(human.x,human.y));
+ const spell=selectedSpell();
+ if(spell&&spell.data){
+  combatReachable=new Set();
+  if(spell.data.effect_type==='attack'||spell.data.effect_type==='save'){
+   for(const u of combatState.units) if(u.unit_type!==human.unit_type&&u.is_active) combatSpellTargets[tileKey(u.x,u.y)]=u.id;
+  }else if(spell.data.effect_type==='heal'){
+   for(const u of combatState.units) if(u.unit_type===human.unit_type&&u.is_active) combatSpellTargets[tileKey(u.x,u.y)]=u.id;
+  }
+  return;
+ }
  combatReachable=new Set(visited.keys());
- const tier=human.stats.weapon_tier??2;
- const range=tier<=3?1:(tier<=6?3:5);
+ const range=weaponRangeFor(human.stats.weapon_name,human.stats.weapon_tier);
  for(const u of combatState.units){
   if(u.unit_type==='enemy'&&u.is_active){
    const dist=Math.max(Math.abs(u.x-human.x),Math.abs(u.y-human.y));
@@ -622,6 +671,18 @@ function computeCombatAffordances(){
 }
 function renderCombat(){
  if(!combatState)return;
+ const human=combatState.units.find(u=>u.stats?.is_human);
+ const isHumanTurn=combatState.status==='active'&&human&&combatState.current_unit_id===human.id;
+ const spellSelect=$('#combatSpellSelect');
+ const prevSpell=spellSelect?spellSelect.value:'';
+ const knownSpells=(human?.stats?.known_spells)||[];
+ spellSelect.innerHTML=`<option value="">⚔ Weapon attack</option>${knownSpells.map(name=>{
+  const sp=state.allSpells[name];
+  const label=sp?`${name} (${sp.level===0?'Cantrip':'Lv'+sp.level})`:name;
+  return `<option value="${safe(name)}">${safe(label)}</option>`;
+ }).join('')}`;
+ if(knownSpells.includes(prevSpell))spellSelect.value=prevSpell;
+ spellSelect.disabled=!isHumanTurn;
  computeCombatAffordances();
  const obstacleSet=new Set(combatState.obstacles.map(([x,y])=>tileKey(x,y)));
  const unitByTile={};
@@ -634,6 +695,7 @@ function renderCombat(){
    if(obstacleSet.has(key))classes.push('obstacle');
    if(combatReachable.has(key))classes.push('reachable');
    if(key in combatAttackable)classes.push('attackable');
+   if(key in combatSpellTargets)classes.push('attackable','spell-target');
    const unit=unitByTile[key];
    let inner='';
    if(unit){
@@ -654,10 +716,16 @@ function renderCombat(){
  }).join('');
  $('#combatLog').innerHTML=(combatState.log||[]).slice().reverse().map(line=>`<div>${safe(line)}</div>`).join('');
  $('#combatRoundInfo').textContent=`Round ${combatState.round_number}`;
- const human=combatState.units.find(u=>u.stats?.is_human);
- const isHumanTurn=combatState.status==='active'&&human&&combatState.current_unit_id===human.id;
  $('#combatEndTurnBtn').disabled=!isHumanTurn;
- $('#combatHint').textContent=combatState.status!=='active'?'':(isHumanTurn?'Click a highlighted tile to move, or a highlighted enemy to attack.':'Waiting for other combatants…');
+ const spell=selectedSpell();
+ const canPowerAttack=isHumanTurn&&!spell&&(human.stats.feats||[]).some(f=>POWER_ATTACK_FEATS.has(f));
+ $('#combatPowerAttackLabel').hidden=!canPowerAttack;
+ if(!canPowerAttack)$('#combatPowerAttack').checked=false;
+ const castBtn=$('#combatCastBtn');
+ const needsNoTarget=spell&&spell.data&&!['attack','save','heal'].includes(spell.data.effect_type);
+ castBtn.hidden=!needsNoTarget;
+ if(!isHumanTurn)castBtn.hidden=true;
+ $('#combatHint').textContent=combatState.status!=='active'?'':(isHumanTurn?(spell?`Click a highlighted target to cast ${spell.name}, or click your own tile to target yourself.`:'Click a highlighted tile to move, or a highlighted enemy to attack.'):'Waiting for other combatants…');
  const outcome=$('#combatOutcome');
  if(combatState.status!=='active'){
   outcome.hidden=false;outcome.className=`combat-outcome ${combatState.status}`;
@@ -670,14 +738,31 @@ async function onCombatTileClick(x,y){
  const human=combatState.units.find(u=>u.stats?.is_human);
  if(!human||combatState.current_unit_id!==human.id)return;
  const key=tileKey(x,y);
+ const spell=selectedSpell();
  try{
   let result=null;
-  if(key in combatAttackable)result=await api(`/api/combat/${combatState.id}/attack`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id,target_id:combatAttackable[key]})});
-  else if(combatReachable.has(key))result=await api(`/api/combat/${combatState.id}/move`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id,x,y})});
-  else return;
+  if(spell){
+   let targetId=combatSpellTargets[key];
+   if(targetId==null&&spell.data?.effect_type==='heal'&&x===human.x&&y===human.y)targetId=human.id;
+   if(targetId==null)return;
+   result=await api(`/api/combat/${combatState.id}/cast`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id,spell_name:spell.name,target_id:targetId})});
+  }else if(key in combatAttackable){
+   const powerAttack=!!$('#combatPowerAttack')?.checked;
+   result=await api(`/api/combat/${combatState.id}/attack`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id,target_id:combatAttackable[key],power_attack:powerAttack})});
+  }else if(combatReachable.has(key)){
+   result=await api(`/api/combat/${combatState.id}/move`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id,x,y})});
+  }else return;
   combatState=result;renderCombat();
  }catch(error){toast(error.message)}
 }
+$('#combatSpellSelect').onchange=()=>renderCombat();
+$('#combatCastBtn').onclick=async()=>{
+ if(!combatState)return;
+ const human=combatState.units.find(u=>u.stats?.is_human);
+ const spell=selectedSpell();
+ if(!human||!spell)return;
+ try{const result=await api(`/api/combat/${combatState.id}/cast`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id,spell_name:spell.name,target_id:null})});combatState=result;renderCombat()}catch(error){toast(error.message)}
+};
 $('#combatEndTurnBtn').onclick=async()=>{
  if(!combatState)return;
  const human=combatState.units.find(u=>u.stats?.is_human);

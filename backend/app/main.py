@@ -21,7 +21,7 @@ RECENT_HISTORY_MESSAGES = 30
 
 import uuid
 
-from backend.app.domain import multiverse, scenarios, weapons, worldscale
+from backend.app.domain import dnd_weapons, multiverse, scenarios, spells as spells_domain, weapons, worldscale
 from backend.app.domain.characters import (
     ALIGNMENTS,
     ALL_PRESET_SOURCES,
@@ -82,6 +82,7 @@ from core.levelling import (
     STAT_NAMES,
     add_feat_to_character,
     add_skill_to_character,
+    add_spell_to_character,
     award_xp,
     get_full_sheet,
     increase_stat,
@@ -347,6 +348,15 @@ class FeatLearnIn(BaseModel):
     feat: str
 
 
+class SpellLearnIn(BaseModel):
+    spell: str
+
+
+class WeaponEquipIn(BaseModel):
+    weapon_name: str
+    equip_slot: str = "weapon"
+
+
 class InventoryAddIn(BaseModel):
     item_name: str
     item_type: str = "misc"
@@ -434,6 +444,13 @@ class CombatMoveIn(BaseModel):
 class CombatTargetIn(BaseModel):
     unit_id: int
     target_id: int
+    power_attack: bool = False
+
+
+class CombatCastIn(BaseModel):
+    unit_id: int
+    spell_name: str
+    target_id: int | None = None
 
 
 class CombatUnitIn(BaseModel):
@@ -1310,7 +1327,13 @@ def combat_move(encounter_id: int, payload: CombatMoveIn) -> dict:
 
 @app.post("/api/combat/{encounter_id}/attack")
 def combat_attack(encounter_id: int, payload: CombatTargetIn) -> dict:
-    result = tactical_combat.attack_unit(encounter_id, payload.unit_id, payload.target_id)
+    result = tactical_combat.attack_unit(encounter_id, payload.unit_id, payload.target_id, payload.power_attack)
+    return _combat_response(result, result.get("character_id"), result.get("world_id"))
+
+
+@app.post("/api/combat/{encounter_id}/cast")
+def combat_cast(encounter_id: int, payload: CombatCastIn) -> dict:
+    result = tactical_combat.cast_spell(encounter_id, payload.unit_id, payload.spell_name, payload.target_id)
     return _combat_response(result, result.get("character_id"), result.get("world_id"))
 
 
@@ -1586,6 +1609,57 @@ def learn_character_skill(character_id: int, payload: SkillLearnIn) -> dict:
 def learn_character_feat(character_id: int, payload: FeatLearnIn) -> dict:
     ok = add_feat_to_character(character_id, payload.feat)
     return {"updated": ok, "sheet": get_full_sheet(character_id)}
+
+
+@app.get("/api/spells")
+def list_spells(profession: str | None = None) -> dict:
+    names = spells_domain.spells_for_class(profession) if profession else list(spells_domain.SPELLS.keys())
+    return {"spells": {name: spells_domain.SPELLS[name] for name in names}}
+
+
+@app.post("/api/characters/{character_id}/spells")
+def learn_character_spell(character_id: int, payload: SpellLearnIn) -> dict:
+    if payload.spell not in spells_domain.SPELLS:
+        raise HTTPException(status_code=400, detail="Unknown spell.")
+    ok = add_spell_to_character(character_id, payload.spell)
+    return {"updated": ok, "sheet": get_full_sheet(character_id)}
+
+
+@app.get("/api/weapons/dnd")
+def list_dnd_weapons() -> dict:
+    return {"weapons": dnd_weapons.DND_WEAPONS, "categories": dnd_weapons.WEAPON_CATEGORIES}
+
+
+@app.post("/api/characters/{character_id}/equip")
+def equip_dnd_weapon(character_id: int, payload: WeaponEquipIn) -> dict:
+    weapon = dnd_weapons.DND_WEAPONS.get(payload.weapon_name)
+    if not weapon:
+        raise HTTPException(status_code=400, detail="Unknown weapon.")
+    conn = get_conn()
+    try:
+        conn.execute("UPDATE inventory SET equip_slot=NULL WHERE character_id=? AND equip_slot=?",
+                     (character_id, payload.equip_slot))
+        existing = conn.execute(
+            "SELECT id FROM inventory WHERE character_id=? AND item_name=?", (character_id, payload.weapon_name)
+        ).fetchone()
+        stat_bonuses = json.dumps({"weapon_tier": weapon["tier"]})
+        if existing:
+            conn.execute("UPDATE inventory SET equip_slot=?, stat_bonuses=? WHERE id=?",
+                         (payload.equip_slot, stat_bonuses, existing["id"]))
+            item_id = existing["id"]
+        else:
+            cur = conn.execute(
+                "INSERT INTO inventory (character_id,item_name,item_type,quantity,value,description,equip_slot,stat_bonuses,source,created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (character_id, payload.weapon_name, weapon["category"], 1, 0,
+                 f"{weapon['damage']} {weapon['damage_type']}", payload.equip_slot, stat_bonuses, "equip", now_iso()),
+            )
+            item_id = cur.lastrowid
+        conn.commit()
+        row = conn.execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
+        return {"item": _item_with_weapon_tier(dict(row)), "sheet": get_full_sheet(character_id)}
+    finally:
+        conn.close()
 
 
 def _item_with_weapon_tier(row: dict) -> dict:

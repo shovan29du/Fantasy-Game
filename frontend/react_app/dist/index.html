@@ -308,6 +308,13 @@
           <div id="combatBoard" class="combat-board"></div>
           <div class="combat-hint" id="combatHint">Click a highlighted tile to move, or a highlighted enemy to attack.</div>
           <div class="combat-actions">
+            <select id="combatSpellSelect" class="combat-spell-select">
+              <option value="">⚔ Weapon attack</option>
+            </select>
+            <label id="combatPowerAttackLabel" class="combat-power-label" hidden>
+              <input type="checkbox" id="combatPowerAttack"> Power Attack
+            </label>
+            <button id="combatCastBtn" class="ghost" hidden>Cast</button>
             <button id="combatEndTurnBtn" class="ghost">Hold position / End turn</button>
             <button id="combatLeaveBtn" class="gold" hidden>Continue</button>
           </div>

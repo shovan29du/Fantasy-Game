@@ -10,12 +10,14 @@ from core.storage import get_conn
 
 
 def test_weapon_range_scales_with_tier():
-    assert tc._weapon_range(0) == 1
-    assert tc._weapon_range(3) == 1
-    assert tc._weapon_range(4) == 3
-    assert tc._weapon_range(6) == 3
-    assert tc._weapon_range(9) == 5
-    assert tc._weapon_range(None) == 1  # tier 2 default -> melee range
+    assert tc._weapon_range_for(None, 0) == 1
+    assert tc._weapon_range_for(None, 3) == 1
+    assert tc._weapon_range_for(None, 4) == 3
+    assert tc._weapon_range_for(None, 6) == 3
+    assert tc._weapon_range_for(None, 9) == 5
+    assert tc._weapon_range_for(None, None) == 1  # tier 2 default -> melee range
+    assert tc._weapon_range_for("Longbow", None) == 4  # real ranged weapon
+    assert tc._weapon_range_for("Halberd", None) == 2  # reach property
 
 
 def test_chebyshev_distance():
@@ -121,7 +123,7 @@ def test_attack_rejects_out_of_range_target(temp_db):
     human = _human_unit(encounter)
     far_enemy = max((u for u in encounter["units"] if u["unit_type"] == "enemy"),
                      key=lambda e: tc._chebyshev(human["x"], human["y"], e["x"], e["y"]))
-    if tc._chebyshev(human["x"], human["y"], far_enemy["x"], far_enemy["y"]) <= tc._weapon_range(human["stats"].get("weapon_tier")):
+    if tc._chebyshev(human["x"], human["y"], far_enemy["x"], far_enemy["y"]) <= tc._weapon_range_for(human["stats"].get("weapon_name"), human["stats"].get("weapon_tier")):
         pytest.skip("every enemy happened to be in range on this seed")
     result = tc.attack_unit(encounter["id"], human["id"], far_enemy["id"])
     assert "error" in result
@@ -173,7 +175,7 @@ def test_full_encounter_can_be_won_by_defeating_all_enemies(temp_db):
             break
         target = min(enemies, key=lambda e: tc._chebyshev(human["x"], human["y"], e["x"], e["y"]))
         dist = tc._chebyshev(human["x"], human["y"], target["x"], target["y"])
-        rng = tc._weapon_range(human["stats"].get("weapon_tier"))
+        rng = tc._weapon_range_for(human["stats"].get("weapon_name"), human["stats"].get("weapon_tier"))
         if dist <= rng:
             tc.attack_unit(encounter_id, human["id"], target["id"])
         else:

@@ -42,6 +42,8 @@ UI_MODULES = [
     "backend.app.domain.worldscale",
     "backend.app.domain.weapons",
     "backend.app.domain.multiverse",
+    "backend.app.domain.spells",
+    "backend.app.domain.dnd_weapons",
 ]
 
 def test_imports(modules: List[str] = None) -> Tuple[List[str], List[Tuple[str, str]]]:
