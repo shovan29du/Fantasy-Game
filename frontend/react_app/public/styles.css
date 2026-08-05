@@ -9,3 +9,6 @@
 .combat-spell-select{background:#151c23;color:var(--ink);border:1px solid var(--line);padding:9px 10px;cursor:pointer}.combat-power-label{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted);cursor:pointer}.combat-power-label input{accent-color:var(--gold)}
 .orb.speaking{animation:orbSpeak .55s ease-in-out infinite}@keyframes orbSpeak{0%,100%{box-shadow:0 0 12px #a880ff;transform:scale(1)}50%{box-shadow:0 0 26px #a880ff,0 0 12px #fff;transform:scale(1.12)}}
 #voiceToggleBtn{font-size:10px;padding:7px 10px;flex-shrink:0}#voiceToggleBtn.active{color:var(--gold);border-color:var(--gold)}
+#micBtn{background:#242b33!important;color:var(--ink)!important;padding:0 12px!important;font-size:15px}
+#micBtn.listening{background:var(--red)!important;animation:micPulse .6s ease-in-out infinite}
+@keyframes micPulse{0%,100%{box-shadow:0 0 0 0 #df665d88}50%{box-shadow:0 0 0 7px #df665d00}}

@@ -63,3 +63,30 @@ def test_generate_scene_video_returns_none_when_slideshow_render_fails():
          patch.object(media_pipeline, "create_slideshow", return_value=None):
         result = media_pipeline.generate_scene_video(["scene one"])
     assert result is None
+
+
+def test_ffmpeg_bin_prefers_system_ffmpeg_on_path():
+    with patch.object(media_pipeline.shutil, "which", return_value="/usr/bin/ffmpeg"):
+        assert media_pipeline._ffmpeg_bin() == "ffmpeg"
+
+
+def test_ffmpeg_bin_falls_back_to_imageio_ffmpeg_when_not_on_path():
+    import sys
+    import types
+
+    fake_module = types.ModuleType("imageio_ffmpeg")
+    fake_module.get_ffmpeg_exe = lambda: "/fake/venv/imageio_ffmpeg/ffmpeg-linux64"
+    with patch.object(media_pipeline.shutil, "which", return_value=None), \
+         patch.dict(sys.modules, {"imageio_ffmpeg": fake_module}):
+        assert media_pipeline._ffmpeg_bin() == "/fake/venv/imageio_ffmpeg/ffmpeg-linux64"
+
+
+def test_ffmpeg_bin_falls_back_to_plain_ffmpeg_when_imageio_ffmpeg_missing():
+    import sys
+
+    # sys.modules[name] = None is the standard way to force `import name` to
+    # raise ImportError deterministically, regardless of whether
+    # imageio-ffmpeg actually happens to be installed in this environment.
+    with patch.object(media_pipeline.shutil, "which", return_value=None), \
+         patch.dict(sys.modules, {"imageio_ffmpeg": None}):
+        assert media_pipeline._ffmpeg_bin() == "ffmpeg"

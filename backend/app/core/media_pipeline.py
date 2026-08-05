@@ -3,7 +3,7 @@ Image provider selector, FFmpeg animation pipeline, video job queue,
 achievement/boss cinematic triggers, character portrait batch gen."""
 
 from __future__ import annotations
-import json, os, subprocess, time, threading, hashlib, uuid
+import json, os, shutil, subprocess, time, threading, hashlib, uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 from core.storage import get_conn, now_iso
@@ -35,6 +35,19 @@ def get_provider_options() -> List[Dict]:
 
 # ═══ FFMPEG ANIMATION PIPELINE ═══
 
+def _ffmpeg_bin() -> str:
+    """Resolve the ffmpeg binary to invoke: prefer a system install already
+    on PATH, else fall back to the static binary bundled by the optional
+    imageio-ffmpeg package, so Animation/Video works right after `pip
+    install -r requirements.txt` with no separate system install."""
+    if shutil.which("ffmpeg"):
+        return "ffmpeg"
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
 ANIMATION_EFFECTS = {
     "zoom_in": "-vf \"zoompan=z='min(zoom+0.002,1.5)':d=125:s=1280x720\"",
     "zoom_out": "-vf \"zoompan=z='if(lte(zoom,1.0),1.5,max(1.001,zoom-0.002))':d=125:s=1280x720\"",
@@ -59,7 +72,7 @@ def create_animation(image_path: str, output_name: str = None,
     # Replace d= with actual frame count
     effect_filter = effect_filter.replace("d=125", f"d={frames}")
 
-    cmd = (f"ffmpeg -y -loop 1 -i \"{image_path}\" "
+    cmd = (f"\"{_ffmpeg_bin()}\" -y -loop 1 -i \"{image_path}\" "
            f"{effect_filter} "
            f"-t {duration} -pix_fmt yuv420p -c:v libx264 "
            f"\"{output_path}\"")
@@ -83,7 +96,7 @@ def create_slideshow(image_paths: List[str], output_name: str = "slideshow.mp4",
         for img in image_paths:
             if os.path.exists(img):
                 f.write(f"file '{img}'\nduration {duration_per_slide}\n")
-    cmd = (f"ffmpeg -y -f concat -safe 0 -i \"{concat_file}\" "
+    cmd = (f"\"{_ffmpeg_bin()}\" -y -f concat -safe 0 -i \"{concat_file}\" "
            f"-vf \"scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2\" "
            f"-pix_fmt yuv420p -c:v libx264 \"{output_path}\"")
     try:

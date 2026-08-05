@@ -375,6 +375,30 @@ $('#voiceToggleBtn').onclick=()=>{
 };
 $('#voiceToggleBtn').classList.toggle('active',state.voiceEnabled);
 $('#voiceToggleBtn').innerHTML=state.voiceEnabled?'🔊 Voice on':'🔈 Voice off';
+
+// Chat voice INPUT: the browser's own Web Speech API (Chrome/Edge). No
+// server round-trip and no Python dependency -- Firefox has no
+// implementation, so the mic button just stays hidden there.
+const SpeechRecognitionApi=window.SpeechRecognition||window.webkitSpeechRecognition;
+let speechRecognizer=null,isListening=false;
+if(SpeechRecognitionApi){
+ $('#micBtn').hidden=false;
+ speechRecognizer=new SpeechRecognitionApi();
+ speechRecognizer.continuous=false;speechRecognizer.interimResults=false;speechRecognizer.lang='en-US';
+ speechRecognizer.onresult=e=>{
+  const transcript=e.results[0][0].transcript;
+  $('#chatInput').value=transcript;
+  $('#chatForm').requestSubmit();
+ };
+ speechRecognizer.onend=()=>{isListening=false;$('#micBtn').classList.remove('listening')};
+ speechRecognizer.onerror=()=>{isListening=false;$('#micBtn').classList.remove('listening')};
+ $('#micBtn').onclick=()=>{
+  if(isListening){speechRecognizer.stop();return}
+  stopChatAudio();
+  isListening=true;$('#micBtn').classList.add('listening');
+  try{speechRecognizer.start()}catch{isListening=false;$('#micBtn').classList.remove('listening')}
+ };
+}
 $('#chatForm').onsubmit=async e=>{e.preventDefault();const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;$('#chatLog').insertAdjacentHTML('beforeend',`<p class="player"><b>YOU</b>${safe(msg)}</p>`);input.value='';$('#aiStatus').textContent='Thinking...';try{const world=state.worlds[state.worldIndex];const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');$('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(data.reply)}</p>`);$('#aiStatus').textContent='LM Studio connected';speakReply(data.reply)}catch(error){$('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(error.message||'The local storyteller cannot be reached.')}</p>`);$('#aiStatus').textContent='Start LM Studio on port 1234'}$('#chatLog').scrollTop=$('#chatLog').scrollHeight};
 
 // ═══ AI Companion-style workspace navigation and studios ═══
