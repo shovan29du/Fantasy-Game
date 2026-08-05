@@ -223,10 +223,104 @@ async function crossPortal(){
 function loadSessionFromStorage(){try{const raw=localStorage.getItem(SESSION_KEY);return raw?JSON.parse(raw):null}catch{return null}}
 function saveSessionToStorage(){localStorage.setItem(SESSION_KEY,JSON.stringify({sessionId:state.sessionId,worldId:state.worlds[0]?.id,characterId:state.characterId}))}
 function toWorldEntry(w){const locs=(w.locations||w.world_json?.locations||[]);const first=locs[0];return {id:w.id,name:w.name,ratings:w.ratings||{},reality_type:w.reality_type||'Prime Reality',space:w.space_alignment||'unknown',place:first?first.name:(w.name||'Unknown Location'),theme:'local',startX:first?first.x:50,startY:first?first.y:50}}
+
+// ── Chat message renderer + per-message action toolbar ──
+function chatMsg(cls,html,id){
+ const idAttr=id?` data-mid="${id}"`:'';
+ const label=cls==='player'?'<b>YOU</b>':'<b>WORLDWEAVER</b>';
+ return `<div class="chat-msg ${cls}"${idAttr}><div class="msg-body">${label}${html}</div><div class="msg-actions"><button class="ma" data-act="copy" title="Copy">⎘</button><button class="ma" data-act="edit" title="Edit">✎</button><button class="ma" data-act="delete" title="Delete">🗑</button><button class="ma" data-act="rewind" title="Rewind to here">⏪</button><button class="ma" data-act="memory" title="Save to memory">🧠</button><button class="ma" data-act="select" title="Select">☐</button><button class="ma" data-act="paste" title="Paste to input">→✏</button><button class="ma" data-act="forward" title="Forward">↗</button></div></div>`;
+}
+
+// Event delegation for per-message action buttons
+$('#chatLog').addEventListener('click',async e=>{
+ const btn=e.target.closest('.ma');
+ if(!btn)return;
+ const wrap=btn.closest('.chat-msg');
+ if(!wrap)return;
+ const mid=wrap.dataset.mid?parseInt(wrap.dataset.mid):null;
+ const bodyEl=wrap.querySelector('.msg-body');
+ // extract plain text from rendered html
+ const tmp=document.createElement('div');tmp.innerHTML=bodyEl.innerHTML;
+ // remove the <b> label text
+ const bEl=tmp.querySelector('b');if(bEl)bEl.remove();
+ const text=tmp.textContent.trim();
+ const act=btn.dataset.act;
+ const sid=encodeURIComponent(state.sessionId||'default');
+
+ if(act==='copy'){
+  navigator.clipboard.writeText(text).catch(()=>{});
+  toast('Copied!');
+ }
+ else if(act==='paste'){
+  $('#chatInput').value=text;
+  $('#chatInput').focus();
+ }
+ else if(act==='select'){
+  wrap.classList.toggle('selected');
+  btn.textContent=wrap.classList.contains('selected')?'☑':'☐';
+ }
+ else if(act==='forward'){
+  const share=`[Worldweaver] ${text}`;
+  if(navigator.share){navigator.share({text:share}).catch(()=>{})}
+  else{navigator.clipboard.writeText(share).catch(()=>{});toast('Copied for sharing!');}
+ }
+ else if(act==='edit'){
+  if(!mid){toast('This message has no ID yet — reload chat first.');return;}
+  const cur=bodyEl.querySelector('b')?bodyEl.innerHTML.replace(/^<b>[^<]*<\/b>/,'').trim():text;
+  const fresh=prompt('Edit message:',text);
+  if(fresh===null||fresh===text)return;
+  try{
+   const r=await fetch(`/api/chat/messages/${mid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:fresh})});
+   if(!r.ok)throw new Error('Edit failed');
+   // update in-place
+   const label=wrap.classList.contains('player')?'<b>YOU</b>':'<b>WORLDWEAVER</b>';
+   bodyEl.innerHTML=label+safe(fresh);
+   toast('Edited');
+  }catch(err){toast(err.message);}
+ }
+ else if(act==='delete'){
+  if(!mid){wrap.remove();return;}
+  if(!confirm('Delete this message?'))return;
+  try{
+   const r=await fetch(`/api/chat/messages/${mid}`,{method:'DELETE'});
+   if(!r.ok)throw new Error('Delete failed');
+   wrap.remove();toast('Deleted');
+  }catch(err){toast(err.message);}
+ }
+ else if(act==='rewind'){
+  if(!mid){toast('No ID — reload chat first.');return;}
+  if(!confirm('Rewind: delete this message and everything after it?'))return;
+  try{
+   const r=await fetch(`/api/chat/messages/${mid}/rewind?session_id=${sid}`,{method:'DELETE'});
+   if(!r.ok)throw new Error('Rewind failed');
+   // remove this and all following siblings
+   let el=wrap;
+   while(el){const next=el.nextElementSibling;el.remove();el=next;}
+   toast('Rewound!');
+  }catch(err){toast(err.message);}
+ }
+ else if(act==='memory'){
+  if(!mid){
+   // no id — save raw text directly
+   try{
+    const r=await fetch('/api/memory/facts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fact:text,source:'chat-pin',memory_type:'episodic',importance:0.9})});
+    if(!r.ok)throw new Error('Memory save failed');
+    toast('Saved to memory!');
+   }catch(err){toast(err.message);}
+   return;
+  }
+  try{
+   const r=await fetch(`/api/chat/messages/${mid}/memory`,{method:'POST'});
+   if(!r.ok)throw new Error('Memory save failed');
+   toast('Saved to memory!');
+  }catch(err){toast(err.message);}
+ }
+});
+
 async function loadChatHistory(){
  try{
   const history=await api(`/api/chat/history?session_id=${encodeURIComponent(state.sessionId)}&limit=40`);
-  $('#chatLog').innerHTML=history.length?history.map(m=>`<p class="${m.role==='user'?'player':'gm'}">${safe(m.content)}</p>`).join(''):'<p class="gm">The portal hums, waiting for your first move.</p>';
+  $('#chatLog').innerHTML=history.length?history.map(m=>chatMsg(m.role==='user'?'player':'gm',m.content,m.id)).join(''):'<p class="gm">The portal hums, waiting for your first move.</p>';
   $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
  }catch{}
 }
@@ -384,7 +478,7 @@ $('#chatFileInput').onchange=async()=>{
  if(!f)return;
  $('#chatFileInput').value='';
  const fd=new FormData();fd.append('file',f);
- $('#chatLog').insertAdjacentHTML('beforeend',`<p class="player"><b>YOU</b>📎 Attached: ${safe(f.name)}</p>`);
+ $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player','📎 Attached: '+safe(f.name)));
  $('#aiStatus').textContent='Reading file…';
  try{
   const r=await fetch('/api/chat/attach',{method:'POST',body:fd});
@@ -395,11 +489,11 @@ $('#chatFileInput').onchange=async()=>{
   const cr=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:summary,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});
   const cd=await cr.json();
   if(!cr.ok)throw new Error(cd.detail||'AI unavailable');
-  $('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(cd.reply)}</p>`);
+  $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(cd.reply)));
   $('#aiStatus').textContent='LM Studio connected';
   speakReply(cd.reply);
  }catch(err){
-  $('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(err.message||'Could not read file.')}</p>`);
+  $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(err.message||'Could not read file.')));
   $('#aiStatus').textContent='LM Studio link';
  }
  $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
@@ -435,7 +529,7 @@ if(SpeechRecognitionApi){
   try{speechRecognizer.start()}catch{isListening=false;$('#micBtn').classList.remove('listening')}
  };
 }
-$('#chatForm').onsubmit=async e=>{e.preventDefault();const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;$('#chatLog').insertAdjacentHTML('beforeend',`<p class="player"><b>YOU</b>${safe(msg)}</p>`);input.value='';$('#aiStatus').textContent='Thinking...';try{const world=state.worlds[state.worldIndex];const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');$('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(data.reply)}</p>`);$('#aiStatus').textContent='LM Studio connected';speakReply(data.reply)}catch(error){$('#chatLog').insertAdjacentHTML('beforeend',`<p class="gm"><b>WORLDWEAVER</b>${safe(error.message||'The local storyteller cannot be reached.')}</p>`);$('#aiStatus').textContent='Start LM Studio on port 1234'}$('#chatLog').scrollTop=$('#chatLog').scrollHeight};
+$('#chatForm').onsubmit=async e=>{e.preventDefault();const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',safe(msg)));input.value='';$('#aiStatus').textContent='Thinking...';try{const world=state.worlds[state.worldIndex];const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(data.reply),data.id));$('#aiStatus').textContent='LM Studio connected';speakReply(data.reply)}catch(error){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(error.message||'The local storyteller cannot be reached.')));$('#aiStatus').textContent='Start LM Studio on port 1234'}$('#chatLog').scrollTop=$('#chatLog').scrollHeight};
 
 // ═══ AI Companion-style workspace navigation and studios ═══
 function openView(name){$$('.app-view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.side-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='play'){$('#playHub').hidden=state.hasActiveGame;$('#gameArea').hidden=!state.hasActiveGame}if(name==='characters')loadCharacterStudio();if(name==='explore')loadExplore();if(name==='worlds')loadWorlds();if(name==='knowledge'){loadLore();loadKnowledgeDocs()}if(name==='media')loadMediaTab();if(name==='settings'){checkModelStatus();loadSettingsExtras()}}

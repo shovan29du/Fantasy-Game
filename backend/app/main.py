@@ -965,6 +965,29 @@ def mark_chat_moment(message_id: int) -> dict:
     return {"tagged": True}
 
 
+@app.delete("/api/chat/messages/{message_id}/rewind")
+def rewind_chat_to(message_id: int, session_id: str = "default") -> dict:
+    """Delete message_id and every message after it in the session."""
+    conn = get_conn()
+    conn.execute("DELETE FROM messages WHERE id >= ? AND session_id = ?", (message_id, session_id))
+    conn.commit()
+    conn.close()
+    return {"rewound": True}
+
+
+@app.post("/api/chat/messages/{message_id}/memory")
+def save_message_to_memory(message_id: int) -> dict:
+    """Save a chat message as a persistent memory fact."""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Message not found")
+    fact = dict(row)["content"]
+    memory_engine.store_fact(fact, source="chat-pin", memory_type="episodic", importance=0.9)
+    return {"saved": True, "fact": fact[:120]}
+
+
 @app.delete("/api/chat/session/{session_id}")
 def remove_chat_session(session_id: str) -> dict:
     clear_session(session_id)
