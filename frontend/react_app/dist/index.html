@@ -75,6 +75,12 @@
       </section>
     </section>
 
+    <aside id="chatPanel" class="chat-column">
+      <div class="chat-head"><div><span class="orb"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div></div>
+      <div id="chatLog" class="chat-log"><p class="gm"><b>WORLDWEAVER</b>The portal hums beyond the ridge. Its runes point to a reality where steel towers touch a violet sky. What do you do?</p></div>
+      <form id="chatForm"><input id="chatInput" placeholder="Speak, investigate, or describe an action…" autocomplete="off"><button>Send</button></form>
+    </aside>
+
     <aside class="panel detail-panel">
       <nav class="detail-tabs">
         <button class="active" data-panel="character">Character</button><button data-panel="inventory">Inventory</button><button data-panel="spells">Spellbook</button><button data-panel="skills">Skills</button>
@@ -326,12 +332,6 @@
       </div>
     </div>
   </section>
-  <section id="chatPanel" class="chat-panel">
-    <div class="chat-head"><div><span class="orb"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div><button id="closeChat">×</button></div>
-    <div id="chatLog" class="chat-log"><p class="gm"><b>WORLDWEAVER</b>The portal hums beyond the ridge. Its runes point to a reality where steel towers touch a violet sky. What do you do?</p></div>
-    <form id="chatForm"><input id="chatInput" placeholder="Speak, investigate, or describe an action…" autocomplete="off"><button>Send</button></form>
-  </section>
-  <button id="chatToggle" class="chat-toggle" style="display:none">✦ <span>Ask Worldweaver</span></button>
   <div id="toast" class="toast" role="status"></div>
 
   <script src="/game.js"></script>
