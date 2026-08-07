@@ -231,7 +231,7 @@ function toWorldEntry(w){const locs=(w.locations||w.world_json?.locations||[]);c
 function chatMsg(cls,html,id){
  const idAttr=id?` data-mid="${id}"`:'';
  const label=cls==='player'?'<b>YOU</b>':'<b>WORLDWEAVER</b>';
- return `<div class="chat-msg ${cls}"${idAttr}><div class="msg-body">${label}${html}</div><div class="msg-actions"><button class="ma" data-act="copy" title="Copy">⎘</button><button class="ma" data-act="edit" title="Edit">✎</button><button class="ma" data-act="delete" title="Delete">🗑</button><button class="ma" data-act="rewind" title="Rewind to here">⏪</button><button class="ma" data-act="memory" title="Save to memory">🧠</button><button class="ma" data-act="select" title="Select">☐</button><button class="ma" data-act="paste" title="Paste to input">→✏</button><button class="ma" data-act="forward" title="Forward">↗</button></div></div>`;
+ return `<div class="chat-msg ${cls}"${idAttr}><div class="msg-body">${label}${html}</div><div class="msg-actions"><button class="ma" data-act="copy" title="Copy">⎘</button><button class="ma" data-act="edit" title="Edit">✎</button><button class="ma" data-act="delete" title="Delete">🗑</button><button class="ma" data-act="rewind" title="Delete this and everything after">⏪</button><button class="ma" data-act="regenerate" title="Regenerate AI response">♻</button><button class="ma" data-act="memory" title="Save to memory">🧠</button><button class="ma" data-act="select" title="Select">☐</button><button class="ma" data-act="paste" title="Paste to input">→✏</button><button class="ma" data-act="forward" title="Progress story forward">↗</button><button class="ma" data-act="media" title="Generate media from this message">🎨</button></div></div>`;
 }
 
 // Event delegation for per-message action buttons
@@ -263,7 +263,16 @@ $('#chatLog').addEventListener('click',async e=>{
   btn.textContent=wrap.classList.contains('selected')?'☑':'☐';
  }
  else if(act==='forward'){
-  showChatOptions('progressions');
+  // Auto-progress: get best logical continuation and send it
+  const sid2=encodeURIComponent(state.sessionId||'default');
+  btn.textContent='…';btn.disabled=true;
+  try{
+   const {options}=await api(`/api/chat/progressions?session_id=${sid2}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.sessionId||'default'})});
+   const best=options&&options[0]?options[0]:'Continue.';
+   $('#chatInput').value=best;
+   $('#chatForm').requestSubmit();
+  }catch{$('#chatInput').value='Continue the story.';$('#chatForm').requestSubmit();}
+  finally{btn.textContent='↗';btn.disabled=false;}
  }
  else if(act==='edit'){
   if(!mid){toast('This message has no ID yet — reload chat first.');return;}
@@ -289,10 +298,8 @@ $('#chatLog').addEventListener('click',async e=>{
   }catch(err){toast(err.message);}
  }
  else if(act==='rewind'){
-  const choice=confirm('Show 5 alternative outcomes (OK) or delete & rewind history (Cancel)?');
-  if(choice){showChatOptions('alternatives');return;}
   if(!mid){toast('No ID — reload chat first.');return;}
-  if(!confirm('Rewind: delete this message and everything after it?'))return;
+  if(!confirm('Delete this message and everything after it?'))return;
   try{
    const r=await fetch(`/api/chat/messages/${mid}/rewind?session_id=${sid}`,{method:'DELETE'});
    if(!r.ok)throw new Error('Rewind failed');
@@ -301,9 +308,23 @@ $('#chatLog').addEventListener('click',async e=>{
    toast('Rewound!');
   }catch(err){toast(err.message);}
  }
+ else if(act==='regenerate'){
+  // Re-ask the AI to respond from this point in the story
+  btn.textContent='…';btn.disabled=true;
+  try{
+   const world=state.worlds[state.worldIndex];
+   const prompt=wrap.classList.contains('player')?`The player said: ${text}. Continue the story.`:`Regenerate a different response to the previous player action.`;
+   const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:prompt,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.9})});
+   const data=await r.json();
+   if(!r.ok)throw new Error(data.detail||'AI unavailable');
+   $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(data.reply),data.id));
+   $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
+   speakReply(data.reply);
+  }catch(err){toast(err.message);}
+  finally{btn.textContent='♻';btn.disabled=false;}
+ }
  else if(act==='memory'){
   if(!mid){
-   // no id — save raw text directly
    try{
     const r=await fetch('/api/memory/facts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fact:text,source:'chat-pin',memory_type:'episodic',importance:0.9})});
     if(!r.ok)throw new Error('Memory save failed');
@@ -316,6 +337,41 @@ $('#chatLog').addEventListener('click',async e=>{
    if(!r.ok)throw new Error('Memory save failed');
    toast('Saved to memory!');
   }catch(err){toast(err.message);}
+ }
+ else if(act==='media'){
+  // Show inline media panel under the message
+  let mp=wrap.querySelector('.msg-media-panel');
+  if(mp){mp.remove();return;}
+  mp=document.createElement('div');mp.className='msg-media-panel';
+  mp.innerHTML=`<div class="mmp-head">🎨 Generate from this message</div>
+<div class="mmp-btns">
+ <button class="mmp-btn" data-mtype="image">🖼 Image</button>
+ <button class="mmp-btn" data-mtype="anime">🎌 Anime</button>
+ <button class="mmp-btn" data-mtype="video">🎬 Video</button>
+</div>
+<div class="mmp-result"></div>`;
+  wrap.appendChild(mp);
+  mp.querySelectorAll('.mmp-btn').forEach(b=>b.onclick=async()=>{
+   const mtype=b.dataset.mtype;
+   const styleMap={image:'Cinematic',anime:'Anime Portrait',video:'Cinematic'};
+   const resultEl=mp.querySelector('.mmp-result');
+   resultEl.innerHTML='<span class="mmp-loading">Generating…</span>';
+   b.disabled=true;
+   try{
+    const endpoint='/api/media/image';
+    const payload={prompt:text.slice(0,200),style:styleMap[mtype]||'Cinematic',width:mtype==='video'?1024:512,height:mtype==='video'?576:768,save_to_chat:false};
+    const res=await api(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(res.url){
+     resultEl.innerHTML=`<img src="${safe(res.url)}" class="mmp-img" alt="generated"><br><button class="mmp-insert ghost">Insert into chat</button>`;
+     resultEl.querySelector('.mmp-insert').onclick=()=>{
+      $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',`<img src="${safe(res.url)}" style="max-width:100%;border-radius:3px;margin-top:4px" alt="generated scene">`));
+      $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
+      mp.remove();
+     };
+    }else{resultEl.innerHTML='<span class="mmp-loading">No image returned.</span>';}
+   }catch(err){resultEl.innerHTML=`<span class="mmp-loading">${safe(err.message)}</span>`;}
+   finally{b.disabled=false;}
+  });
  }
 });
 

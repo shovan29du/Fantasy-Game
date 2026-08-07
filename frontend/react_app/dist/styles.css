@@ -34,3 +34,14 @@
 .map.map-night{filter:brightness(.6) saturate(.6) hue-rotate(200deg)}
 .map.map-dawn{filter:brightness(.82) saturate(.88) hue-rotate(15deg)}
 #mapTime,#mapWeather{cursor:default;user-select:none}
+
+/* ── Per-message inline media panel ── */
+.msg-media-panel{background:#080c12;border:1px solid var(--line);border-top:none;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.mmp-head{font-size:9px;color:var(--gold);letter-spacing:.7px;text-transform:uppercase}
+.mmp-btns{display:flex;gap:6px}
+.mmp-btn{background:#141c24;border:1px solid var(--line);color:#c8d0da;padding:5px 10px;cursor:pointer;border-radius:3px;font-size:11px}
+.mmp-btn:hover{border-color:var(--gold)}
+.mmp-result{margin-top:2px}
+.mmp-loading{font-size:10px;color:var(--muted)}
+.mmp-img{max-width:100%;border-radius:3px;display:block;margin-top:4px}
+.mmp-insert{font-size:10px;margin-top:4px;padding:4px 8px}
