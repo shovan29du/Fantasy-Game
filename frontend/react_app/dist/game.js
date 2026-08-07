@@ -303,7 +303,7 @@ $('#chatLog').addEventListener('click',async e=>{
   try{
    const r=await fetch(`/api/chat/messages/${mid}/rewind?session_id=${sid}`,{method:'DELETE'});
    if(!r.ok)throw new Error('Rewind failed');
-   let el=wrap;
+   let el=wrap.nextElementSibling;
    while(el){const next=el.nextElementSibling;el.remove();el=next;}
    toast('Rewound!');
   }catch(err){toast(err.message);}

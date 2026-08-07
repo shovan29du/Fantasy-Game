@@ -967,9 +967,9 @@ def mark_chat_moment(message_id: int) -> dict:
 
 @app.delete("/api/chat/messages/{message_id}/rewind")
 def rewind_chat_to(message_id: int, session_id: str = "default") -> dict:
-    """Delete message_id and every message after it in the session."""
+    """Delete every message after message_id in the session (keeps message_id itself)."""
     conn = get_conn()
-    conn.execute("DELETE FROM messages WHERE id >= ? AND session_id = ?", (message_id, session_id))
+    conn.execute("DELETE FROM messages WHERE id > ? AND session_id = ?", (message_id, session_id))
     conn.commit()
     conn.close()
     return {"rewound": True}
