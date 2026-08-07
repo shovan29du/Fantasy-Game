@@ -133,12 +133,15 @@ PREBUILT_WORLDS = {
         "faction_names":["The Family","Dad's Work World","Liana's Own Life"],
         "npc_profs":["Liana (18)","Carl (38) — Funny Dad","Steve (37) — Serious & Protective Dad","Mike (36) — Passionate Dad","Maya (37) — Mom","Liana's Best Friend","School Counsellor","Neighbour"],
         "opening":(
-            "Liana is 18 years old. Her mother Maya (37) has three husbands — Carl (38), funny and light-hearted; "
+            "Liana is 18 years old. Her mother is Maya (37) and she has three dads — Carl (38), funny and light-hearted; "
             "Steve (37), serious and fiercely protective; and Mike (36), passionate and emotionally intense. "
-            "All three men are successful businessmen. Despite their love for Liana, all three dads have been consumed by work "
-            "for the past two years, emotionally absent and barely home. "
-            "Liana feels invisible — convinced her parents simply do not love her anymore. "
-            "The player controls Liana as she tries to reconnect with her family, or forge her own path without them."
+            "All three dads are successful businessmen. "
+            "For the past two years, all four parents — Maya and all three dads — have ignored Liana almost completely. "
+            "They are physically present in the house but emotionally unreachable: "
+            "no conversations, no interest in her life, no affection. "
+            "Liana is convinced her entire family has stopped loving her. She feels utterly alone inside a full house. "
+            "The player controls Liana. The story explores whether she confronts them, withdraws, or finds connection elsewhere — "
+            "and whether her parents' silence has a reason she does not yet know."
         )},
 
     "Liam & Eve — Neighbours":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":7,"factions":2,
