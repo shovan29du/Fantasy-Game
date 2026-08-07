@@ -363,6 +363,8 @@ $('#chatLog').addEventListener('click',async e=>{
     const res=await api(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if(res.url){
      resultEl.innerHTML=`<img src="${safe(res.url)}" class="mmp-img" alt="generated"><br><button class="mmp-insert ghost">Insert into chat</button>`;
+     // Auto-save to media gallery
+     api('/api/media/gallery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({media_type:mtype==='anime'?'image':mtype,title:text.slice(0,60)||'Chat scene',description:text.slice(0,200),file_path:res.path||res.url,source:'chat',tags:[mtype,'chat-generated']})}).catch(()=>{});
      resultEl.querySelector('.mmp-insert').onclick=()=>{
       $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',`<img src="${safe(res.url)}" style="max-width:100%;border-radius:3px;margin-top:4px" alt="generated scene">`));
       $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
