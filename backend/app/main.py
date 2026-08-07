@@ -988,6 +988,45 @@ def save_message_to_memory(message_id: int) -> dict:
     return {"saved": True, "fact": fact[:120]}
 
 
+@app.post("/api/chat/progressions")
+async def chat_progressions(session_id: str = "default", context: str = "") -> dict:
+    """Get 5 logical next-step options based on current chat context."""
+    history = get_history(session_id, limit=10)
+    last_ai = next((m['content'] for m in reversed(history) if m['role']=='assistant'), '')
+    prompt_text = last_ai or context or "You are at the start of an adventure."
+    try:
+        raw = send_to_llm([
+            {"role":"system","content":"You are a tabletop RPG narrator. Given the last story beat, generate exactly 5 short, distinct player action options (max 12 words each). Format: numbered list 1-5, one per line, no extra text."},
+            {"role":"user","content":f"Last beat: {prompt_text[:400]}\nGenerate 5 options:"}
+        ], temperature=0.85, max_tokens=200)
+        lines = [l.strip() for l in raw.strip().split('\n') if l.strip() and l.strip()[0].isdigit()]
+        options = [l.lstrip('0123456789.) ').strip() for l in lines][:5]
+        if len(options)<3:
+            options = ["Investigate the area","Talk to a nearby NPC","Check your inventory","Move to a new location","Wait and observe"]
+    except Exception:
+        options = ["Investigate the area","Talk to a nearby NPC","Check your inventory","Move to a new location","Wait and observe"]
+    return {"options": options}
+
+
+@app.post("/api/chat/alternatives")
+async def chat_alternatives(session_id: str = "default", message_id: int = 0) -> dict:
+    """Get 5 alternative outcomes for a given story moment."""
+    history = get_history(session_id, limit=8)
+    context = ' '.join(m['content'] for m in history[-3:])
+    try:
+        raw = send_to_llm([
+            {"role":"system","content":"You are a tabletop RPG narrator. Given this story moment, generate 5 alternative story outcomes that could have happened differently (max 15 words each). Format: numbered list 1-5."},
+            {"role":"user","content":f"Story context: {context[:500]}\nGenerate 5 alternative outcomes:"}
+        ], temperature=0.9, max_tokens=250)
+        lines = [l.strip() for l in raw.strip().split('\n') if l.strip() and l.strip()[0].isdigit()]
+        options = [l.lstrip('0123456789.) ').strip() for l in lines][:5]
+        if len(options)<3:
+            options = ["A stranger intervenes","The enemy retreats","A portal opens nearby","A hidden passage reveals itself","An ally arrives at the last moment"]
+    except Exception:
+        options = ["A stranger intervenes","The enemy retreats","A portal opens nearby","A hidden passage reveals itself","An ally arrives at the last moment"]
+    return {"options": options}
+
+
 @app.delete("/api/chat/session/{session_id}")
 def remove_chat_session(session_id: str) -> dict:
     clear_session(session_id)
@@ -2080,6 +2119,166 @@ def _add_quest_item(character_id: int, quest: dict) -> None:
             ),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+import math as _math, time as _time
+
+_GAME_CLOCK = {}  # session_id -> {day, hour, minute, weather, season, temp}
+
+WEATHERS = ['Clear','Cloudy','Overcast','Light Rain','Heavy Rain','Thunderstorm','Fog','Drizzle','Snow','Blizzard','Windy','Hail','Sandstorm','Aurora','Mist']
+SEASONS = ['Spring','Summer','Autumn','Winter']
+
+def _get_clock(session_id='default'):
+    if session_id not in _GAME_CLOCK:
+        _GAME_CLOCK[session_id] = {'day':1,'hour':8,'minute':0,'weather':'Clear','season':'Spring','temp':18}
+    return _GAME_CLOCK[session_id]
+
+@app.get("/api/world/clock")
+def get_world_clock(session_id: str = "default") -> dict:
+    clk = _get_clock(session_id)
+    return dict(clk)
+
+@app.post("/api/world/clock/advance")
+def advance_world_clock(session_id: str = "default", minutes: int = 30) -> dict:
+    import random as _random
+    clk = _get_clock(session_id)
+    total = clk['hour'] * 60 + clk['minute'] + minutes
+    clk['minute'] = total % 60
+    clk['hour'] = (total // 60) % 24
+    if total // 60 >= 24:
+        clk['day'] += 1
+        clk['season'] = SEASONS[(clk['day'] // 90) % 4]
+    if _random.random() < 0.15:
+        clk['weather'] = _random.choice(WEATHERS)
+        clk['temp'] = _random.randint(-5, 35)
+    return dict(clk)
+
+@app.post("/api/world/events/random")
+def random_world_event(session_id: str = "default", world_id: int = 0) -> dict:
+    import random as _random
+    EVENTS = [
+        "A wandering merchant arrives at the nearest settlement with rare goods.",
+        "Strange lights are seen in the sky — locals whisper of portals opening.",
+        "A faction scout is spotted observing the party from afar.",
+        "An earthquake trembles through the region, shifting the landscape slightly.",
+        "A local festival erupts in the nearest town — music and laughter fill the air.",
+        "Dark clouds gather rapidly; a magical storm approaches.",
+        "A courier delivers an urgent sealed message addressed to one of the party.",
+        "Distant horns signal an army on the march somewhere beyond the horizon.",
+        "A rare celestial event lights up the night sky — all magic is amplified.",
+        "A travelling bard begins spinning tales about the party's deeds.",
+        "Raiders have struck a nearby village — smoke rises on the horizon.",
+        "A portal flickers to life unexpectedly, revealing a glimpse of another world.",
+        "An ancient ruin is spotted nearby that wasn't there yesterday.",
+        "A powerful beast has been sighted by terrified locals.",
+        "A political assassination changes the balance of power in the region.",
+    ]
+    event = _random.choice(EVENTS)
+    try:
+        clk = _get_clock(session_id)
+        enhanced = send_to_llm([
+            {"role":"system","content":"You are a fantasy game narrator. Given a random event seed, expand it into one vivid sentence (max 40 words) that fits the current world state."},
+            {"role":"user","content":f"Event seed: {event}\nDay {clk['day']}, {clk['hour']:02d}:00, {clk['weather']} weather, {clk['season']} season."}
+        ], temperature=0.9, max_tokens=80)
+        if enhanced and not enhanced.startswith('['):
+            event = enhanced.strip()
+    except Exception:
+        pass
+    return {"event": event, "day": _get_clock(session_id)['day']}
+
+
+class ScenarioGenIn(BaseModel):
+    world_name: str = ""
+    story_preset: str = ""
+    genre: str = ""
+    session_id: str = "default"
+
+@app.post("/api/scenario/generate")
+def generate_scenario_text(payload: ScenarioGenIn) -> dict:
+    try:
+        prompt = f"World: {payload.world_name or 'Unknown'}\nGenre: {payload.genre or 'Fantasy'}\nStory preset: {payload.story_preset or 'Adventure'}"
+        raw = send_to_llm([
+            {"role":"system","content":"You are a tabletop RPG campaign designer. Given a world and story preset, write an opening campaign scenario in 2-3 vivid sentences (max 60 words) that hooks the player immediately. Write in second person ('You...'). No headers, just the scenario text."},
+            {"role":"user","content":prompt}
+        ], temperature=0.9, max_tokens=120)
+        text = raw.strip() if raw and not raw.startswith('[') else ""
+    except Exception:
+        text = ""
+    if not text:
+        text = f"You stand at the threshold of {payload.world_name or 'a new world'}, where the fate of many hangs in the balance. The air crackles with {payload.genre or 'adventure'} as {payload.story_preset or 'your journey'} begins."
+    return {"scenario": text}
+
+
+class NpcCreateIn(BaseModel):
+    name: str
+    role: str = ""
+    faction: str = ""
+    location: str = ""
+    disposition: str = "neutral"
+    world_id: int = 0
+    session_id: str = "default"
+
+@app.get("/api/world/npcs")
+def get_world_npcs_session(world_id: int = 0, session_id: str = "default") -> list:
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM npcs WHERE world_id=? ORDER BY id DESC LIMIT 30",
+            (world_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+@app.post("/api/world/npcs")
+def create_world_npc_session(payload: NpcCreateIn) -> dict:
+    import random as _random
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO npcs (name, profession, faction, mood, world_id, created_at) VALUES (?,?,?,?,?,?)",
+            (payload.name, payload.role, payload.faction, payload.disposition, payload.world_id, now_iso())
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "saved": True}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        conn.close()
+
+@app.post("/api/world/npcs/generate")
+def generate_npc_session(world_id: int = 0, session_id: str = "default") -> dict:
+    import random as _random
+    DISPOSITIONS = ['friendly','neutral','hostile','suspicious','desperate','grateful']
+    ROLES = ['innkeeper','guard','merchant','assassin','wizard','healer','thief','noble','farmer','warrior','spy','exile','rebel','scholar']
+    disposition = _random.choice(DISPOSITIONS)
+    role = _random.choice(ROLES)
+    try:
+        raw = send_to_llm([
+            {"role":"system","content":"You are a fantasy NPC generator. Create a brief NPC description: name, one quirk, one secret (max 30 words total). Format: Name: X | Quirk: Y | Secret: Z"},
+            {"role":"user","content":f"Generate a {disposition} {role}:"}
+        ], temperature=0.95, max_tokens=80)
+        parts = {p.split(':')[0].strip().lower(): p.split(':',1)[1].strip() for p in raw.split('|') if ':' in p}
+        name = parts.get('name', f"{role.title()} #{_random.randint(100,999)}")
+        quirk = parts.get('quirk', '')
+        secret = parts.get('secret', '')
+    except Exception:
+        name = f"{role.title()} #{_random.randint(100,999)}"
+        quirk = secret = ''
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO npcs (name, profession, faction, mood, world_id, created_at) VALUES (?,?,?,?,?,?)",
+            (name, role, '', disposition, world_id, now_iso())
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "name": name, "role": role, "disposition": disposition, "quirk": quirk, "secret": secret}
+    except Exception as e:
+        return {"name": name, "role": role, "disposition": disposition}
     finally:
         conn.close()
 

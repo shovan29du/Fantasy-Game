@@ -14,3 +14,23 @@
 @keyframes micPulse{0%,100%{box-shadow:0 0 0 0 #df665d88}50%{box-shadow:0 0 0 7px #df665d00}}
 /* ── Chat message wrappers with per-message action toolbar ── */
 .chat-msg{position:relative;display:flex;flex-direction:column;gap:0}.chat-msg .msg-body{padding:10px 12px;line-height:1.55}.chat-msg.player .msg-body{background:#131d28;border-left:2px solid var(--gold2)}.chat-msg.gm .msg-body{background:#0d1017;border-left:2px solid #5a3f80}.msg-actions{display:none;flex-direction:row;gap:2px;padding:2px 8px 4px;flex-wrap:wrap;background:rgba(8,12,18,.85)}.chat-msg:hover .msg-actions,.chat-msg.selected .msg-actions{display:flex}.ma{background:transparent;border:1px solid transparent;color:#6a7a8a;font-size:11px;padding:2px 6px;cursor:pointer;border-radius:3px;transition:color .15s,border-color .15s}.ma:hover{color:#e0d0ff;border-color:#4a3a5e}.chat-msg.selected{outline:1px solid var(--gold2)}.chat-log .chat-msg+.chat-msg{margin-top:2px}
+.chat-options-panel{padding:6px 8px;background:#0a1018;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto}
+.options-header{font-size:9px;color:var(--gold);letter-spacing:.8px;text-transform:uppercase;padding:2px 0 4px}
+.options-loading{font-size:10px;color:var(--muted);padding:8px 0}
+.option-chip{background:#141c24;border:1px solid var(--line);color:#c8d0da;padding:6px 10px;text-align:left;cursor:pointer;border-radius:3px;font-size:11px;transition:border-color .15s}
+.option-chip:hover{border-color:var(--gold);color:#fff}
+.map.map-night{filter:brightness(.65) saturate(.7) hue-rotate(200deg)}
+.map.map-dawn{filter:brightness(.85) saturate(.85) hue-rotate(20deg)}
+#mapTime,#mapWeather{cursor:default}
+
+/* ── Chat Options panel ── */
+.chat-options-panel{padding:6px 8px;background:#0a1018;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto}
+.options-header{font-size:9px;color:var(--gold);letter-spacing:.8px;text-transform:uppercase;padding:2px 0 4px}
+.options-loading{font-size:10px;color:var(--muted);padding:8px 0}
+.option-chip{background:#141c24;border:1px solid var(--line);color:#c8d0da;padding:6px 10px;text-align:left;cursor:pointer;border-radius:3px;font-size:11px;transition:border-color .15s}
+.option-chip:hover{border-color:var(--gold);color:#fff}
+
+/* ── Day/night map tinting ── */
+.map.map-night{filter:brightness(.6) saturate(.6) hue-rotate(200deg)}
+.map.map-dawn{filter:brightness(.82) saturate(.88) hue-rotate(15deg)}
+#mapTime,#mapWeather{cursor:default;user-select:none}

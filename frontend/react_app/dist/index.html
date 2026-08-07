@@ -53,7 +53,7 @@
         <div id="scenarioGrid" class="start-grid"></div>
         <form id="customScenarioForm" class="studio-form">
           <label class="wide">Or write your own opening scenario<textarea name="text" rows="3" placeholder="You wake up in..."></textarea></label>
-          <div class="form-actions wide"><button class="gold">Start with this</button></div>
+          <div class="form-actions wide"><button type="button" id="autoGenScenarioBtn" class="ghost" style="margin-bottom:8px">✦ Auto-generate from world &amp; preset</button><button class="gold">Start with this</button></div>
         </form>
       </div>
 
@@ -124,7 +124,7 @@
           <div id="playerToken" class="player-token" style="--x:42%;--y:52%"><span>AS</span><i></i></div>
           <div class="map-hint">WASD / ARROWS TO MOVE · CLICK A LOCATION TO ENTER</div>
         </div>
-        <div class="map-footer"><span>☀ Dawn · Day 17</span><span>☁ Mistwood · 12°C</span><span>⚔ Threat: <b>Moderate</b></span></div>
+        <div class="map-footer"><span id="mapTime">☀ Dawn · Day 1</span><span id="mapWeather">☁ Clear · 18°C</span><span>⚔ Threat: <b id="mapThreat">Low</b></span><button id="advanceTimeBtn" class="ghost" style="font-size:9px;padding:2px 6px" title="Advance time 30 min">⏩ +30m</button></div>
       </div>
 
       <section class="action-dock">
@@ -136,7 +136,8 @@
     <aside id="chatPanel" class="chat-column">
       <div class="chat-head"><div><span class="orb" id="chatAvatar"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div><div style="display:flex;gap:4px;align-items:center"><button id="downloadZipBtn" class="ghost" type="button" title="Download chat as zip">⬇ Zip</button><button id="voiceToggleBtn" class="ghost" type="button" title="Speak the AI's replies aloud">🔈 Voice off</button></div></div>
       <div id="chatLog" class="chat-log"><p class="gm"><b>WORLDWEAVER</b>The portal hums beyond the ridge. Its runes point to a reality where steel towers touch a violet sky. What do you do?</p></div>
-      <form id="chatForm"><button id="micBtn" type="button" title="Speak your message" hidden>🎤</button><button id="attachBtn" type="button" title="Attach a file or zip">📎</button><input id="chatFileInput" type="file" accept=".zip,.json,.txt,.md,.csv,.py,.js,.ts" hidden><input id="chatInput" placeholder="Speak, investigate, or describe an action…" autocomplete="off"><button>Send</button></form>
+      <div id="chatOptionsPanel" class="chat-options-panel" hidden></div>
+      <form id="chatForm"><button id="micBtn" type="button" title="Speak your message" hidden>🎤</button><button id="attachBtn" type="button" title="Attach a file or zip">📎</button><input id="chatFileInput" type="file" accept=".zip,.json,.txt,.md,.csv,.py,.js,.ts" hidden><input id="chatInput" placeholder="Speak, investigate, or describe an action…" autocomplete="off"><button type="button" id="chatOptionsBtn" class="ghost" title="Get 5 story options">✦ Options</button><button>Send</button></form>
     </aside>
 
     <aside class="panel detail-panel">
@@ -159,6 +160,7 @@
           <div class="wide char-portrait-area">
             <div id="charPortraitPreview" class="char-portrait-preview"><div class="empty-state" style="padding:16px;font-size:10px">No portrait — fill in the form then click Generate</div></div>
             <button type="button" id="generatePortraitBtn" class="ghost" style="width:100%;margin-top:6px">✦ Generate portrait from description</button>
+            <label style="margin-top:4px;font-size:9px;color:#8892a0">Style<select id="portraitStyleSelect" style="width:100%;background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:6px;margin-top:3px"></select></label>
           </div>
           <label class="wide">Character name<input name="name" required placeholder="Ari Solwyn"></label>
           <label>Race / ancestry<select name="race" id="raceSelect"></select></label>
@@ -185,7 +187,7 @@
         <form id="libraryFilterForm" class="studio-form">
           <label class="wide">Search<input name="query" placeholder="Name, race, or profession"></label>
           <label>Race<select name="race" id="libraryRaceSelect"><option value="All">All</option></select></label>
-          <div class="form-actions wide"><button type="button" id="importAllBtn" class="ghost">Import all shown</button><button class="gold">Search</button></div>
+          <div class="form-actions wide"><button type="button" id="importAllBtn" class="ghost">Import all shown</button><button type="button" id="randomLibraryBtn" class="ghost">🎲 Random</button><button class="gold">Search</button></div>
         </form>
         <div id="libraryResults" class="entity-list"></div>
       </section>
@@ -236,7 +238,7 @@
     <header class="workspace-head"><div><span class="eyebrow">CREATIVE ENGINE</span><h1>Media</h1><p>Portraits, scene art, voice, memories, and achievements.</p></div></header>
     <div class="workspace-grid">
       <section class="studio-card">
-        <div class="card-title"><b>Image generator</b></div>
+        <div class="card-title"><b>Image generator</b><button class="ghost media-options-btn" style="font-size:9px;padding:4px 8px" data-media-type="image" title="Get 5 story options">✦ Options</button></div>
         <form id="mediaImageForm" class="studio-form">
           <label class="wide">Prompt<textarea name="prompt" required rows="3" placeholder="A vampire scholar in a ruined library, dramatic lighting"></textarea></label>
           <label>Style<select name="style" id="mediaStyleSelect"></select></label>
@@ -245,7 +247,7 @@
         <div id="mediaImagePreview"></div>
       </section>
       <section class="studio-card">
-        <div class="card-title"><b>Voice studio</b></div>
+        <div class="card-title"><b>Voice studio</b><button class="ghost media-options-btn" style="font-size:9px;padding:4px 8px" data-media-type="voice" title="Get 5 story options">✦ Options</button></div>
         <form id="voiceForm" class="studio-form">
           <label class="wide">Text to speak<textarea name="content" required rows="3" placeholder="The portal hums beyond the ridge..."></textarea></label>
           <div class="form-actions wide"><button class="gold">Speak</button></div>
@@ -253,7 +255,7 @@
         <div id="voicePlayer"></div>
       </section>
       <section class="studio-card">
-        <div class="card-title"><b>Text to Animation</b><small>image + pan/zoom</small></div>
+        <div class="card-title"><b>Text to Animation</b><small>image + pan/zoom</small><button class="ghost media-options-btn" style="font-size:9px;padding:4px 8px" data-media-type="animation" title="Get 5 story options">✦ Options</button></div>
         <form id="mediaAnimationForm" class="studio-form">
           <label class="wide">Prompt<textarea name="prompt" required rows="3" placeholder="A dragon circling a burning tower, storm clouds"></textarea></label>
           <label>Style<select name="style" id="animationStyleSelect"></select></label>
@@ -263,7 +265,7 @@
         <div id="mediaAnimationPreview"></div>
       </section>
       <section class="studio-card">
-        <div class="card-title"><b>Text to Video</b><small>multi-scene slideshow</small></div>
+        <div class="card-title"><b>Text to Video</b><small>multi-scene slideshow</small><button class="ghost media-options-btn" style="font-size:9px;padding:4px 8px" data-media-type="video" title="Get 5 story options">✦ Options</button></div>
         <form id="mediaVideoForm" class="studio-form">
           <label class="wide">Scenes (one per line)<textarea name="prompts" required rows="4" placeholder="Dawn breaks over the ruined city&#10;A lone survivor scavenges the wreckage&#10;A signal flare lights the sky"></textarea></label>
           <label>Style<select name="style" id="videoStyleSelect"></select></label>

@@ -3,6 +3,9 @@ const api=async(url,options={})=>{const response=await fetch(url,options);let da
 const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800)}
 
+const PORTRAIT_STYLES=['Anime Portrait','Anime Full Body','Realistic Portrait','Realistic Full Body','Fantasy Art','Fantasy Full Body','3D Render','3D Full Body','Comic Book','Cyberpunk','Dark Fantasy','Steampunk','Oil Painting','Watercolour','Manga','Chibi','Concept Art','Pin-Up','Cinematic','Furry Art','Sci-Fi','Gothic','Noir','Sketch','Watercolour Dark','Pastel','Impressionist','Pixel Art','Low Poly','Voxel Art'];
+function fillPortraitStyles(){const sel=$('#portraitStyleSelect');if(!sel)return;sel.innerHTML=PORTRAIT_STYLES.map(s=>`<option value="${safe(s)}">${safe(s)}</option>`).join('')}
+
 // ═══ PLAY VIEW: real backend-backed tabletop state ═══
 // The four playable realities. Each is created as a real /api/worlds row on
 // first load (with 0-10 world-scale ratings), so map switching, the world
@@ -260,9 +263,7 @@ $('#chatLog').addEventListener('click',async e=>{
   btn.textContent=wrap.classList.contains('selected')?'☑':'☐';
  }
  else if(act==='forward'){
-  const share=`[Worldweaver] ${text}`;
-  if(navigator.share){navigator.share({text:share}).catch(()=>{})}
-  else{navigator.clipboard.writeText(share).catch(()=>{});toast('Copied for sharing!');}
+  showChatOptions('progressions');
  }
  else if(act==='edit'){
   if(!mid){toast('This message has no ID yet — reload chat first.');return;}
@@ -288,12 +289,13 @@ $('#chatLog').addEventListener('click',async e=>{
   }catch(err){toast(err.message);}
  }
  else if(act==='rewind'){
+  const choice=confirm('Show 5 alternative outcomes (OK) or delete & rewind history (Cancel)?');
+  if(choice){showChatOptions('alternatives');return;}
   if(!mid){toast('No ID — reload chat first.');return;}
   if(!confirm('Rewind: delete this message and everything after it?'))return;
   try{
    const r=await fetch(`/api/chat/messages/${mid}/rewind?session_id=${sid}`,{method:'DELETE'});
    if(!r.ok)throw new Error('Rewind failed');
-   // remove this and all following siblings
    let el=wrap;
    while(el){const next=el.nextElementSibling;el.remove();el=next;}
    toast('Rewound!');
@@ -324,6 +326,68 @@ async function loadChatHistory(){
   $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
  }catch{}
 }
+
+// ── Dynamic clock/weather ──
+async function updateClock(){
+ try{
+  const clk=await api(`/api/world/clock?session_id=${encodeURIComponent(state.sessionId||'default')}`);
+  const h=clk.hour,m=clk.minute;
+  const period=h<6?'Night':h<9?'Dawn':h<12?'Morning':h<14?'Noon':h<18?'Afternoon':h<21?'Evening':'Night';
+  const icon=h<6||h>=21?'🌙':h<9?'🌅':h<18?'☀':'🌇';
+  const mapTime=$('#mapTime');if(mapTime)mapTime.textContent=`${icon} ${period} · Day ${clk.day} · ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+  const wIcon={'Clear':'☀','Cloudy':'☁','Overcast':'🌥','Light Rain':'🌦','Heavy Rain':'🌧','Thunderstorm':'⛈','Fog':'🌫','Drizzle':'🌧','Snow':'❄','Blizzard':'🌨','Windy':'💨','Hail':'🌨','Sandstorm':'🏜','Aurora':'✨','Mist':'🌫'}[clk.weather]||'☁';
+  const mapWeather=$('#mapWeather');if(mapWeather)mapWeather.textContent=`${wIcon} ${clk.weather} · ${clk.temp}°C`;
+  const mapEl=$('#map');if(mapEl){mapEl.classList.toggle('map-night',(h<6||h>=21));mapEl.classList.toggle('map-dawn',h>=6&&h<9);}
+ }catch{}
+}
+$('#advanceTimeBtn').onclick=async()=>{
+ try{
+  await api(`/api/world/clock/advance?session_id=${encodeURIComponent(state.sessionId||'default')}&minutes=30`,{method:'POST'});
+  await updateClock();
+  if(Math.random()<0.1) triggerRandomEvent();
+ }catch{}
+};
+async function triggerRandomEvent(){
+ try{
+  const {event}=await api(`/api/world/events/random?session_id=${encodeURIComponent(state.sessionId||'default')}`,{method:'POST'});
+  if(event){
+   $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm','🎲 <i>Random Event:</i> '+safe(event)));
+   $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
+  }
+ }catch{}
+}
+let _clockInterval=null;
+function startClockTick(){
+ if(_clockInterval)clearInterval(_clockInterval);
+ _clockInterval=setInterval(()=>{
+  api(`/api/world/clock/advance?session_id=${encodeURIComponent(state.sessionId||'default')}&minutes=15`,{method:'POST'}).then(()=>updateClock()).catch(()=>{});
+ },5*60*1000);
+}
+
+// ── Chat Options: 5 progression options ──
+let _optionsPanelOpen=false;
+async function showChatOptions(mode='progressions'){
+ const panel=$('#chatOptionsPanel');
+ if(!panel)return;
+ if(_optionsPanelOpen&&panel.dataset.mode===mode){panel.hidden=true;_optionsPanelOpen=false;return}
+ panel.dataset.mode=mode;
+ panel.hidden=false;
+ _optionsPanelOpen=true;
+ panel.innerHTML='<div class="options-loading">✦ Generating options…</div>';
+ try{
+  const sid=encodeURIComponent(state.sessionId||'default');
+  const url=mode==='alternatives'?`/api/chat/alternatives?session_id=${sid}`:`/api/chat/progressions?session_id=${sid}`;
+  const {options}=await api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.sessionId||'default'})});
+  panel.innerHTML=`<div class="options-header">${mode==='alternatives'?'⏪ Alternative outcomes:':'✦ What do you do next?'}</div>`+
+   (options||[]).map((o,i)=>`<button class="option-chip" data-opt="${safe(o)}">${i+1}. ${safe(o)}</button>`).join('');
+  panel.querySelectorAll('.option-chip').forEach(btn=>btn.onclick=()=>{
+   $('#chatInput').value=btn.dataset.opt;
+   panel.hidden=true;_optionsPanelOpen=false;
+   if(mode!=='alternatives')$('#chatForm').requestSubmit();
+  });
+ }catch(err){panel.innerHTML='<div class="options-loading">Could not load options.</div>'}
+}
+$('#chatOptionsBtn').onclick=()=>showChatOptions('progressions');
 async function bindSession({sessionId,worldId,characterId}){
  state.hasActiveGame=true;
  state.sessionId=sessionId||'default';
@@ -336,6 +400,7 @@ async function bindSession({sessionId,worldId,characterId}){
  saveSessionToStorage();
  updateWorld();if(world){move(world.startX??50,world.startY??50)}renderParty();renderQuests();
  try{const active=await api(`/api/combat/active?session_id=${encodeURIComponent(state.sessionId)}`);openCombat(active)}catch{/* no combat in progress for this session */}
+ updateClock();
 }
 async function initPlay(){
  try{
@@ -373,6 +438,7 @@ async function beginGame(payload){
   try{await api('/api/chat/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'assistant',content:opening,session_id:state.sessionId})})}catch{}
   await loadChatHistory();
   updateWorld();move(world.startX??50,world.startY??50);renderParty();renderQuests();
+  updateClock();startClockTick();
   toast(`New game started: ${world.name}`);
  }catch(error){toast(error.message)}
 }
@@ -406,6 +472,20 @@ $('#randomScenarioBtn').onclick=async()=>{await rollRandomScenario();showStartSt
 async function rollRandomScenario(){try{const result=await api('/api/random/prompts');state.randomScenarioText=result.scenario;$('#randomScenarioText').textContent=result.scenario}catch(error){$('#randomScenarioText').textContent=error.message}}
 $('#rerollScenarioBtn').onclick=rollRandomScenario;
 $('#useRandomScenarioBtn').onclick=()=>beginGame({category:state.pendingCategory?.key||'fantasy',scenario_name:'Random Scenario',scenario_type:'custom',custom_text:state.randomScenarioText});
+$('#autoGenScenarioBtn').onclick=async()=>{
+ const worldName=state.worlds?.[state.worldIndex]?.name||'';
+ const genre=$('#scenarioStepTitle')?.textContent||'Fantasy';
+ const preset=$('#categoryGrid')?.querySelector('.active')?.textContent||'';
+ const btn=$('#autoGenScenarioBtn');
+ btn.textContent='✦ Generating…';
+ try{
+  const {scenario}=await api('/api/scenario/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:worldName,genre,story_preset:preset,session_id:state.sessionId||'default'})});
+  const ta=$('#customScenarioForm')?.elements?.text;
+  if(ta)ta.value=scenario;
+  toast('Scenario generated!');
+ }catch(err){toast('Auto-generate failed')}
+ finally{btn.textContent='✦ Auto-generate from world & preset'}
+};
 
 async function loadSavedGame(save){try{await bindSession({sessionId:save.session_id,worldId:save.world_id,characterId:save.character_id});hidePlayHub();toast(`Loaded: ${save.save_name}`)}catch(error){toast(error.message)}}
 $('#startLoadGameBtn').onclick=async()=>{
@@ -577,7 +657,8 @@ $('#generatePortraitBtn').onclick=async()=>{
   if(data.profession) parts.push(data.profession);
   if(data.backstory) parts.push(data.backstory.slice(0,100));
   const prompt=parts.length?parts.join(', '):'fantasy portrait character';
-  const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Anime Portrait',width:512,height:768,save_to_chat:false})});
+  const portraitStyle=($('#portraitStyleSelect')?.value)||'Anime Portrait';
+  const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:portraitStyle,width:512,height:768,save_to_chat:false})});
   box.innerHTML=`<img src="${safe(result.url)}" alt="Character portrait">`;
   box.dataset.photoUrl=result.url;
  }catch(error){
@@ -620,6 +701,15 @@ async function searchLibrary(){
 }
 $('#libraryFilterForm').onsubmit=e=>{e.preventDefault();searchLibrary()};
 $('#importAllBtn').onclick=async()=>{if(!lastLibraryResults.length){toast('Nothing to import');return}try{const result=await api('/api/explore/library/import-all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({characters:lastLibraryResults})});toast(`${result.imported} characters imported`)}catch(error){toast(error.message)}};
+$('#randomLibraryBtn').onclick=async()=>{
+ try{
+  const result=await api('/api/explore/library?query=&race=All&limit=400');
+  const all=result.characters||[];
+  const shuffled=all.sort(()=>Math.random()-.5).slice(0,12);
+  renderExploreCards(shuffled,$('#libraryResults'),async(character,btn)=>{btn.disabled=true;try{await api('/api/explore/library/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character})});btn.textContent='Imported';toast(`${character.name} imported`)}catch(error){toast(error.message);btn.disabled=false}});
+  $('#libraryCount').textContent=`Random 12 / ${all.length}`;
+ }catch(error){toast(error.message)}
+};
 $('#webSearchForm').onsubmit=async e=>{
  e.preventDefault();const formEl=e.currentTarget;const payload=Object.fromEntries(new FormData(formEl).entries());
  const container=$('#webSearchResults');container.innerHTML='<div class="empty-state">Searching…</div>';
@@ -998,5 +1088,45 @@ $('#combatEndTurnBtn').onclick=async()=>{
 };
 $('#combatLeaveBtn').onclick=async()=>{closeCombat();await refreshCharacterState();renderParty();showPanel('character')};
 
-openView('play');
+// ── Media tab options buttons ──
+$$('.media-options-btn').forEach(btn=>btn.onclick=()=>showChatOptions('progressions'));
+
+// ── Portrait style selector init ──
+fillPortraitStyles();
+
+
+// ── Explorer Random button ──
+const _randLibBtn=$('#randomLibraryBtn');
+if(_randLibBtn)_randLibBtn.onclick=async()=>{
+ try{
+  const result=await api('/api/explore/library?query=&race=All&limit=400');
+  const all=result.characters||[];
+  const shuffled=[...all].sort(()=>Math.random()-.5).slice(0,12);
+  renderExploreCards(shuffled,$('#libraryResults'),async(character,btn)=>{
+   btn.disabled=true;
+   try{await api('/api/explore/library/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character})});btn.textContent='Imported';toast(`${character.name} imported`)}
+   catch(error){toast(error.message);btn.disabled=false}
+  });
+  const cnt=$('#libraryCount');if(cnt)cnt.textContent=`Random 12 / ${all.length}`;
+ }catch(error){toast(error.message)}
+};
+
+// ── Auto-generate scenario ──
+const _autoGenBtn=$('#autoGenScenarioBtn');
+if(_autoGenBtn)_autoGenBtn.onclick=async()=>{
+ const worldName=state.worlds?.[state.worldIndex]?.name||'';
+ const genre=state.pendingCategory?.label||'Fantasy';
+ _autoGenBtn.textContent='✦ Generating…';
+ try{
+  const {scenario}=await api('/api/scenario/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:worldName,genre,story_preset:'',session_id:state.sessionId||'default'})});
+  const ta=$('#customScenarioForm')?.elements?.text;
+  if(ta){ta.value=scenario;toast('Scenario generated!');}
+ }catch(err){toast('Auto-generate failed')}
+ finally{_autoGenBtn.textContent='✦ Auto-generate from world & preset'}
+};
+
+// ── Media tabs Options buttons ──
+$$('.media-options-btn').forEach(btn=>btn.onclick=()=>showChatOptions('progressions'));
+
+fillPortraitStyles();openView('play');
 initPlay();
