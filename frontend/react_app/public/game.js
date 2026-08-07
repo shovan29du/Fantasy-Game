@@ -1088,13 +1088,6 @@ $('#combatEndTurnBtn').onclick=async()=>{
 };
 $('#combatLeaveBtn').onclick=async()=>{closeCombat();await refreshCharacterState();renderParty();showPanel('character')};
 
-// ── Media tab options buttons ──
-$$('.media-options-btn').forEach(btn=>btn.onclick=()=>showChatOptions('progressions'));
-
-// ── Portrait style selector init ──
-fillPortraitStyles();
-
-
 // ── Explorer Random button ──
 const _randLibBtn=$('#randomLibraryBtn');
 if(_randLibBtn)_randLibBtn.onclick=async()=>{
