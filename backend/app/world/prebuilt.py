@@ -104,6 +104,54 @@ PREBUILT_WORLDS = {
     "The Return":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":6,"factions":3,
         "faction_names":["Current Relationship","Old Flame's Circle","Mutual Friends"],
         "npc_profs":["Current Partner","Returning Ex","Mutual Friend","Family Member","Rival Suitor","Confidant"]},
+
+    # ── User-authored drama scenarios ────────────────────────────────────────
+    "Liam & His Stepmom":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":6,"factions":2,
+        "faction_names":["The Household","University Circle"],
+        "npc_profs":["Stepmom","Liam (College Student)","Family Friend","University Roommate","Neighbor","Grief Counsellor"],
+        "opening":(
+            "Liam is a college student who comes home from university to find his stepmom crying alone in the living room. "
+            "His father passed away recently, and she is grieving deeply — she misses her husband and feels lost. "
+            "Liam and his stepmom have always had a warm but slightly awkward relationship; now they must navigate grief together. "
+            "The player controls Liam. The stepmom's name, appearance, and exact personality should be established through the opening conversation."
+        )},
+
+    "Liana's Troubled Marriage":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":6,"factions":2,
+        "faction_names":["The Couple","Friends & Family"],
+        "npc_profs":["Liana","3rd Husband","Marriage Counsellor","Best Friend","Sibling","Mother-in-Law"],
+        "opening":(
+            "Liana is navigating a rocky patch in her third marriage. Her husband is angry and distant following a heated argument last night — "
+            "the details of which the player will discover through conversation. "
+            "Tension fills the house as both try to go about their morning without properly addressing what was said. "
+            "The player controls Liana. Her husband's name and the root cause of the argument emerge naturally through roleplay."
+        )},
+
+    "Liana and Her Three Dads":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":6,"npcs":8,"factions":3,
+        "faction_names":["The Family","Dad's Work World","Liana's Own Life"],
+        "npc_profs":["Liana (18)","Carl (38) — Funny Dad","Steve (37) — Serious & Protective Dad","Mike (36) — Passionate Dad","Maya (37) — Mom","Liana's Best Friend","School Counsellor","Neighbour"],
+        "opening":(
+            "Liana is 18 years old. Her mother Maya (37) has three husbands — Carl (38), funny and light-hearted; "
+            "Steve (37), serious and fiercely protective; and Mike (36), passionate and emotionally intense. "
+            "All three men are successful businessmen. Despite their love for Liana, all three dads have been consumed by work "
+            "for the past two years, emotionally absent and barely home. "
+            "Liana feels invisible — convinced her parents simply do not love her anymore. "
+            "The player controls Liana as she tries to reconnect with her family, or forge her own path without them."
+        )},
+
+    "Liam & Eve — Neighbours":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":7,"factions":2,
+        "faction_names":["The Neighbourhood Circle","Extended Family"],
+        "npc_profs":["Liam (42) — Single Dad","Eve — Liam's Neighbour","Mia — Liam's Daughter","David — Eve's Son","Eve's Sister","Neighbourhood Friend","Mutual Friend"],
+        "opening":(
+            "Liam (42) is single. Years ago, his daughter Mia and Eve's son David briefly dated in high school — they knew each other "
+            "through their parents' close friendship — but the young couple parted ways without drama. "
+            "Five years have passed. Liam and Eve's friendship never wavered; they live in the same neighbourhood and spend most of "
+            "their time together — shared dinners, morning walks, easy conversation. "
+            "The line between deep friendship and something more has quietly blurred. "
+            "The scenario opens at a school meeting where Liam and Eve both happen to attend. "
+            "Eve's sister — mischievous and romantic — has quietly arranged for Liam and Eve to be seated together as a couple for the evening, "
+            "engineering the very push neither of them would take themselves. "
+            "The player controls Liam as he navigates surprise, embarrassment, and the realisation that maybe Eve's sister isn't wrong."
+        )},
 }
 
 def get_prebuilt_list(): return list(PREBUILT_WORLDS.keys())
@@ -125,6 +173,13 @@ def create_prebuilt_world(name, reality_type=None):
         generate_npc(wid,custom)
     generate_dungeon(wid,levels=2,rooms_per=5); generate_dungeon(wid,levels=3,rooms_per=4)
     add_campaign_event(wid,"creation",f"Prebuilt world '{name}' created.",0)
+    if t.get("opening"):
+        try:
+            from core.lorebook import create_entry
+            create_entry("Opening Scenario", t["opening"], ["opening","scenario","backstory"],
+                         world_id=wid, always_active=True)
+        except Exception:
+            log.debug("suppressed opening lorebook entry", exc_info=True)
     try:
         from core.simulation_engine import init_market; init_market(wid)
     except Exception:
