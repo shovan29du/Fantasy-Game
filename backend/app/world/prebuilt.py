@@ -106,6 +106,21 @@ PREBUILT_WORLDS = {
         "npc_profs":["Current Partner","Returning Ex","Mutual Friend","Family Member","Rival Suitor","Confidant"]},
 
     # ── User-authored drama scenarios ────────────────────────────────────────
+    "The Forgotten Twin":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":7,"factions":2,
+        "faction_names":["The Family","The Outside World"],
+        "npc_profs":["The Player (Twin)","Elena (Twin Sister)","Mom","Dad","Grandparent","Best Friend","School Counsellor"],
+        "opening":(
+            "You and Elena are twins — born on the same day, raised under the same roof. "
+            "But your parents have always treated you differently. "
+            "Every year they celebrate Elena's birthday with a cake, gifts, and a family gathering. "
+            "Your birthday passes without a word — no cake, no gift, sometimes not even a happy birthday. "
+            "When Elena gets a good grade, lands a small role in a school play, or wins anything at all, "
+            "your parents cheer, post about it, and call the relatives. "
+            "When you achieve something — however big — it is met with silence or a subject change. "
+            "You have never confronted them directly. The hurt has been building for years. "
+            "Today is your shared birthday. Elena's cake is already on the table. "
+            "The player is the forgotten twin. Their name, gender, and exact feelings unfold through play."
+        )},
     "Liam & His Stepmom":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":6,"factions":2,
         "faction_names":["The Household","University Circle"],
         "npc_profs":["Stepmom","Liam (College Student)","Family Friend","University Roommate","Neighbor","Grief Counsellor"],
