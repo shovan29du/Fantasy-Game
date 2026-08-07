@@ -116,14 +116,17 @@ PREBUILT_WORLDS = {
             "The player controls Liam. The stepmom's name, appearance, and exact personality should be established through the opening conversation."
         )},
 
-    "Liana's Troubled Marriage":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":6,"factions":2,
-        "faction_names":["The Couple","Friends & Family"],
-        "npc_profs":["Liana","3rd Husband","Marriage Counsellor","Best Friend","Sibling","Mother-in-Law"],
+    "Liana's Three Husbands":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":7,"factions":2,
+        "faction_names":["The Household","Friends & Family"],
+        "npc_profs":["Liana","Mark (Husband)","Alex (Husband)","John (Husband)","Marriage Counsellor","Best Friend","Sibling"],
         "opening":(
-            "Liana is navigating a rocky patch in her third marriage. Her husband is angry and distant following a heated argument last night — "
-            "the details of which the player will discover through conversation. "
-            "Tension fills the house as both try to go about their morning without properly addressing what was said. "
-            "The player controls Liana. Her husband's name and the root cause of the argument emerge naturally through roleplay."
+            "Liana lives in a plural marriage with three husbands: Mark, Alex, and John. "
+            "Last night a heated argument broke out — one of the husbands, or possibly all three, are now angry and tense with Liana. "
+            "The household is thick with unspoken words this morning. "
+            "Mark tends to be calm but holds grudges quietly. Alex is more expressive — he wears his hurt openly. "
+            "John is the peacekeeper of the group but even he is struggling to stay neutral after what was said. "
+            "The player controls Liana as she navigates the morning after, trying to repair the fractures in her household "
+            "while figuring out who she needs to reach first and what she truly wants to say."
         )},
 
     "Liana and Her Three Dads":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":6,"npcs":8,"factions":3,
