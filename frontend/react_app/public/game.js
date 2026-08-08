@@ -423,6 +423,7 @@ function startClockTick(){
 }
 
 // ── Chat Options: 5 progression options ──
+const _FALLBACK_OPTIONS={progressions:['Investigate the area','Talk to a nearby NPC','Check your inventory','Move to a new location','Wait and observe'],alternatives:['A stranger intervenes','The enemy retreats','A portal opens nearby','A hidden passage reveals itself','An ally arrives at the last moment']};
 let _optionsPanelOpen=false;
 async function showChatOptions(mode='progressions'){
  const panel=$('#chatOptionsPanel');
@@ -432,20 +433,37 @@ async function showChatOptions(mode='progressions'){
  panel.hidden=false;
  _optionsPanelOpen=true;
  panel.innerHTML='<div class="options-loading">✦ Generating options…</div>';
+ let options=_FALLBACK_OPTIONS[mode]||_FALLBACK_OPTIONS.progressions;
  try{
   const sid=encodeURIComponent(state.sessionId||'default');
   const url=mode==='alternatives'?`/api/chat/alternatives?session_id=${sid}`:`/api/chat/progressions?session_id=${sid}`;
-  const {options}=await api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.sessionId||'default'})});
-  panel.innerHTML=`<div class="options-header">${mode==='alternatives'?'⏪ Alternative outcomes:':'✦ What do you do next?'}</div>`+
-   (options||[]).map((o,i)=>`<button class="option-chip" data-opt="${safe(o)}">${i+1}. ${safe(o)}</button>`).join('');
-  panel.querySelectorAll('.option-chip').forEach(btn=>btn.onclick=()=>{
-   $('#chatInput').value=btn.dataset.opt;
-   panel.hidden=true;_optionsPanelOpen=false;
-   if(mode!=='alternatives')$('#chatForm').requestSubmit();
-  });
- }catch(err){panel.innerHTML='<div class="options-loading">Could not load options.</div>'}
+  const res=await api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.sessionId||'default'})});
+  if(Array.isArray(res.options)&&res.options.length>=3)options=res.options;
+ }catch{}
+ panel.innerHTML=`<div class="options-header">${mode==='alternatives'?'⏪ Alternative outcomes:':'✦ What do you do next?'}</div>`+
+  options.map((o,i)=>`<button class="option-chip" data-opt="${safe(o)}">${i+1}. ${safe(o)}</button>`).join('');
+ panel.querySelectorAll('.option-chip').forEach(btn=>btn.onclick=()=>{
+  $('#chatInput').value=btn.dataset.opt;
+  panel.hidden=true;_optionsPanelOpen=false;
+  if(mode!=='alternatives')$('#chatForm').requestSubmit();
+ });
 }
 $('#chatOptionsBtn').onclick=()=>showChatOptions('progressions');
+// Media-tab option buttons: show a floating modal since chat panel is in play area
+$$('.media-options-btn').forEach(btn=>btn.onclick=async()=>{
+ const existing=$('#mediaOptsModal');
+ if(existing){existing.remove();return}
+ const modal=document.createElement('div');
+ modal.id='mediaOptsModal';
+ modal.style.cssText='position:fixed;bottom:80px;right:24px;background:#0a1018;border:1px solid var(--line);border-radius:6px;padding:12px;z-index:1000;width:280px;max-height:280px;overflow-y:auto';
+ modal.innerHTML='<div class="options-loading">✦ Generating options…</div>';
+ document.body.appendChild(modal);
+ let opts=_FALLBACK_OPTIONS.progressions;
+ try{const sid=encodeURIComponent(state.sessionId||'default');const res=await api(`/api/chat/progressions?session_id=${sid}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.sessionId||'default'})});if(Array.isArray(res.options)&&res.options.length>=3)opts=res.options}catch{}
+ modal.innerHTML=`<div class="options-header" style="color:var(--gold);font-size:9px;margin-bottom:8px">✦ Story progressions</div>`+opts.map((o,i)=>`<div style="padding:6px 0;border-bottom:1px solid var(--line);font-size:11px;cursor:pointer" data-mopt="${safe(o)}">${i+1}. ${safe(o)}</div>`).join('')+`<div style="text-align:right;margin-top:8px"><button onclick="document.getElementById('mediaOptsModal')?.remove()" style="font-size:9px;background:none;border:none;color:var(--muted);cursor:pointer">✕ Close</button></div>`;
+ modal.querySelectorAll('[data-mopt]').forEach(el=>el.onclick=()=>{const inp=$('#chatInput');if(inp)inp.value=el.dataset.mopt;modal.remove();toast('Option copied to chat input')});
+ document.addEventListener('click',function h(e){if(!modal.contains(e.target)&&!e.target.classList.contains('media-options-btn')){modal.remove();document.removeEventListener('click',h)}},{once:true,capture:true});
+});
 async function bindSession({sessionId,worldId,characterId}){
  state.hasActiveGame=true;
  state.sessionId=sessionId||'default';
@@ -675,7 +693,7 @@ $$('.side-nav button').forEach(button=>button.onclick=()=>openView(button.datase
 
 let studioOptions={};
 function fillSelect(selector,values){const el=$(selector);if(!el)return;const list=Array.isArray(values)?values:Object.keys(values||{});el.innerHTML=list.map(value=>`<option value="${safe(value)}">${safe(value)}</option>`).join('')}
-async function loadCharacterStudio(){try{if(!Object.keys(studioOptions).length){studioOptions=await api('/api/options');fillSelect('#raceSelect',studioOptions.races);fillSelect('#professionSelect',studioOptions.professions);fillSelect('#backgroundSelect',studioOptions.backgrounds);fillSelect('#alignmentSelect',studioOptions.alignments)}const characters=await api('/api/characters');$('#characterLibrary').innerHTML=characters.length?characters.map(c=>{const av=c.photo_path?`<img src="${safe(c.photo_path)}" class="char-avatar-img" alt="portrait">`:`<span class="entity-avatar">${safe((c.name||'?').slice(0,2).toUpperCase())}</span>`;return`<article class="entity-card">${av}<div><b>${safe(c.name)}</b><small>${safe(c.gender?c.gender+' · ':'')}${safe(c.race||'Unknown ancestry')} · ${safe(c.profession||'Adventurer')}</small></div><em>LV ${safe(c.level||1)}</em></article>`}).join(''):'<div class="empty-state">No saved characters yet. Create your first companion.</div>'}catch(error){$('#characterLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
+async function loadCharacterStudio(){try{if(!Object.keys(studioOptions).length){studioOptions=await api('/api/options');fillSelect('#raceSelect',studioOptions.races);fillSelect('#professionSelect',studioOptions.professions);fillSelect('#backgroundSelect',studioOptions.backgrounds);fillSelect('#alignmentSelect',studioOptions.alignments)}const characters=await api('/api/characters');$('#characterLibrary').innerHTML=characters.length?characters.map(c=>{const av=c.photo_path?`<img src="${safe(c.photo_path)}" class="char-avatar-img" alt="portrait">`:`<span class="entity-avatar">${safe((c.name||'?').slice(0,2).toUpperCase())}</span>`;const isActive=String(c.id)===String(state.characterId);return`<article class="entity-card">${av}<div><b>${safe(c.name)}</b><small>${safe(c.gender?c.gender+' · ':'')}${safe(c.race||'Unknown ancestry')} · ${safe(c.profession||'Adventurer')}</small></div><em>LV ${safe(c.level||1)}</em><button data-use-char="${c.id}" class="ghost" style="font-size:9px;padding:3px 8px;${isActive?'color:var(--gold);border-color:var(--gold)':''}">${isActive?'Active':'Use'}</button></article>`}).join(''):'<div class="empty-state">No saved characters yet. Create your first companion.</div>';$$('[data-use-char]').forEach(btn=>btn.onclick=async()=>{const cid=+btn.dataset.useChar;if(state.characterId===cid)return;state.characterId=cid;await refreshCharacterState();renderParty();renderQuests();loadCharacterStudio();toast('Adventurer switched — ready for play')})}catch(error){$('#characterLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
 $('#characterForm').onsubmit=async event=>{
  event.preventDefault();
  const formEl=event.currentTarget; // native currentTarget is cleared once we `await`, so capture it now
@@ -694,11 +712,9 @@ $('#characterForm').onsubmit=async event=>{
   // Character creation is a single shared flow: the same form used here in
   // the AI Companion library also becomes the Play view's active adventurer
   // whenever Play doesn't have one bound yet.
-  if(!state.characterId&&created?.id){
-   state.characterId=created.id;
-   await refreshCharacterState();
-   renderParty();renderQuests();showPanel('character');
-   toast(`${payload.name} is now your active adventurer — switch to Play to begin`);
+  if(created?.id){
+   if(!state.characterId){state.characterId=created.id;await refreshCharacterState();renderParty();renderQuests();showPanel('character');toast(`${payload.name} is now your active adventurer — switch to Play to begin`)}
+   else{toast(`${payload.name} saved — click Use to switch adventurers`)}
   }
  }catch(error){toast(error.message)}
 };
@@ -739,7 +755,15 @@ $('#checkModel').onclick=checkModelStatus;$('#reducedMotion').onchange=e=>{docum
 let libraryRacesLoaded=false;
 async function loadExplore(){
  if(!libraryRacesLoaded){try{const options=await api('/api/options');fillSelect('#libraryRaceSelect',['All',...Object.keys(options.races||{})]);libraryRacesLoaded=true}catch{}}
- await searchLibrary();
+ await Promise.all([searchLibrary(),loadImportedCharacters()]);
+}
+async function loadImportedCharacters(){
+ try{
+  const characters=await api('/api/characters');
+  const el=$('#importedCharacters');if(!el)return;
+  el.innerHTML=characters.length?characters.map(c=>{const av=c.photo_path?`<img src="${safe(c.photo_path)}" class="char-avatar-img" alt="portrait">`:`<span class="entity-avatar">${safe((c.name||'?').slice(0,2).toUpperCase())}</span>`;const isActive=String(c.id)===String(state.characterId);return`<article class="entity-card">${av}<div><b>${safe(c.name)}</b><small>${safe(c.gender?c.gender+' · ':'')}${safe(c.race||'Unknown')} · ${safe(c.profession||'Adventurer')}</small></div><em>LV${safe(c.level||1)}</em><button data-exp-use-char="${c.id}" class="ghost" style="font-size:9px;padding:3px 8px;${isActive?'color:var(--gold);border-color:var(--gold)':''}">${isActive?'Active':'Use'}</button></article>`}).join(''):'<div class="empty-state">No imported characters yet.</div>';
+  $$('[data-exp-use-char]').forEach(btn=>btn.onclick=async()=>{const cid=+btn.dataset.expUseChar;state.characterId=cid;await refreshCharacterState();renderParty();renderQuests();loadImportedCharacters();toast('Adventurer activated')});
+ }catch(error){const el=$('#importedCharacters');if(el)el.innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}
 }
 function renderExploreCards(list,container,importHandler){
  if(!list.length){container.innerHTML='<div class="empty-state">No results.</div>';return}
@@ -758,6 +782,7 @@ async function searchLibrary(){
  }catch(error){$('#libraryResults').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}
 }
 $('#libraryFilterForm').onsubmit=e=>{e.preventDefault();searchLibrary()};
+$('#refreshImportedChars').onclick=loadImportedCharacters;
 $('#importAllBtn').onclick=async()=>{if(!lastLibraryResults.length){toast('Nothing to import');return}try{const result=await api('/api/explore/library/import-all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({characters:lastLibraryResults})});toast(`${result.imported} characters imported`)}catch(error){toast(error.message)}};
 $('#randomLibraryBtn').onclick=async()=>{
  try{
@@ -889,6 +914,7 @@ async function loadKnowledgeDocs(){
  }catch(error){$('#knowledgeDocs').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}
 }
 $('#reindexKnowledge').onclick=async()=>{try{const result=await api('/api/knowledge/index',{method:'POST'});toast(`${result.indexed} documents indexed`);loadKnowledgeDocs()}catch(error){toast(error.message)}};
+$('#refreshKnowledgeDocs').onclick=loadKnowledgeDocs;
 $('#knowledgeUpload').onchange=async e=>{const file=e.target.files[0];if(!file)return;const formData=new FormData();formData.append('file',file);try{await api('/api/knowledge/index/file',{method:'POST',body:formData});toast(`${file.name} indexed`);loadKnowledgeDocs()}catch(error){toast(error.message)}e.target.value=''};
 $('#knowledgeSearchForm').onsubmit=async e=>{
  e.preventDefault();const payload=Object.fromEntries(new FormData(e.currentTarget).entries());
@@ -967,6 +993,7 @@ $('#checkIntegrity').onclick=async()=>{try{const result=await api('/api/settings
 $('#runImportTest').onclick=async()=>{try{const result=await api('/api/settings/import-test',{method:'POST'});$('#importTestStatus').textContent=result.ok?`${result.passed.length} modules OK`:`${result.failures.length} failures`;toast(result.ok?'All modules import cleanly':'Some modules failed to import')}catch(error){toast(error.message)}};
 async function loadHealth(){try{const {counts}=await api('/api/settings/dashboard');$('#systemHealth').innerHTML=Object.entries(counts).map(([table,count])=>`<span>${safe(table)} <i class="good">${safe(count)}</i></span>`).join('')}catch(error){$('#systemHealth').innerHTML=`<span>Health check failed <i>${safe(error.message)}</i></span>`}}
 $('#refreshHealth').onclick=loadHealth;
+$('#settingsVoiceForm')?.addEventListener('submit',async e=>{e.preventDefault();const txt=e.currentTarget.elements.vtext.value.trim();if(!txt)return;const out=$('#settingsVoiceResult');out.textContent='Generating…';try{const r=await api('/api/voice/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:txt})});if(r.url){out.innerHTML=`<audio controls src="${safe(r.url)}" style="width:100%;margin-top:6px"></audio>`}else{out.textContent='TTS unavailable (install edge-tts and ensure internet access)'}}catch(err){out.textContent=err.message}});
 
 // ═══ Tactical combat: turn-based grid battle with obstacles ═══
 let combatState=null, combatReachable=new Set(), combatAttackable={}, combatSpellTargets={};
@@ -1175,9 +1202,6 @@ if(_autoGenBtn)_autoGenBtn.onclick=async()=>{
  }catch(err){toast('Auto-generate failed')}
  finally{_autoGenBtn.textContent='✦ Auto-generate from world & preset'}
 };
-
-// ── Media tabs Options buttons ──
-$$('.media-options-btn').forEach(btn=>btn.onclick=()=>showChatOptions('progressions'));
 
 fillPortraitStyles();openView('play');
 initPlay();
