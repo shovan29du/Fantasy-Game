@@ -371,6 +371,163 @@ PREBUILT_WORLDS = {
             "Your car will be outside whenever you need us.' "
             "The player controls the User — the father. Tonight, thirty years on, the story continues."
         )},
+
+    "The Demon Lord's Body":{"magic":"high","tech":"modern","setting":"drama","category":"supernatural","locations":6,"npcs":8,"factions":3,
+        "faction_names":["The Demon Army","The Hero's Council","The Sealed Realm"],
+        "npc_profs":["User (inside the Demon Lord's body)","Zaratia (personal demon general — sharp green eyes, unreadable loyalty)","High Marshal Veth (oldest and most dangerous of the demon commanders)","Irael (intelligence officer — knows every secret)","Sister Lune (hero faction spy)","Kodan the Unbroken (hero who originally sealed the Demon Lord)","Elder Scribe Pell (knows the sealing ritual)","Acolyte Mira (caught between both sides)"],
+        "opening":(
+            "The sealing took six thousand six hundred and sixty-six years. "
+            "The heroes who drove the spike through the Demon Lord's chest did it with songs and prayers "
+            "and the absolute certainty that the world was safe forever. "
+            "The world is not safe forever. "
+            "You woke up this morning as yourself — ordinary, unremarkable, completely human. "
+            "You went to bed last night in your apartment. "
+            "You did not go to bed in a throne room made of obsidian and old bone, "
+            "on a seat that fits your body like it was carved for it. "
+            "You did not agree to have 9,999 hit points, maximum statistics in every measurable category, "
+            "a demon army of several hundred thousand waiting outside for orders, "
+            "or a body that is six thousand six hundred and sixty-six years old and looks approximately thirty. "
+            "None of this was in the plan. "
+            "The plan — whatever it was — is no longer relevant. "
+            "Zaratia stands to your right. She has been your general for three thousand years "
+            "and her sharp green eyes are watching you with an expression you cannot yet read. "
+            "She says: 'My Lord. You have returned.' "
+            "Outside, the army is waiting. The heroes are regrouping. "
+            "And somewhere in this body's ancient memory, the Demon Lord's personality is not entirely absent — "
+            "just dormant, just below the surface, watching you make decisions with its face and its power. "
+            "The player controls the User. You have no idea what you are doing. "
+            "The demon army does not need to know that."
+        )},
+
+    "Audrey":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":2,"npcs":3,"factions":2,
+        "faction_names":["The Café","The Past"],
+        "npc_profs":["User","Audrey (formerly Mike Powell — the boy who made school difficult)","Café Staff"],
+        "opening":(
+            "You are sitting in a coffee shop you have been coming to for years "
+            "when the woman who sits down across from you makes something in the back of your mind trip a wire. "
+            "You know that face. Not this face exactly — but the structure of it. The way she holds her shoulders. "
+            "Something in the set of her jaw that you have not seen in fifteen years "
+            "and hoped, in the vague way you hope for things you have no control over, you never would again. "
+            "Her name is Audrey now. "
+            "You knew her as Mike Powell — the boy who made secondary school a genuinely difficult place "
+            "to spend several formative years of your life. "
+            "She does not recognise you immediately. Then she does. "
+            "There is a long silence. Outside, the city carries on. "
+            "Inside, two people are sitting across a small table from each other "
+            "with fifteen years of very different memories of the same period of time. "
+            "She does not leave. Neither do you. "
+            "They end up talking for two hours. "
+            "At the end of it, she picks up both cheques without asking and says: 'I know it does not fix anything. "
+            "But I am sorry. I am genuinely sorry for all of it.' "
+            "The player controls the User. Those two hours are yours to navigate."
+        )},
+
+    "Amy's Homecoming":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":3,"npcs":3,"factions":2,
+        "faction_names":["The Family Home","College Life"],
+        "npc_profs":["User (the father)","Amy (daughter — home from first year of college)","Neighbour or Family Friend"],
+        "opening":(
+            "You were not sure what you expected when your daughter came home for the summer. "
+            "Amy has been at university for nine months — her first year. "
+            "She drove herself back, which she would not have done before. "
+            "She carried her own bags in, which she also would not have done before. "
+            "She walked through the house with the particular energy of someone rediscovering a space "
+            "they have been missing without fully admitting it. "
+            "She went upstairs. You heard her moving around in her room. "
+            "Then she came back down, leaned against the kitchen doorframe, "
+            "and said — in a voice that was trying to be casual and was not quite getting there: "
+            "'Thanks for keeping my room the same, by the way. That was really nice.' "
+            "You told her it was not a problem. "
+            "She nodded. She looked at the floor for a moment. "
+            "Then she looked back up at you and said: "
+            "'So. I was unpacking. And I noticed — some of my underwear is missing.' "
+            "She is watching you. "
+            "The player controls the User — the father. "
+            "However this conversation goes from here is entirely up to you."
+        )},
+
+    "The Beach House":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":4,"factions":2,
+        "faction_names":["The House","The Town"],
+        "npc_profs":["User (new owner of the beach house)","The woman with two-toned green hair (old friend)","Local Neighbour","Hardware Store Owner"],
+        "opening":(
+            "Your family left you the beach house. "
+            "You did not ask for it. You were not the obvious choice. "
+            "But here it is — yours now, along with the leaking shower in the guest bathroom, "
+            "the deck that needs re-staining, and the particular smell of a house "
+            "that has been closed for too long and is slowly remembering how to be lived in. "
+            "This is your first summer here. "
+            "You arrived on a Friday evening. By Saturday morning you had a list. "
+            "By Saturday afternoon you had abandoned most of the list in favour of sitting on the deck "
+            "watching the water, which was not a bad use of time but did not fix the shower. "
+            "Saturday night, around eleven, your dog Racket woke you up. "
+            "Racket, who barks at leaves. Racket, who has an opinion about every car that passes. "
+            "Racket was completely silent — tail going, body loose, excited in the way he only gets "
+            "for people he already knows. "
+            "You found her in the kitchen. "
+            "Two-toned green hair. The kind of look that does not happen by accident. "
+            "She turned around from the refrigerator — your refrigerator — "
+            "with an expression that was more 'caught' than 'sorry' and said: "
+            "'Okay. I know what this looks like.' "
+            "You have not seen her in years. You did not know she came here. "
+            "She did not know you had inherited the place. "
+            "The guest bathroom shower still does not work. "
+            "The player controls the User. "
+            "The night is young, Racket likes her, and she has not left yet."
+        )},
+
+    "Cora's Secret":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":4,"npcs":4,"factions":2,
+        "faction_names":["The Friendship","The Heart"],
+        "npc_profs":["User","Cora (best friend since high school)","Mutual Friend from University","Cora's Roommate (now displaced)"],
+        "opening":(
+            "You and Cora have been friends since the second week of year ten. "
+            "The friendship started with a prank — she put a plastic spider in your locker "
+            "and then felt so guilty watching you jump that she spent the rest of the day being mortifyingly nice to you "
+            "until you made her admit what she had done, at which point you laughed for about four minutes straight "
+            "and she decided you were worth knowing. "
+            "That was the beginning. "
+            "Everything since then has been the same energy: elaborate pranks, competitive jokes, "
+            "a friendship conducted at full volume with occasional silences that felt as easy as the noise. "
+            "When you both got into the same university, you ended up as flatmates. "
+            "It made sense. It was practical. It was also, looking back, "
+            "the decision that started changing things — though neither of you knew it at the time. "
+            "Over the last year, the pranks have stopped. "
+            "Not dramatically — no announcement, no argument. They just... tapered off. "
+            "Cora has been quieter. Careful in a way she was not before. "
+            "She still shows up. She still laughs at your jokes. "
+            "But something has shifted and you have not been able to name it "
+            "until the night she sat down next to you on the sofa, very still, and said: "
+            "'I need to tell you something and I need you to not make a joke out of it. "
+            "At least not yet.' "
+            "The player controls the User. "
+            "Cora is sitting next to you. She is waiting."
+        )},
+
+    "Rachel's Lemonade":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":3,"npcs":4,"factions":2,
+        "faction_names":["The Yard","The House"],
+        "npc_profs":["User","Rachel (Stacy's single mother — warm, sharp, quietly observant)","Stacy (the girl next door — friendly, oblivious)","Neighbour passing by"],
+        "opening":(
+            "You have been in love with Stacy for approximately three years. "
+            "Stacy, for her part, thinks you are great. "
+            "She thinks you are, and she has used these words: 'like a brother.' "
+            "You have been the friend. You have held the door. You have fixed the Wi-Fi. "
+            "You have listened to the stories about other guys with the particular expression "
+            "of someone who is listening to the stories about other guys. "
+            "Stacy lives next door. Her mother, Rachel, has been raising her alone "
+            "since Stacy's father left when Stacy was nine. "
+            "Rachel is — it occurs to you this summer more than it has before — "
+            "a genuinely warm person. Specific in her warmth. She notices things. "
+            "Stacy does not always notice things. "
+            "You are spending this summer doing yard work and helping with the pool next door. "
+            "You said yes because Stacy asked. You would do anything Stacy asked. "
+            "It is a Tuesday afternoon. "
+            "Stacy is inside — asleep, on a call, somewhere unavailable. "
+            "You are pulling weeds in the sun, and the back door opens, "
+            "and Rachel comes out with two glasses of lemonade and the expression of someone "
+            "who has been watching you work and decided you have earned a break. "
+            "She sits down on the back step and hands you a glass and says: "
+            "'You work hard for someone who isn't being paid.' "
+            "The player controls the User. "
+            "Rachel is sitting on the step. The lemonade is cold. Stacy is somewhere inside."
+        )},
 }
 
 def get_prebuilt_list(): return list(PREBUILT_WORLDS.keys())
