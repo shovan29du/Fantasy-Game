@@ -232,13 +232,15 @@ function toWorldEntry(w){const locs=(w.locations||w.world_json?.locations||[]);c
 function fmtChat(raw){
  const s=String(raw??'');
  let result='';
- const re=/\*\*([^*]+?)\*\*|"([^"\n]+?)"|'([^'\n]+?)'/g;
+ // **action** or *action* → italic narration; "dialogue" or 'dialogue' → spoken line
+ const re=/\*\*([^*]+?)\*\*|\*([^*\n]+?)\*|"([^"\n]+?)"|'([^'\n]+?)'/g;
  let last=0,m;
  while((m=re.exec(s))!==null){
   if(m.index>last)result+=safe(s.slice(last,m.index));
   if(m[1]!==undefined)result+=`<em class="chat-action">${safe(m[1])}</em>`;
-  else if(m[2]!==undefined)result+=`<span class="chat-dialogue">&ldquo;${safe(m[2])}&rdquo;</span>`;
-  else result+=`<span class="chat-dialogue">&#8216;${safe(m[3])}&#8217;</span>`;
+  else if(m[2]!==undefined)result+=`<em class="chat-action">${safe(m[2])}</em>`;
+  else if(m[3]!==undefined)result+=`<span class="chat-dialogue">&ldquo;${safe(m[3])}&rdquo;</span>`;
+  else result+=`<span class="chat-dialogue">&#8216;${safe(m[4])}&#8217;</span>`;
   last=re.lastIndex;
  }
  if(last<s.length)result+=safe(s.slice(last));
