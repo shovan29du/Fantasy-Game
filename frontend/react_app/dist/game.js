@@ -19,9 +19,6 @@ const WORLD_DEFS=[
 ];
 const party=[
  {name:'No adventurer yet',role:'Create one in the Characters tab',lv:0,hp:0,initials:'?',linked:true},
- {name:'Kael Ironroot',role:'Dwarf · Vanguard',lv:7,hp:74,initials:'KI'},
- {name:'Nyx-13',role:'Cyborg · Operative',lv:6,hp:91,initials:'N13'},
- {name:'Seraphine',role:'Tiefling · Seer',lv:6,hp:62,initials:'SE'},
 ];
 const actions=[
  {name:'Engage Enemies',icon:'⚔',kind:'attack',cost:'Tactical'}, {name:'Fire Bolt',icon:'✦',kind:'attack',cost:'1 mana',xp:5},
@@ -70,6 +67,8 @@ function derivedResources(sheet){
 function renderParty(){
  const p=party[0];
  if(state.sheet){p.name=state.sheet.name||p.name;p.lv=state.sheet.calc_lv||state.sheet.level||1;p.role=`${safe(state.sheet.race||'Unknown')} · ${safe(state.sheet.profession||'Adventurer')}`;p.hp=100;p.initials=(state.sheet.name||'??').slice(0,2).toUpperCase()}
+ const filled=state.characterId?1:0;
+ const el=$('#partyCount');if(el)el.textContent=`${filled} / 6`;
  $('#partyList').innerHTML=party.map((pt,i)=>`<div class="party-card ${i===state.selected?'active':''}" data-party="${i}"><div class="portrait">${safe(pt.initials)}</div><div><strong>${safe(pt.name)}</strong><small>${pt.role}</small><div class="hp"><i style="width:${pt.hp}%"></i></div></div><span class="level">LV ${safe(pt.lv)}</span></div>`).join('');
  $$('[data-party]').forEach(el=>el.onclick=()=>{const i=+el.dataset.party;if(i===0&&!state.characterId){goCreateCharacter();return}state.selected=i;renderParty();toast(`${party[state.selected].name} selected`)})
 }
