@@ -228,6 +228,24 @@ function loadSessionFromStorage(){try{const raw=localStorage.getItem(SESSION_KEY
 function saveSessionToStorage(){localStorage.setItem(SESSION_KEY,JSON.stringify({sessionId:state.sessionId,worldId:state.worlds[0]?.id,characterId:state.characterId}))}
 function toWorldEntry(w){const locs=(w.locations||w.world_json?.locations||[]);const first=locs[0];return {id:w.id,name:w.name,ratings:w.ratings||{},reality_type:w.reality_type||'Prime Reality',space:w.space_alignment||'unknown',place:first?first.name:(w.name||'Unknown Location'),theme:'local',startX:first?first.x:50,startY:first?first.y:50}}
 
+// ── Chat content formatter: **action**, "dialogue", 'dialogue', user: label ──
+function fmtChat(raw){
+ const s=String(raw??'');
+ let result='';
+ const re=/\*\*([^*]+?)\*\*|"([^"\n]+?)"|'([^'\n]+?)'/g;
+ let last=0,m;
+ while((m=re.exec(s))!==null){
+  if(m.index>last)result+=safe(s.slice(last,m.index));
+  if(m[1]!==undefined)result+=`<em class="chat-action">${safe(m[1])}</em>`;
+  else if(m[2]!==undefined)result+=`<span class="chat-dialogue">&ldquo;${safe(m[2])}&rdquo;</span>`;
+  else result+=`<span class="chat-dialogue">&#8216;${safe(m[3])}&#8217;</span>`;
+  last=re.lastIndex;
+ }
+ if(last<s.length)result+=safe(s.slice(last));
+ result=result.replace(/^(user|User|USER):\s*/,'<span class="chat-speaker">$1:</span> ');
+ return result;
+}
+
 // ── Chat message renderer + per-message action toolbar ──
 function chatMsg(cls,html,id){
  const idAttr=id?` data-mid="${id}"`:'';
@@ -318,7 +336,7 @@ $('#chatLog').addEventListener('click',async e=>{
    const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:prompt,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.9})});
    const data=await r.json();
    if(!r.ok)throw new Error(data.detail||'AI unavailable');
-   $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(data.reply),data.id));
+   $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',fmtChat(data.reply),data.id));
    $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
    speakReply(data.reply);
   }catch(err){toast(err.message);}
@@ -381,7 +399,7 @@ $('#chatLog').addEventListener('click',async e=>{
 async function loadChatHistory(){
  try{
   const history=await api(`/api/chat/history?session_id=${encodeURIComponent(state.sessionId)}&limit=40`);
-  $('#chatLog').innerHTML=history.length?history.map(m=>chatMsg(m.role==='user'?'player':'gm',m.content,m.id)).join(''):'<p class="gm">The portal hums, waiting for your first move.</p>';
+  $('#chatLog').innerHTML=history.length?history.map(m=>chatMsg(m.role==='user'?'player':'gm',fmtChat(m.content),m.id)).join(''):'<p class="gm">The portal hums, waiting for your first move.</p>';
   $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
  }catch{}
 }
@@ -685,7 +703,7 @@ $('#chatFileInput').onchange=async()=>{
   const cr=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:summary,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});
   const cd=await cr.json();
   if(!cr.ok)throw new Error(cd.detail||'AI unavailable');
-  $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(cd.reply)));
+  $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',fmtChat(cd.reply)));
   $('#aiStatus').textContent='LM Studio connected';
   speakReply(cd.reply);
  }catch(err){
@@ -725,7 +743,7 @@ if(SpeechRecognitionApi){
   try{speechRecognizer.start()}catch{isListening=false;$('#micBtn').classList.remove('listening')}
  };
 }
-$('#chatForm').onsubmit=async e=>{e.preventDefault();const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',safe(msg)));input.value='';$('#aiStatus').textContent='Thinking...';try{const world=state.worlds[state.worldIndex];const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(data.reply),data.id));$('#aiStatus').textContent='LM Studio connected';speakReply(data.reply)}catch(error){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(error.message||'The local storyteller cannot be reached.')));$('#aiStatus').textContent='Start LM Studio on port 1234'}$('#chatLog').scrollTop=$('#chatLog').scrollHeight};
+$('#chatForm').onsubmit=async e=>{e.preventDefault();const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',fmtChat(msg)));input.value='';$('#aiStatus').textContent='Thinking...';try{const world=state.worlds[state.worldIndex];const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',fmtChat(data.reply),data.id));$('#aiStatus').textContent='LM Studio connected';speakReply(data.reply)}catch(error){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(error.message||'The local storyteller cannot be reached.')));$('#aiStatus').textContent='Start LM Studio on port 1234'}$('#chatLog').scrollTop=$('#chatLog').scrollHeight};
 
 // ═══ AI Companion-style workspace navigation and studios ═══
 function openView(name){$$('.app-view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.side-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='play'){$('#playHub').hidden=state.hasActiveGame;$('#gameArea').hidden=!state.hasActiveGame}if(name==='characters')loadCharacterStudio();if(name==='explore')loadExplore();if(name==='worlds')loadWorlds();if(name==='knowledge'){loadLore();loadKnowledgeDocs()}if(name==='media')loadMediaTab();if(name==='settings'){checkModelStatus();loadSettingsExtras()}}
