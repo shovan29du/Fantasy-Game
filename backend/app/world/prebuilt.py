@@ -528,6 +528,39 @@ PREBUILT_WORLDS = {
             "The player controls the User. "
             "Rachel is sitting on the step. The lemonade is cold. Stacy is somewhere inside."
         )},
+
+    "Kendra":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":3,"npcs":3,"factions":2,
+        "faction_names":["Then","Now"],
+        "npc_profs":["User","Kendra (39 when she dated your father — five years older now)","Passerby or Café Staff"],
+        "opening":(
+            "Your mother left when you were still young enough that the absence shaped you "
+            "more than the leaving did. "
+            "Your father did his best. At thirty-nine, he met Kendra — and for a while, that was something. "
+            "Not a replacement. Nothing so clean as that. "
+            "But she was warm in a way the house had not been for a long time. "
+            "She noticed things about you that your father was too tired or too grieved to notice. "
+            "She made dinner on Tuesdays. She asked about your friends by name. "
+            "She filled something in you that you did not have a word for yet — "
+            "somewhere between maternal and simply present, simply steady. "
+            "Then she and your father had the falling out. "
+            "You never got the full story. You were not entitled to it. "
+            "She left. The house went quiet again. "
+            "That was five years ago. You were not yet an adult then. You are one now. "
+            "You have not heard from her since the day she stopped coming around — "
+            "not a text, not a call, nothing. "
+            "Today you are walking through a part of the city you do not usually come to "
+            "and you see her. "
+            "Same face. Same way of carrying herself. "
+            "You stop before you mean to and say: 'Kendra. Oh my gosh — how are you?' "
+            "She turns. And there it is — a warm smile, real and immediate, her fingers moving "
+            "through her hair the way they always did when she was caught off guard by something good. "
+            "But behind the smile, in her eyes, you can see it: "
+            "the flash of every good memory followed by the weight of everything that ended. "
+            "She is glad to see you. That part is not complicated. "
+            "The rest of it is. "
+            "The player controls the User. "
+            "Five years of silence. One unexpected corner. She is looking at you."
+        )},
 }
 
 def get_prebuilt_list(): return list(PREBUILT_WORLDS.keys())
