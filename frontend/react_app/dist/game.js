@@ -193,22 +193,24 @@ async function loadLocations(){
 }
 async function enterLocation(loc){
  const world=state.worlds[state.worldIndex];
- $('#sceneTitle').textContent=loc.name;
- $('#sceneSubtitle').textContent=`${loc.terrain} · ${world?.name||''}`;
- $('#sceneOverlay').classList.add('open');
- const bg=$('#sceneBg'), loading=$('#sceneLoading');
- if(state.locationImageCache[loc.id]){bg.style.backgroundImage=`url("${encodeURI(state.locationImageCache[loc.id])}")`;loading.classList.add('hidden');return}
- loading.classList.remove('hidden');bg.style.backgroundImage='';
+ const panel=$('#mapLocationPanel'),img=$('#mapLocImg'),loading=$('#mapLocLoading');
+ $('#mapLocName').textContent=loc.name;
+ $('#mapLocSub').textContent=`${loc.terrain} · ${world?.name||''}`;
+ panel.hidden=false;
+ loading.style.display='flex';
+ if(state.locationImageCache[loc.id]){img.src=state.locationImageCache[loc.id];img.style.opacity='1';loading.style.display='none';return}
+ img.style.opacity='0';
  const character=state.sheet;
  const prompt=`${world?.name||'A realm'}, ${loc.terrain} region called ${loc.name}. ${loc.description||''} A ${character?.race||'traveller'} ${character?.profession||'adventurer'} named ${character?.name||'the hero'} stands in the scene.`;
  try{
   const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Cinematic',width:1024,height:576,save_to_chat:false})});
   const url=result.url||result.path;
-  if(url){state.locationImageCache[loc.id]=url;bg.style.backgroundImage=`url("${encodeURI(url)}")`}
+  if(url){state.locationImageCache[loc.id]=url;img.src=url;img.onload=()=>{img.style.opacity='1'}}
  }catch(error){toast(`Scene generation failed: ${error.message}`)}
- loading.classList.add('hidden');
+ loading.style.display='none';
 }
 $('#exitSceneBtn').onclick=()=>$('#sceneOverlay').classList.remove('open');
+$('#mapLocCloseBtn').onclick=()=>{$('#mapLocationPanel').hidden=true};
 function setScale(scale){state.scale=scale;$('#map').className=`map map-${scale}`;$('#scaleLabel').textContent=`${scale.toUpperCase()} MAP`;$$('[data-scale]').forEach(b=>b.classList.toggle('active',b.dataset.scale===scale));}
 function move(x,y){state.x=Math.max(4,Math.min(96,x));state.y=Math.max(6,Math.min(92,y));const p=$('#playerToken');p.style.setProperty('--x',state.x+'%');p.style.setProperty('--y',state.y+'%')}
 
@@ -518,20 +520,59 @@ async function beginGame(payload){
   toast(`New game started: ${world.name}`);
  }catch(error){toast(error.message)}
 }
+// ── Scenario card image queue (max 2 concurrent) ──
+const _scImgCache={};
+let _scImgQ=[],_scImgBusy=0;
+function _scDrain(){
+ if(_scImgBusy>=2||!_scImgQ.length)return;
+ const{name,prompt,img}=_scImgQ.shift();
+ if(_scImgCache[name]){img.src=_scImgCache[name];img.onload=()=>img.classList.add('sc-loaded');_scDrain();return}
+ _scImgBusy++;
+ api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Fantasy Art',width:512,height:384,save_to_chat:false})})
+  .then(r=>{const u=r.url||r.path;if(u){_scImgCache[name]=u;img.src=u;img.onload=()=>img.classList.add('sc-loaded')}})
+  .catch(()=>{}).finally(()=>{_scImgBusy--;_scDrain()});
+}
+function _scQueueImg(name,prompt,img){
+ if(_scImgCache[name]){img.src=_scImgCache[name];img.onload=()=>img.classList.add('sc-loaded');return}
+ _scImgQ.push({name,prompt,img});_scDrain();
+}
+
+let _scObserver=null;
+function renderScenarioCards(cats,filterKey){
+ const ICONS={fantasy:'⚔',anime:'✨',gaming:'🎮',cyberpunk:'⚡',supernatural:'👁',apocalyptic:'☢',zombie:'🧟',mystery:'🔍',drama:'💔',alien_space:'🚀'};
+ const COLORS={fantasy:'#1a1a3e',anime:'#2e1a3e',gaming:'#0d1f0d',cyberpunk:'#0a1f1a',supernatural:'#2a1a2a',apocalyptic:'#2e1a0d',zombie:'#1a2a1a',mystery:'#1a1a2a',drama:'#2a0d1a',alien_space:'#0d1a2e'};
+ let all=[];
+ cats.forEach(c=>{if(filterKey==='all'||c.key===filterKey)c.scenarios.forEach(s=>all.push({...s,catKey:c.key,catLabel:c.label}))});
+ $('#scenarioCount').textContent=`${all.length} scenario${all.length!==1?'s':''}`;
+ $('#scenarioCardsGrid').innerHTML=all.map(s=>`<div class="scenario-card" data-cat="${safe(s.catKey)}" data-name="${safe(s.name)}" data-type="${safe(s.type)}"><div class="scenario-card-img" style="background:${COLORS[s.catKey]||'#141c24'}" data-prompt="${safe(`a ${s.catLabel} rpg scene for ${s.name}, character portrait, cinematic fantasy illustration`)}"><span>${ICONS[s.catKey]||'⚔'}</span><img src="" alt=""></div><div class="scenario-card-body"><div class="scenario-card-genre">${safe(s.catLabel)}</div><div class="scenario-card-name">${safe(s.name)}</div><button class="scenario-card-play">▶ Play</button></div></div>`).join('')||'<div class="empty-state">No scenarios found.</div>';
+ $$('#scenarioCardsGrid .scenario-card').forEach(card=>{
+  const go=()=>{state.pendingCategory=cats.find(c=>c.key===card.dataset.cat);beginGame({category:card.dataset.cat,scenario_name:card.dataset.name,scenario_type:card.dataset.type})};
+  card.onclick=go;
+  const pb=card.querySelector('.scenario-card-play');if(pb)pb.onclick=e=>{e.stopPropagation();go()};
+ });
+ if(_scObserver)_scObserver.disconnect();
+ _scObserver=new IntersectionObserver(entries=>{entries.forEach(entry=>{
+  if(!entry.isIntersecting)return;
+  const imgDiv=entry.target;_scObserver.unobserve(imgDiv);
+  const img=imgDiv.querySelector('img'),card=imgDiv.closest('.scenario-card');
+  if(!img||!card)return;
+  _scQueueImg(card.dataset.name,imgDiv.dataset.prompt,img);
+ })},{threshold:0.1,rootMargin:'60px'});
+ $$('#scenarioCardsGrid .scenario-card-img').forEach(el=>_scObserver.observe(el));
+}
+
 $('#startNewGameBtn').onclick=async()=>{
- try{if(!categoriesCache)categoriesCache=await api('/api/scenarios/categories');
-  $('#categoryGrid').innerHTML=categoriesCache.map(c=>`<button data-category="${safe(c.key)}"><b>${safe(c.label)}</b><small>${c.scenarios.length} scenario${c.scenarios.length===1?'':'s'}</small></button>`).join('');
-  $$('#categoryGrid [data-category]').forEach(btn=>btn.onclick=()=>{
-   const category=categoriesCache.find(c=>c.key===btn.dataset.category);state.pendingCategory=category;
-   $('#scenarioStepTitle').textContent=`${category.label}: choose a scenario`;
-   $('#scenarioGrid').innerHTML=category.scenarios.map(s=>`<button data-scenario="${safe(s.name)}" data-type="${s.type}"><b>${safe(s.name)}</b><small>${s.type==='prebuilt'?'Simulated world':'Preset flavor'}</small></button>`).join('')||'<div class="empty-state">No curated scenarios yet — write your own below.</div>';
-   $$('#scenarioGrid [data-scenario]').forEach(sb=>sb.onclick=()=>beginGame({category:category.key,scenario_name:sb.dataset.scenario,scenario_type:sb.dataset.type}));
-   showStartStep('scenario');
-  });
+ try{
+  if(!categoriesCache)categoriesCache=await api('/api/scenarios/categories');
+  const sel=$('#worldCategorySelect');
+  sel.innerHTML='<option value="all">🌐 All Worlds</option>'+categoriesCache.map(c=>`<option value="${safe(c.key)}">${safe(c.label)} (${c.scenarios.length})</option>`).join('');
+  sel.onchange=()=>renderScenarioCards(categoriesCache,sel.value);
+  renderScenarioCards(categoriesCache,'all');
   showStartStep('category');
  }catch(error){toast(error.message)}
 };
-$('#customScenarioForm').onsubmit=e=>{e.preventDefault();const text=new FormData(e.currentTarget).get('text')||'';if(!text.trim()){toast('Write a scenario first');return}beginGame({category:state.pendingCategory?.key||'fantasy',scenario_name:text.slice(0,40),scenario_type:'custom',custom_text:text})};
+function _activeCatKey(){const v=$('#worldCategorySelect')?.value;return(v&&v!=='all')?v:state.pendingCategory?.key||'fantasy'}
+$('#customScenarioForm').onsubmit=e=>{e.preventDefault();const text=new FormData(e.currentTarget).get('text')||'';if(!text.trim()){toast('Write a scenario first');return}beginGame({category:_activeCatKey(),scenario_name:text.slice(0,40),scenario_type:'custom',custom_text:text})};
 
 $('#showTemplatesBtn').onclick=async()=>{await loadTemplateList();showStartStep('templates')};
 async function loadTemplateList(){
@@ -547,15 +588,15 @@ $('#newTemplateForm').onsubmit=async e=>{e.preventDefault();const formEl=e.curre
 $('#randomScenarioBtn').onclick=async()=>{await rollRandomScenario();showStartStep('random')};
 async function rollRandomScenario(){try{const result=await api('/api/random/prompts');state.randomScenarioText=result.scenario;$('#randomScenarioText').textContent=result.scenario}catch(error){$('#randomScenarioText').textContent=error.message}}
 $('#rerollScenarioBtn').onclick=rollRandomScenario;
-$('#useRandomScenarioBtn').onclick=()=>beginGame({category:state.pendingCategory?.key||'fantasy',scenario_name:'Random Scenario',scenario_type:'custom',custom_text:state.randomScenarioText});
+$('#useRandomScenarioBtn').onclick=()=>beginGame({category:_activeCatKey(),scenario_name:'Random Scenario',scenario_type:'custom',custom_text:state.randomScenarioText});
 $('#autoGenScenarioBtn').onclick=async()=>{
  const worldName=state.worlds?.[state.worldIndex]?.name||'';
- const genre=$('#scenarioStepTitle')?.textContent||'Fantasy';
- const preset=$('#categoryGrid')?.querySelector('.active')?.textContent||'';
+ const catKey=_activeCatKey();
+ const genre=categoriesCache?.find(c=>c.key===catKey)?.label||'Fantasy';
  const btn=$('#autoGenScenarioBtn');
  btn.textContent='✦ Generating…';
  try{
-  const {scenario}=await api('/api/scenario/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:worldName,genre,story_preset:preset,session_id:state.sessionId||'default'})});
+  const {scenario}=await api('/api/scenario/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:worldName,genre,story_preset:genre,session_id:state.sessionId||'default'})});
   const ta=$('#customScenarioForm')?.elements?.text;
   if(ta)ta.value=scenario;
   toast('Scenario generated!');

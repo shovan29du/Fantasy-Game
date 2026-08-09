@@ -38,8 +38,19 @@
 
       <div id="startStep-category" class="start-step" hidden>
         <button class="ghost back-btn" data-back="choice">‹ Back</button>
-        <h2>Choose a genre</h2>
-        <div id="categoryGrid" class="start-grid"></div>
+        <h2>Choose a scenario</h2>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <select id="worldCategorySelect" style="background:#141c24;border:1px solid var(--line);color:#e9ecf1;padding:8px 12px;border-radius:4px;font-size:13px;cursor:pointer">
+            <option value="all">🌐 All Worlds</option>
+          </select>
+          <span id="scenarioCount" style="font-size:11px;color:var(--muted)"></span>
+        </div>
+        <div id="scenarioCardsGrid" class="scenario-cards-grid"></div>
+        <div class="start-divider">or write your own</div>
+        <form id="customScenarioForm" class="studio-form">
+          <label class="wide">Opening scenario<textarea name="text" rows="3" placeholder="You wake up in..."></textarea></label>
+          <div class="form-actions wide"><button type="button" id="autoGenScenarioBtn" class="ghost" style="margin-bottom:8px">✦ Auto-generate from world &amp; preset</button><button class="gold">Start with this</button></div>
+        </form>
         <div class="start-divider">or</div>
         <div class="start-actions">
           <button id="showTemplatesBtn" class="ghost">✎ Scenario templates</button>
@@ -51,10 +62,6 @@
         <button class="ghost back-btn" data-back="category">‹ Back</button>
         <h2 id="scenarioStepTitle">Choose a scenario</h2>
         <div id="scenarioGrid" class="start-grid"></div>
-        <form id="customScenarioForm" class="studio-form">
-          <label class="wide">Or write your own opening scenario<textarea name="text" rows="3" placeholder="You wake up in..."></textarea></label>
-          <div class="form-actions wide"><button type="button" id="autoGenScenarioBtn" class="ghost" style="margin-bottom:8px">✦ Auto-generate from world &amp; preset</button><button class="gold">Start with this</button></div>
-        </form>
       </div>
 
       <div id="startStep-templates" class="start-step" hidden>
@@ -123,6 +130,17 @@
           <button id="portal" class="portal" style="--x:84%;--y:50%" title="Reality portal"><span></span></button>
           <div id="playerToken" class="player-token" style="--x:42%;--y:52%"><span>AS</span><i></i></div>
           <div class="map-hint">WASD / ARROWS TO MOVE · CLICK A LOCATION TO ENTER</div>
+          <div id="mapLocationPanel" class="map-location-panel" hidden>
+            <div class="map-loc-img-wrap">
+              <div id="mapLocLoading" class="map-loc-loading">Generating scene…</div>
+              <img id="mapLocImg" src="" alt="" style="width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .4s">
+            </div>
+            <div class="map-loc-info">
+              <strong id="mapLocName"></strong>
+              <small id="mapLocSub"></small>
+              <button id="mapLocCloseBtn" style="margin-left:auto;background:none;border:none;color:#e9ecf1;font-size:18px;cursor:pointer;line-height:1">✕</button>
+            </div>
+          </div>
         </div>
         <div class="map-footer"><span id="mapTime">☀ Dawn · Day 1</span><span id="mapWeather">☁ Clear · 18°C</span><span>⚔ Threat: <b id="mapThreat">Low</b></span><button id="advanceTimeBtn" class="ghost" style="font-size:9px;padding:2px 6px" title="Advance time 30 min">⏩ +30m</button></div>
       </div>
@@ -377,6 +395,26 @@
   </section>
   <div id="toast" class="toast" role="status"></div>
 
+  <style>
+/* Scenario cards */
+.scenario-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;max-height:360px;overflow-y:auto;margin-bottom:16px;padding-right:4px}
+.scenario-card{background:#141c24;border:1px solid var(--line);border-radius:6px;overflow:hidden;cursor:pointer;transition:border-color .2s,transform .15s;text-align:left}
+.scenario-card:hover{border-color:var(--gold);transform:translateY(-2px)}
+.scenario-card-img{height:110px;background:#0a1018;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:32px}
+.scenario-card-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .4s}
+.scenario-card-img img.sc-loaded{opacity:1}
+.scenario-card-body{padding:8px 10px 10px}
+.scenario-card-genre{font-size:9px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px}
+.scenario-card-name{font-weight:bold;font-size:13px;margin-bottom:5px;line-height:1.3}
+.scenario-card-play{width:100%;padding:5px;background:var(--gold);color:#000;border:none;border-radius:3px;cursor:pointer;font-size:11px;font-weight:bold}
+/* Map location panel */
+.map-location-panel{position:absolute;bottom:0;left:0;right:0;z-index:10;display:flex;flex-direction:column;height:56%}
+.map-loc-img-wrap{flex:1;position:relative;overflow:hidden;background:#000}
+.map-loc-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#e9ecf1;font-size:12px;background:rgba(5,7,10,.8);z-index:2}
+.map-loc-info{display:flex;align-items:center;gap:8px;padding:5px 10px;background:#0a1018;border-top:1px solid var(--line);flex-shrink:0}
+.map-loc-info strong{font-size:13px}
+.map-loc-info small{color:var(--muted);font-size:11px}
+  </style>
   <script src="/game.js"></script>
 </body>
 </html>
