@@ -173,6 +173,70 @@ PREBUILT_WORLDS = {
             "engineering the very push neither of them would take themselves. "
             "The player controls Liam as he navigates surprise, embarrassment, and the realisation that maybe Eve's sister isn't wrong."
         )},
+
+    "Before Everything Breaks":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":7,"factions":2,
+        "faction_names":["The Inner Circle","Outsiders"],
+        "npc_profs":["Lisa","User (the one who always loved her)","Mutual Friend","Neighbour","Confidant","The Secret Holder","Late-Night Caller"],
+        "opening":(
+            "Lisa was always your sanctuary — the one place in the world that felt safe and whole. "
+            "But something has been wrong for weeks. A secret she has been carrying has slowly changed the air between you. "
+            "Red wine and lies. Small ones at first, then larger silences that swallowed whole evenings. "
+            "You have loved her from the beginning — the kind of love that does not know how to stop. "
+            "Tonight the smell of wine lingers as you push open the door. It is 7:47 PM. The apartment is quiet. "
+            "Lisa is curled on the sofa beneath the warm glow of the floor lamp, a golden shadow. "
+            "Her coat is draped over the armrest. Her breathing is slow and controlled. "
+            "You pause in the doorway, key still in hand. "
+            "Dark red wine reflects in her pupils as her gaze finds yours. Her lips part. "
+            "Her voice — low, swift, almost broken — shatters the silence: "
+            "'Come here. I need to tell you something before everything breaks.' "
+            "The player controls the User. What Lisa is about to confess — and what you do with it — unfolds through play."
+        )},
+
+    "Lily at the Coffee Shop":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":7,"factions":3,
+        "faction_names":["Lily's World","User's New Life","May's Circle"],
+        "npc_profs":["Lily (21, college student)","User (the father who always loved her)","May (Lily's mother)","Lily's College Friend","Coffee Shop Regular","Mutual Acquaintance","May's New Partner"],
+        "opening":(
+            "User and May married young — he was 22, she was 20. Years later May gave birth to Lily. "
+            "User raised Lily as his own daughter and loved her with everything he had. "
+            "They were remarkably close — the kind of father-daughter bond that other people noticed and envied. "
+            "What User never knew: Lily was not his biological daughter. May had been unfaithful. "
+            "May grew complacent. The cheating continued. When User finally discovered the truth, they divorced. "
+            "To protect herself, May told Lily terrible lies about User — that he abandoned them, that he was cruel, "
+            "that the divorce was entirely his fault. Lily believed every word. She refused to see him. "
+            "For years, User tried and was turned away every time. "
+            "Then, when Lily was 21 and away at college, May got drunk one night and told the truth. "
+            "She admitted she had cheated. She admitted the divorce was her fault. "
+            "She confessed, one by one, the lies she had told Lily about the man who had always loved her. "
+            "Lily is now standing outside the coffee shop where she knows User is — gathering every nerve she has "
+            "to walk through that door and face the man she pushed away, the man who never stopped being her father. "
+            "May has found out what Lily is doing and is already on her way to the coffee shop. "
+            "The player controls Lily. What she says, what she asks, and how she holds herself in that first moment "
+            "is entirely in her hands."
+        )},
+
+    "The Brother's Fiancée":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":6,"npcs":8,"factions":3,
+        "faction_names":["The Mansion Circle","The Film World","Back Home"],
+        "npc_profs":["User (the grounded brother)","Amanda (the fiancée)","The Hollywood Brother","Brother's Agent","Film Crew Member","Household Staff","Childhood Friend","The Late Mother's Memory"],
+        "opening":(
+            "You and your brother could not be more different. "
+            "He went to Los Angeles to chase the camera lights and became an actor. "
+            "You became an officer in the Air Force, then built a company from the ground up as an entrepreneur. "
+            "He is Hollywood handsome — the kind of face that stops traffic on Sunset Boulevard. "
+            "You are handsome in a different way: solid, dependable, the kind of man people trust without thinking about it. "
+            "When your mother fell ill, you were the one who showed up. You rearranged your life, your career, your plans — "
+            "and you cared for her every single day until the day she died. "
+            "Your brother sent money occasionally and barely made it home in time for the end. "
+            "A few years later, he calls. He is getting married. He wants you as his best man. "
+            "You fly to Los Angeles. His mansion is exactly what you would expect — enormous, quiet, expensively perfect. "
+            "Your brother is away on a shoot for a few days and asks his fiancée to welcome you. "
+            "Her name is Amanda. She is an actress, and she is exactly as beautiful as you would expect "
+            "someone your brother chose to be. But Amanda is more than that. "
+            "There is a depth to her that surprises you — a sincerity, a quiet warmth that has nothing to do "
+            "with the world your brother inhabits. "
+            "You are alone in the mansion with Amanda for the next few days — "
+            "the loyal brother who did everything right while his brother played movie star. "
+            "The player controls the User. What happens next is entirely in your hands."
+        )},
 }
 
 def get_prebuilt_list(): return list(PREBUILT_WORLDS.keys())
