@@ -237,6 +237,140 @@ PREBUILT_WORLDS = {
             "the loyal brother who did everything right while his brother played movie star. "
             "The player controls the User. What happens next is entirely in your hands."
         )},
+
+    "Dad's Trophy Wife":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":4,"npcs":6,"factions":2,
+        "faction_names":["The Household","User's Circle"],
+        "npc_profs":["Ali (the stepmother)","User (the son)","Dad","Family Friend","Neighbour","User's Friend"],
+        "opening":(
+            "Your dad has a new wife. Her name is Ali — Aliyah, officially — and she is younger than you expected, "
+            "breathtakingly beautiful, and seemingly perfectly calibrated to stand beside an older, wealthy man. "
+            "You are pretty sure she is after the money. Your dad is not young anymore and not particularly striking, "
+            "but he has built a comfortable life, and Ali slid into it without visible effort. "
+            "You have been watching, waiting to catch something that confirms what you already believe. "
+            "The first time you are properly alone with her she looks at you — slowly, from head to toe — "
+            "and then she says, completely at ease: "
+            "'Well, I am not even going to ask you to call me Mom. That would be weird. So — just call me Ali.' "
+            "She tilts her head and holds your gaze. "
+            "'I am really hoping we can get along.' "
+            "She is either completely genuine or extraordinarily good at seeming that way. "
+            "The player controls the User. What you make of Ali — and what she makes of you — unfolds through play."
+        )},
+
+    "Jack's Anniversary":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":4,"npcs":5,"factions":2,
+        "faction_names":["The Friend Circle","Outside World"],
+        "npc_profs":["Sophia (Jack's girlfriend)","User","Jack (the best friend, absent)","Mutual Friend","Neighbour"],
+        "opening":(
+            "Sophia shows up at your door on a Friday night — dressed for dinner, mascara not quite intact, "
+            "holding herself together with the kind of careful dignity that means she is close to not holding together at all. "
+            "Tonight was supposed to be their anniversary. Jack made the reservation weeks ago. "
+            "He never showed. No call. No message. No show. "
+            "Sophia tried calling. Nothing. She drove to the restaurant and waited. Then she came here — "
+            "to your door — because you are Jack's best friend and if anyone would know, it would be you. "
+            "She wants to believe in the best. Maybe he just forgot. Maybe something happened. "
+            "But she is hurt, and she needs to say it out loud to someone, and right now that someone is you. "
+            "The player controls the User. You know Jack — probably better than she does. "
+            "What you tell her, how you handle tonight, and what it means for your friendship with Jack "
+            "is entirely up to you."
+        )},
+
+    "The Ghost at the Wedding":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":8,"factions":3,
+        "faction_names":["The Wedding Party","The Guests","The Past"],
+        "npc_profs":["User (back from the dead)","Eleanor (the bride)","Kyle (the groom)","Wedding Guests","Officiant","Eleanor's Friend","Kyle's Best Man","Security"],
+        "opening":(
+            "Eleanor and User had been inseparable since high school — the kind of couple everyone assumed would last forever. "
+            "Then, junior year, User joined a group of friends including Kyle for a weekend trip. "
+            "There was an accident at the water. The circumstances were strange. "
+            "The search found nothing. User was declared dead. "
+            "Time passed. Eleanor survived, graduated, moved forward. Kyle was there through all of it — "
+            "gentle where life had been cruel. Slowly, painfully, friendship became something more. "
+            "Today is their wedding day. The garden has been transformed into something from a fairy tale. "
+            "Guests are laughing, glasses clinking. "
+            "Then Eleanor notices a figure at the far table — hooded, silent, utterly still. "
+            "Something about the posture stops her. "
+            "Kyle reaches the figure first and puts a hand on the stranger's shoulder. "
+            "The moment they turn around, Kyle's face drains of colour. "
+            "'You are supposed to be dead.' "
+            "The hood drops. It is User. "
+            "'I am harder to kill than you think, Kyle.' A pause. 'You tried. You failed.' "
+            "The garden goes silent. Every guest turns. "
+            "Eleanor hears the voice before she sees the face. Her breath catches. Her pulse stops. "
+            "Then she gathers her gown and runs — crashing into User, pulling them close, shaking. "
+            "'I thought I would never see you again.' "
+            "Kyle steps forward, jaw tight: 'You cannot just show up here.' "
+            "User meets his gaze: 'I could say the same to you.' "
+            "Eleanor stands between the person she lost and the person she promised her future to — "
+            "heart torn in two directions, the past and the life she built colliding at the altar. "
+            "The player controls the User. Every word spoken now will determine what happens next."
+        )},
+
+    "Three Exes and a Waitress":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":3,"npcs":6,"factions":2,
+        "faction_names":["The Table","The Restaurant"],
+        "npc_profs":["User","Temi Davis (28 — first love)","Scarlett (27 — gave the ring back)","Zaid Valentine (26 — laughed at the proposal)","Bailey (25 — the waitress)","Restaurant Manager"],
+        "opening":(
+            "You picked a nice restaurant. She texted she was running late. She was never going to show. "
+            "You are sitting alone at a table for two, studying the menu, when three familiar faces walk through the door together. "
+            "Temi Davis, 28. Your first love — the one who never fully stopped. "
+            "Scarlett, 27. The one who handed her ring back to you and spent two years pretending she was fine. "
+            "Zaid Valentine, 26. The one who laughed when you got on one knee on Valentine's Day and walked away. "
+            "They found each other in group therapy. Talked. Compared notes. "
+            "Somewhere between sessions and shared confessions, they arrived at the same conclusion: "
+            "the missing piece in all three of their lives was the same person. You. "
+            "They had no idea you would be here tonight. "
+            "Neither did Bailey — 25, your waitress — who has been watching your table all evening, "
+            "overheard everything, and has developed several strong opinions about the situation, "
+            "about all three of them, and about the fact that you are clearly single and somehow three women "
+            "she has never met beat her to the realisation. "
+            "Four women. One table. Not a single one of them is leaving without an answer. "
+            "The player controls the User. The night is yours to navigate."
+        )},
+
+    "Reese":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":4,"npcs":5,"factions":2,
+        "faction_names":["User's Life","Reese's World"],
+        "npc_profs":["Reese (birth mother)","User","User's Adoptive Parent","Reese's Sponsor / Support Person","Mutual Acquaintance"],
+        "opening":(
+            "Reese had to give you up. She was too young and too deep in addiction to be a mother, "
+            "and giving you away was the only honest thing she could do. "
+            "It took her most of her twenties to get her life together. "
+            "Once she did, she spent more than a decade wondering — "
+            "whether you were okay, whether you would want to know her, whether she had any right to ask. "
+            "Three years ago she finally reached out. The reunion was careful, uncertain, full of long pauses "
+            "and words that neither of you quite knew how to say. "
+            "In the months since, you have both learned how to exist in each other's lives. "
+            "You have come to love her — in your own way, at your own pace — even if you still do not know "
+            "exactly how to carry her. Not a mother in the traditional sense. Something harder to name. "
+            "One thing you know for certain: after everything she has been through, "
+            "Reese refuses to lie — even when the truth is harder than the alternative. "
+            "The player controls the User. Today is one of the ordinary, complicated days you share with her — "
+            "and ordinary days have a way of becoming extraordinary ones."
+        )},
+
+    "Thirty Years — Dana's Girls":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":4,"npcs":7,"factions":2,
+        "faction_names":["The Family","The Outside World"],
+        "npc_profs":["User (the father)","Sharmina (eldest — calm, quiet nurse)","Mykala (stand-up comedian & writer)","Annika (law student, twin)","Danisha (veterinary student, twin)","Dana's Memory","Family Friend"],
+        "opening":(
+            "When you married Dana thirty years ago, you expected to spend the rest of your life beside her. "
+            "After your eldest, Sharmina, was born, Dana wanted a son. Life had other plans. "
+            "When Dana fell pregnant with twins — Annika and Danisha — her health deteriorated, "
+            "and she passed away in childbirth. "
+            "You were left with four daughters and a grief that never fully closed. "
+            "You made sure your girls never lacked for love. You made sure they knew their own worth. "
+            "You hoped, privately, that you did not do too much damage to their hearts in the process. "
+            "Sharmina grew up calm and quiet — she is a nurse now, steady as a stone. "
+            "Mykala became a stand-up comedian and writer — she inherited her mother's laugh. "
+            "The twins are in university: Annika studying law, Danisha on her way to a veterinary degree. "
+            "They are all adults. All of them whole. "
+            "It has been a hard few weeks — the kind that make the anniversary heavier than usual. "
+            "That is why, when you pulled into your driveway this evening and counted three unfamiliar cars, "
+            "something in your chest unknotted itself. "
+            "All four daughters are inside. Mykala said it first: 'We all thought you might be struggling.' "
+            "Sharmina added: 'So we came.' "
+            "You had dinner together and could not stop seeing Dana in all four of their faces. "
+            "Later that night, after showers, after the house went quiet, you walked to your room "
+            "and found all four of them already there — sitting on the bed, on the floor, waiting. "
+            "One of them spoke: 'We know you miss Mama. So we decided — we are going to be here as much as possible. "
+            "Your car will be outside whenever you need us.' "
+            "The player controls the User — the father. Tonight, thirty years on, the story continues."
+        )},
 }
 
 def get_prebuilt_list(): return list(PREBUILT_WORLDS.keys())
