@@ -531,7 +531,14 @@ async function beginGame(payload){
   state.worldIndex=0;
   saveSessionToStorage();
   hidePlayHub();
-  const opening=payload.custom_text?payload.custom_text:`You arrive in ${world.name}. The story begins...`;
+  // Full custom_text is stored as lorebook context on the server; show only the final hook line here
+  let opening;
+  if(payload.custom_text){
+   const sents=(payload.custom_text.match(/[^.!?]+[.!?]+(?:\s|$)/g)||[]).map(s=>s.trim()).filter(Boolean);
+   opening=sents.length>2?sents.slice(-2).join(' '):payload.custom_text.slice(0,160);
+  }else{
+   opening=`${world.name}. The story begins.`;
+  }
   try{await api('/api/chat/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'assistant',content:opening,session_id:state.sessionId})})}catch{}
   await loadChatHistory();
   updateWorld();move(world.startX??50,world.startY??50);renderParty();renderQuests();

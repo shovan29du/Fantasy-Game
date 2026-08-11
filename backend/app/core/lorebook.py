@@ -47,8 +47,18 @@ def build_lorebook_context(text: str, world_id: int = 0, max_entries: int = 5) -
     entries = get_triggered_entries(text, world_id)[:max_entries]
     if not entries: return ""
     parts = ["[World Knowledge:]"]
+    has_opening = False
     for e in entries:
-        parts.append(f"- {e['title']}: {e['content'][:200]}")
+        parts.append(f"- {e['title']}: {e['content'][:400]}")
+        if e.get("title", "").lower().startswith("opening"):
+            has_opening = True
+    if has_opening:
+        parts.append(
+            "[SCENE DIRECTION: Begin directly in the active scene described above. "
+            "Write 2-3 sentences of immediate action, setting, or dialogue — as if the camera "
+            "is already rolling. Do NOT summarise backstory or explain how the situation came to be. "
+            "Start at the moment the player arrives.]"
+        )
     return "\n".join(parts)
 
 def list_entries(world_id: int = 0) -> List[Dict]:
