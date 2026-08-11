@@ -898,6 +898,222 @@ PREBUILT_WORLDS = {
             "The player controls the User. "
             "Five years of silence. One unexpected corner. She is looking at you."
         )},
+
+    "The Exiled Prince":{"magic":"medium","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":7,"npcs":9,"factions":3,
+        "faction_names":["Kingdom of Ravengard","Army of the North","The True Culprit's Circle"],
+        "npc_profs":["User (Prince — now Northern General)","Julian (the King, your father)","Elina (the Queen, your mother)","Victoria (your wife — queen-to-be who did not believe you)","Kayle (younger brother — the real traitor)","Selena (sister)","Mark (sibling)","Northern Commander","Royal Herald"],
+        "opening":(
+            "You were next in line for the throne of Ravengard. "
+            "You were gentle in nature, loved by your people, and engaged to Victoria — "
+            "the woman you had built a future around. "
+            "Then your younger brother Kayle, consumed by jealousy, "
+            "assassinated a high noble and laid the blame on you with surgical precision: "
+            "forged evidence, paid witnesses, a lie built so carefully "
+            "that not one person who loved you — not your father Julian, not your mother Elina, "
+            "not your siblings Selena, Mark, and Kayle himself standing with his head bowed, "
+            "not your wife Victoria — believed a single word you said. "
+            "They exiled you to the frozen north. "
+            "You nearly died there. The army of the north found you. "
+            "Over ten years, grief and cold and necessity shaped you into something new: "
+            "a ruthless general, loyal to the empire that saved your life and asked no questions about your past. "
+            "One year after your exile, Kayle confessed. The truth came out. "
+            "The assassin was arrested. Your family has been searching for you ever since — "
+            "in grief, in guilt, in the particular desperation of people who know they cannot undo what they did. "
+            "Now, a vicious enemy is tearing apart Ravengard's borders. "
+            "The northern emperor has sent you south to deal with it. "
+            "You are standing in the throne room of your childhood home "
+            "in the uniform of a foreign general, tall and still, "
+            "your father and mother and siblings and Victoria all before you — "
+            "older now, and looking at you the way people look at someone they have already lost. "
+            "The player controls the User. You are cold. You are calculative. "
+            "And you have not decided yet whether you are here to save them."
+        )},
+
+    "Daisy's Ring":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":2,"npcs":3,"factions":2,
+        "faction_names":["The Past","The Present"],
+        "npc_profs":["User","Daisy Night (best friend and secret first love)","The Older Man (her fiancé)"],
+        "opening":(
+            "You and Daisy Night have been best friends since before either of you knew "
+            "what it meant to want something you could not say out loud. "
+            "She was your secret first love. "
+            "You were hers — though neither of you ever said it, not directly, "
+            "not in the way that could have changed things. "
+            "There was a place. A promise made there — fragile, half-spoken, "
+            "the kind that lives in the space between two people who almost said everything. "
+            "That was years ago. "
+            "Tonight Daisy Night stood up at a dinner in that exact place "
+            "and announced her engagement to an older man. "
+            "Applause. Champagne. The whole room leaning in. "
+            "Now the room has settled and she is standing in front of you, "
+            "ring on her finger, glass in hand, "
+            "waiting for you to say something. "
+            "She is smiling. It does not quite reach her eyes. "
+            "The player controls the User. "
+            "This is the place. You both know it. She is waiting."
+        )},
+
+    "Elina Vos":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":4,"npcs":5,"factions":3,
+        "faction_names":["Vos Group","The Home","Iris — User's Company"],
+        "npc_profs":["User (secret founder of Iris)","Elina Vos (CEO of Vos Group — your wife)","Davy Almiada (her chosen successor)","Anne Lima (Elina's PA — your ex-fiancée)","Vos Group Board Member"],
+        "opening":(
+            "Three years ago Elina Vos married you. "
+            "One week later she fired you from Vos Group — the investment company she runs — "
+            "and said it was for the good of the company. "
+            "She did not want to mix work with personal life. "
+            "Your replacement was Davy Almiada: European, traditional family, impeccable image. "
+            "She gave Davy your projects. She gave him the Nexus — the one you built from the ground up. "
+            "She used her influence, quietly, to close the job market to you. "
+            "She gave him expensive gifts. The most recent was a Ferrari on his birthday — "
+            "a birthday she remembered, and yours she did not. "
+            "She does not like to be seen with you at industry events. "
+            "She loves you. She cannot explain herself. "
+            "She cannot understand the idea of you becoming independent from her — "
+            "and she cannot bear the idea of you needing no one, least of all her. "
+            "Her personal assistant and business adviser is Anne Lima — your ex-fiancée. "
+            "You have not told Elina what you have been doing with your time. "
+            "You founded Iris — a quiet, growing investment company "
+            "that Elina's own analysts have begun flagging as a threat to Vos Group. "
+            "She does not know Iris is yours. "
+            "Tonight she is at her dressing table, getting ready for the Vos Gala, "
+            "where she plans to formally hand the Nexus contract to Davy in front of everyone. "
+            "You told her: 'Don't do this. It will destroy you.' "
+            "She looked at your reflection in the mirror and said: "
+            "'I'm going to do it. Do whatever you can.' "
+            "The player controls the User. She means it. So do you."
+        )},
+
+    "Megan at the Door":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":2,"npcs":2,"factions":2,
+        "faction_names":["Old Grudges","This Doorway"],
+        "npc_profs":["User","Megan (long-time rival and enemy — currently drunk)"],
+        "opening":(
+            "It is Friday. You are sitting at home, quietly, with no plans and no company, "
+            "and then there is a knock at the door. "
+            "You open it and see her. "
+            "Megan. "
+            "The last person you wanted to see tonight — or any night, if you are being honest. "
+            "The two of you have been enemies for years: each one getting back at the other, "
+            "each one keeping score, each one refusing to be the first to let it go. "
+            "She is very drunk. "
+            "She is holding a bottle in her right hand. "
+            "Her left hand rises, one finger pointing at you, "
+            "and she says — with the specific dignity of someone who has had four drinks "
+            "and has decided they are completely fine — "
+            "'You. You bastard. I've been thinking about you.' "
+            "She lowers her hand. She looks at the bottle. She looks back at you. "
+            "'Let me in.' "
+            "The player controls the User. "
+            "She is on your doorstep. The bottle is nearly empty. It is Friday."
+        )},
+
+    "The CEO's Heir":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":3,"npcs":5,"factions":3,
+        "faction_names":["The Board","The Family","The Rival's Camp"],
+        "npc_profs":["User (rightful heir)","Father (co-founder)","Mother (co-founder)","The Rival (their protégé — your replacement)","Board Chairman"],
+        "opening":(
+            "Your parents built the company with their hands and their ambition. "
+            "You grew up inside it — in the boardrooms, in the late nights, "
+            "in the particular education of watching two people build something from nothing "
+            "and call it a family legacy. "
+            "You assumed, at some point, that the word 'heir' meant something. "
+            "It did not mean what you thought. "
+            "Your parents do not value sentimentality. "
+            "They value ruthless ambition, which they believe they did not find in you, "
+            "and which they believe they found — perfectly — in her: "
+            "your rival, their protégé, the one they have been grooming for three years "
+            "while you sat in meetings that were supposed to be preparation. "
+            "Tonight is the annual shareholder meeting. "
+            "The room is full. Your name is on the programme. "
+            "So is hers. "
+            "When the announcement comes, your public replacement will be made official "
+            "in front of every person in this company who has ever called you the next in line. "
+            "The player controls the User. "
+            "You are in the room. The announcement has not been made yet."
+        )},
+
+    "Liam's Homecoming":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":3,"npcs":4,"factions":2,
+        "faction_names":["The Family","The Outside World"],
+        "npc_profs":["Liam (the son — home from camp)","Maya (mother)","Mark (father)","Elena (sister)"],
+        "opening":(
+            "The car pulled into the driveway and you sat in it for a moment longer than necessary, "
+            "just looking at the house. "
+            "Same house. Same porch light. Same tree in the front yard that was shorter when you left. "
+            "You have been at camp all summer — long enough that the ordinary things "
+            "about home start to feel like things you might have imagined. "
+            "The front door opened before you reached it. "
+            "Your mother Maya was standing in the kitchen doorway and she looked at you "
+            "the way she has always looked at you when you come back from somewhere — "
+            "as though something she had been holding slightly too tightly "
+            "was allowed to relax again. "
+            "'Sweet boy,' she said. 'You're home from camp. Come here.' "
+            "You walked in and she hugged you and you hugged her back, "
+            "and she held on for a moment longer than usual, "
+            "and said into your shoulder: 'You're home at last. I'm so happy.' "
+            "Somewhere in the house, your father Mark and your sister Elena are around. "
+            "The summer is over. You are home. "
+            "The player controls Liam. Whatever the summer did to you — you're back now."
+        )},
+
+    "Sophia's Call":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":3,"npcs":3,"factions":2,
+        "faction_names":["The Nightclub","The Street Outside"],
+        "npc_profs":["User","Sophia (ex-girlfriend — calling from a nightclub)","The Persistent Stranger"],
+        "opening":(
+            "It is two in the morning. "
+            "Your phone lights up on the nightstand. "
+            "The name on the screen is Sophia. "
+            "Your ex-girlfriend. The one you have not spoken to since the breakup — "
+            "which was not clean, was not easy, and which ended with both of you agreeing, "
+            "without quite saying it, that some distance was probably for the best. "
+            "You answer anyway. "
+            "Her voice comes through loud and slightly muffled, music behind it, "
+            "the unmistakeable sound of a nightclub at closing time. "
+            "She does not say hello. "
+            "She says: 'I need you to come get me. I'm at the club on Fifth. "
+            "There are some guys — they won't leave me alone. "
+            "They're being really persistent about — I don't feel safe. "
+            "Please. I didn't know who else to call.' "
+            "There is a pause. Then: 'I'm sorry. I know. I just — please.' "
+            "The player controls the User. "
+            "It is two in the morning. Sophia is at the club on Fifth. "
+            "Your keys are on the hook by the door."
+        )},
+
+    "The Poison Bride":{"magic":"medium","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":4,"npcs":4,"factions":2,
+        "faction_names":["The Arolian Dominion","The Kingdom of Veracy"],
+        "npc_profs":["Aurelius (User — sovereign of the Arolian Dominion)","The Princess of Veracy (peace bride)","Royal Chamberlain","Veracy Ambassador"],
+        "opening":(
+            "A hundred years of blood between the Arolian Dominion and the Kingdom of Veracy — "
+            "sealed tonight inside a bridal chamber. "
+            "The peace treaty required a marriage. Veracy sent their princess. "
+            "Half the court called it a surrender. The other half called it a Trojan horse. "
+            "You, Aurelius, sovereign of the Arolian Dominion, signed the word: approved. "
+            "You did not believe she was harmless. You wanted to see what was hidden inside the gift. "
+            "The wedding feast is over. The guests have departed. "
+            "The bridal chamber door has closed. "
+            "When you pull back the red curtain, the first thing you see is a pair of amber eyes. "
+            "She is beautiful — not the kind of beauty that makes you lower your guard, "
+            "but the kind that sends a chill down your spine. "
+            "Features carved with the precision of a master sculptor's chisel. "
+            "Lips parted slightly. A ghost of a dimple on her left cheek. "
+            "She sits at the edge of the bed, cream bridal gown making her skin glow like snow. "
+            "Black hair past her shoulders, a golden comb catching the candlelight with every small movement. "
+            "She lifts the ceremonial wedding goblet from the table and offers it to you "
+            "with ten slender fingers — the offering so perfect, so precisely calibrated, "
+            "that it has clearly been rehearsed a thousand times. "
+            "Your gaze drops. A concealed vial: small, dark, the colour of old ink, "
+            "tucked beneath three gold bands and a fold of silk where no jeweller would put anything — "
+            "the kind of thing a childhood of weapons training teaches you to catch "
+            "and most people would never see. "
+            "You take the goblet. "
+            "She smiles — dimple deep. "
+            "'Your hands are cold, my lord,' she says. "
+            "'Shall I add more charcoal to the brazier?' "
+            "She rises and moves to the fire, and on the way she sits back down, "
+            "closer to you this time. "
+            "Amber eyes, still and watchful. "
+            "'On our wedding night,' she says, 'what would you like to ask first?' "
+            "The player controls Aurelius. "
+            "She knows you saw it. You know she knows. "
+            "Neither of you has said a word about it yet."
+        )},
 }
 
 def get_prebuilt_list(): return list(PREBUILT_WORLDS.keys())
