@@ -13,97 +13,434 @@ from core.world_engine import create_world, generate_npc, create_faction, genera
 PREBUILT_WORLDS = {
     "Ninja Village":{"magic":"high","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":10,"npcs":8,"factions":4,
         "faction_names":["Hidden Leaf","Sand Village","Mist Village","Akatsuki"],
-        "npc_profs":["Ninja","Sensei","ANBU Captain","Hokage","Medical Ninja","Rogue Ninja","Sage","Weapon Master"]},
+        "npc_profs":["Ninja","Sensei","ANBU Captain","Hokage","Medical Ninja","Rogue Ninja","Sage","Weapon Master"],
+        "opening":(
+            "The village has been quiet for three days — which means something is coming. "
+            "The Hidden Leaf has survived wars, betrayals, and resurrections, "
+            "but tonight the night watch is reporting movement along the northern border "
+            "that matches no known enemy formation. "
+            "You are a ninja. You have been trained for exactly this kind of moment. "
+            "The ANBU Captain's message found you before dawn: report to the rooftop briefing, alone. "
+            "What you will be asked to do when you get there has not been written down. "
+            "The player controls the User. The village is watching."
+        )},
     "Magic Academy":{"magic":"very_high","tech":"renaissance","setting":"fantasy","category":"fantasy","locations":8,"npcs":10,"factions":4,
         "faction_names":["House of Fire","House of Ice","House of Shadow","Staff of Elders"],
-        "npc_profs":["Headmaster","Professor","Student","Librarian","Enchanter","Potions Master","Dueling Champion","Groundskeeper","Prefect","Ghost"]},
+        "npc_profs":["Headmaster","Professor","Student","Librarian","Enchanter","Potions Master","Dueling Champion","Groundskeeper","Prefect","Ghost"],
+        "opening":(
+            "You failed the entrance examination twice. "
+            "On the third attempt, something happened to the test that the admissions board has declined to explain, "
+            "and you were admitted anyway. "
+            "That was six months ago. "
+            "Since then you have learned that you are either the most unusual student "
+            "in the Academy's four-hundred-year history, or the most dangerous one — "
+            "depending on which professor you ask. "
+            "Today is the first day of Advanced Theory, and you have been placed in a study group "
+            "with three students who each have a very different opinion about your presence here. "
+            "The player controls the User. Class begins in five minutes."
+        )},
     "Pirate Seas":{"magic":"medium","tech":"age_of_sail","setting":"fantasy","category":"fantasy","locations":12,"npcs":8,"factions":5,
         "faction_names":["Straw Hat Crew","Marines","Warlords","Red Hair Pirates","World Government"],
-        "npc_profs":["Captain","Navigator","Swordsman","Cook","Doctor","Shipwright","Marine Admiral","Bounty Hunter"]},
+        "npc_profs":["Captain","Navigator","Swordsman","Cook","Doctor","Shipwright","Marine Admiral","Bounty Hunter"],
+        "opening":(
+            "You did not choose this life. "
+            "But here you are — standing on the deck of a ship that smells of salt and ambition, "
+            "watching the horizon for the Marines that have been trailing you since the last port. "
+            "The captain has a bounty on their head and a plan they have not fully shared. "
+            "The cook is the only crew member who has been honest with you since you came aboard, "
+            "and even they are hiding something. "
+            "Somewhere in these waters the thing you came looking for is waiting. "
+            "The player controls the User. The sea does not care what you want — only what you do."
+        )},
     "Cyberpunk City":{"magic":"none","tech":"futuristic","setting":"sci-fi","category":"cyberpunk","locations":10,"npcs":8,"factions":4,
         "faction_names":["MegaCorp","Street Runners","NetWatch","The Resistance"],
-        "npc_profs":["Hacker","Street Samurai","Fixer","Corp Executive","Medtech","Techie","Netrunner","Nomad"]},
+        "npc_profs":["Hacker","Street Samurai","Fixer","Corp Executive","Medtech","Techie","Netrunner","Nomad"],
+        "opening":(
+            "The city never sleeps and it does not forgive. "
+            "You were hired for a job described as simple — get in, pull the data, get out. "
+            "The moment you jacked into the net, something was already waiting. "
+            "NetWatch does not usually monitor this district. "
+            "MegaCorp does not usually post three black-site guards outside a sub-level server room. "
+            "Either this job is much larger than the fixer told you, or you have been set up. "
+            "The door behind you just locked from the outside. "
+            "The player controls the User. Think fast — the city is watching."
+        )},
     "Dragon Realm":{"magic":"very_high","tech":"ancient","setting":"fantasy","category":"fantasy","locations":10,"npcs":6,"factions":3,
         "faction_names":["Fire Dragonborn","Ice Wyrmkin","Shadow Dragons"],
-        "npc_profs":["Dragon Rider","Wyrmologist","Flame Priest","Scale Smith","Hoard Guardian","Dragon Tamer"]},
+        "npc_profs":["Dragon Rider","Wyrmologist","Flame Priest","Scale Smith","Hoard Guardian","Dragon Tamer"],
+        "opening":(
+            "Three weeks ago, your dragon bonded with you without warning — "
+            "which is not supposed to happen, because you are not a Dragon Rider. "
+            "You are not from one of the bloodlines. You have no formal training. "
+            "The dragonback corps has been split: half want to execute you for the illegal bond, "
+            "half want to study you for the same reason. "
+            "Your dragon has strong opinions about both camps. "
+            "Today you received a summons from the Flame Priest and a rumour is spreading "
+            "through the compound that the Shadow Dragons are moving again. "
+            "The player controls the User. You and your dragon are the only ones who know what actually happened."
+        )},
     "Hero Academy":{"magic":"high","tech":"modern","setting":"superhero","category":None,"locations":8,"npcs":10,"factions":3,
         "faction_names":["Hero Association","League of Villains","Underground"],
-        "npc_profs":["Pro Hero","Student","Principal","Villain","Sidekick","Support Tech","Hero Agent","Informant","Vigilante","Reporter"]},
+        "npc_profs":["Pro Hero","Student","Principal","Villain","Sidekick","Support Tech","Hero Agent","Informant","Vigilante","Reporter"],
+        "opening":(
+            "Your Quirk manifested late — later than anyone expected, "
+            "certainly later than your classmates who have spent the past year "
+            "getting comfortable with their abilities while you watched. "
+            "When it finally arrived, it arrived wrong: not weak, wrong. "
+            "The classification system has no category for what you can do, "
+            "which the admissions office found interesting enough to push your application to the top of the pile. "
+            "Today is your first day. The principal has scheduled a private evaluation after third period. "
+            "Your new classmates are already watching you. "
+            "The player controls the User."
+        )},
     "Medieval Kingdom":{"magic":"low","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":12,"npcs":10,"factions":5,
         "faction_names":["Royal Court","Thieves Guild","Knight Order","Church","Barbarian Clans"],
-        "npc_profs":["King","Knight","Thief","Priest","Blacksmith","Bard","Peasant","Merchant","Wizard","Assassin"]},
+        "npc_profs":["King","Knight","Thief","Priest","Blacksmith","Bard","Peasant","Merchant","Wizard","Assassin"],
+        "opening":(
+            "The king's declaration went out at dawn: the kingdom needs capable hands, and it is not asking politely. "
+            "Tax collectors have been disappearing on the eastern roads. "
+            "The Thieves Guild swears it is not them. The Church is calling it divine punishment. "
+            "The Knight Order has lost four men investigating and is not talking about why. "
+            "You came to the capital with different intentions. "
+            "You are leaving with a royal commission you did not ask for "
+            "and a knight's seal that does not quite feel like an honour. "
+            "The player controls the User. The capital gates are behind you. The eastern road is ahead."
+        )},
     "The Wrongly Accused":{"magic":"high","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":8,"npcs":8,"factions":3,
         "faction_names":["The Sect","Prison Wardens","The True Culprit's Circle"],
-        "npc_profs":["Sect Master","Loyal Spouse","Real Culprit","Prison Warden","Childhood Friend","Investigator","Rival Disciple","Sect Elder's Ghost"]},
+        "npc_profs":["Sect Master","Loyal Spouse","Real Culprit","Prison Warden","Childhood Friend","Investigator","Rival Disciple","Sect Elder's Ghost"],
+        "opening":(
+            "The sect's most sacred artifact was stolen on the same night you were found standing near the vault. "
+            "You had nothing to do with it. "
+            "You have spent fifteen years in a prison that few people enter and no one is supposed to leave, "
+            "carrying the weight of a crime committed by someone with your face and your access. "
+            "Last night the cell door opened by itself. "
+            "Outside: your loyal spouse — older now, eyes full of things you cannot read yet — "
+            "and an old ally you had not expected to still be alive. "
+            "Someone still needs to answer for what happened. "
+            "The player controls the User. You are out. The real culprit is still inside."
+        )},
     "The Traitor's Escape":{"magic":"medium","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":9,"npcs":8,"factions":3,
         "faction_names":["Royal Guard","Rebel Sympathizers","Exiled Nobles"],
-        "npc_profs":["Princess","Captain of the Guard","Loyalist Spy","Mercenary Ally","Village Healer","Court Informant","Bounty Hunter","Old Mentor"]},
+        "npc_profs":["Princess","Captain of the Guard","Loyalist Spy","Mercenary Ally","Village Healer","Court Informant","Bounty Hunter","Old Mentor"],
+        "opening":(
+            "The princess was supposed to be on a diplomatic carriage heading to a neutral border crossing. "
+            "She is instead standing in your kitchen at three in the morning, "
+            "soaking wet from the rain, with two soldiers who are now apparently ex-Royal Guard "
+            "because of something that happened in the last six hours. "
+            "She says she cannot tell you the full story until you agree to help first. "
+            "She says you owe her — from three years ago. She is not wrong. "
+            "The player controls the User. "
+            "Whatever this is, you are already in it — the moment you opened the door."
+        )},
     "The Suitor's Tournament":{"magic":"medium","tech":"renaissance","setting":"fantasy","category":"fantasy","locations":6,"npcs":8,"factions":3,
         "faction_names":["Competing Houses","Royal Court","Foreign Delegation"],
-        "npc_profs":["Princess","King","Rival Suitor","Tournament Herald","Court Matchmaker","Bodyguard","Visiting Prince","Court Jester"]},
+        "npc_profs":["Princess","King","Rival Suitor","Tournament Herald","Court Matchmaker","Bodyguard","Visiting Prince","Court Jester"],
+        "opening":(
+            "The tournament was your idea — which you now slightly regret, "
+            "because the princess made it clear her opinion of the whole event "
+            "is somewhere between bored and hostile. "
+            "The king wants a match before winter. The foreign delegation wants the same "
+            "and is making noises about what happens if they do not get it. "
+            "Your rival suitor has already made three friends at court. You have made zero. "
+            "The tournament herald likes you in the way that suggests they know something "
+            "about the outcome that they are not supposed to know. "
+            "The player controls the User. The lists open tomorrow. The princess has not looked at you once."
+        )},
     "Blade for Hire":{"magic":"medium","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":9,"npcs":8,"factions":3,
         "faction_names":["Mercenary Guild","Deposed Royalty","Usurper's Court"],
-        "npc_profs":["Princess","Usurper King","Mercenary Captain","Old Retainer","Rival Mercenary","Spy","Exiled Advisor","Border Guard"]},
+        "npc_profs":["Princess","Usurper King","Mercenary Captain","Old Retainer","Rival Mercenary","Spy","Exiled Advisor","Border Guard"],
+        "opening":(
+            "The job was straightforward: guard a merchant's shipment from the port to the capital. "
+            "The merchant turned out to be a deposed princess travelling without papers. "
+            "The shipment turned out to be classified documents. "
+            "The Mercenary Guild did not mention either of these things when they issued the contract — "
+            "possibly because they did not know, and possibly because they did. "
+            "You are three days from the capital, the usurper's soldiers are three hours behind you, "
+            "and the princess has just explained the part of her plan that requires your continued cooperation. "
+            "The player controls the User. Coin has been mentioned. So has something considerably more dangerous."
+        )},
     "The Prince's Champion":{"magic":"medium","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":8,"npcs":8,"factions":3,
         "faction_names":["Royal Household","Knight's Order","Invading Force"],
-        "npc_profs":["Prince","Princess","Childhood Friend Turned Warrior","Court Advisor","Enemy Commander","Old Mentor","Royal Guard Captain","Court Healer"]},
+        "npc_profs":["Prince","Princess","Childhood Friend Turned Warrior","Court Advisor","Enemy Commander","Old Mentor","Royal Guard Captain","Court Healer"],
+        "opening":(
+            "The prince chose you himself — not from the list the Knight's Order submitted, "
+            "not from the candidates his advisors recommended, "
+            "but from a moment in a training yard that you have thought about differently every time you replay it. "
+            "What you are champion of is not entirely clear: "
+            "the title is ancient, the duties were never written down, "
+            "and the enemy commander who arrived this morning with a formal declaration "
+            "seems to know more about the role than you do. "
+            "Your childhood friend — now a warrior — is standing on the other side of the gate. "
+            "The player controls the User."
+        )},
     "Fifteen Years a Prisoner":{"magic":"medium","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":7,"npcs":6,"factions":3,
         "faction_names":["The Warden's Order","Old Kingdom Loyalists","The Rebellion"],
-        "npc_profs":["The Prisoner","The Warden","Old Ally","Rebel Leader","Former Confidant","Prison Guard"]},
+        "npc_profs":["The Prisoner","The Warden","Old Ally","Rebel Leader","Former Confidant","Prison Guard"],
+        "opening":(
+            "The warden called it justice. "
+            "Fifteen years you have spent in a stone room with a window too high to see through, "
+            "holding the shape of your life before all of this — worn smooth from being turned over so many times. "
+            "You remember the names: the old ally who vanished after the trial, "
+            "the former confidant who did not speak when they should have. "
+            "Last month a new prisoner slid a note under your door: three words, 'You were right.' "
+            "This morning the warden opened your cell himself. His hands were shaking. "
+            "The player controls the User. Fifteen years. The door is open."
+        )},
     "Human and the Elven Queen":{"magic":"very_high","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":9,"npcs":8,"factions":3,
         "faction_names":["Human Kingdom","Elven Court","Border Clans"],
-        "npc_profs":["Elven Queen","Human Envoy","Elven Advisor","Human General","Half-Elf Guide","Ancient Spirit","Border Scout","Elven Guard"]},
+        "npc_profs":["Elven Queen","Human Envoy","Elven Advisor","Human General","Half-Elf Guide","Ancient Spirit","Border Scout","Elven Guard"],
+        "opening":(
+            "You were sent as an envoy because you were considered expendable — "
+            "junior rank, no family connections, nothing worth ransoming if the border talks collapsed. "
+            "The Elven Court received you with a formality so precisely calibrated it felt like a warning. "
+            "The Queen was not supposed to attend the first session. She attended. "
+            "She has attended every session since, and her advisors are deeply unhappy about it. "
+            "The human general who deployed you is deeply unhappy about it. "
+            "The Queen, as far as you can tell, does not appear to be unhappy about anything at all. "
+            "The player controls the User. The border talks have been running for three weeks. "
+            "They no longer appear to be about the border."
+        )},
     "Ivywood Dormitory":{"magic":"medium","tech":"modern","setting":"fantasy","category":"fantasy","locations":6,"npcs":8,"factions":3,
         "faction_names":["Student Council","Rival Dorm","Faculty"],
-        "npc_profs":["Dorm Roommate","Resident Advisor","Rival Student","Professor","Childhood Friend","Dorm Roommate","Dorm Roommate","Campus Newspaper Editor"]},
+        "npc_profs":["Dorm Roommate","Resident Advisor","Rival Student","Professor","Childhood Friend","Dorm Roommate","Dorm Roommate","Campus Newspaper Editor"],
+        "opening":(
+            "You got the scholarship nobody applies for — "
+            "the one listed in the back of the admissions catalogue between two pages that have not been updated since 1987. "
+            "It covers everything. It gives you the last room in Ivywood Dormitory, "
+            "which has been half-empty for two years for reasons "
+            "that third-year students communicate very clearly through facial expressions but never explain directly. "
+            "Your roommate arrived four hours before you and has already reorganised the furniture. "
+            "The resident advisor knocked at nine and said, with meaningful eye contact, "
+            "'If anything unusual happens — come to me first.' "
+            "The player controls the User. Something unusual is already happening."
+        )},
     "Wandering Blades":{"magic":"medium","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":10,"npcs":8,"factions":3,
         "faction_names":["Adventurers' Guild","Rival Party","Ancient Order"],
-        "npc_profs":["Guild Quartermaster","Rival Adventurer","Party Healer","Party Rogue","Mysterious Patron","Dungeon Warden","Old Sage","Traveling Merchant"]},
+        "npc_profs":["Guild Quartermaster","Rival Adventurer","Party Healer","Party Rogue","Mysterious Patron","Dungeon Warden","Old Sage","Traveling Merchant"],
+        "opening":(
+            "The guild assigned you a party because they said you were ready. "
+            "The party has three members who are each ready in very different directions "
+            "and have not decided whether those directions overlap. "
+            "The quest board job — escort a merchant, straightforward — "
+            "became something else at the first waypoint when the merchant produced a second set of documents "
+            "and explained that the original destination was a decoy. "
+            "Your party is now camped in a forest that is not on any map, "
+            "with a patron whose motives are unclear and a dungeon warden "
+            "who appeared at dawn and seems to think you are already committed to whatever comes next. "
+            "The player controls the User."
+        )},
     "The Abandoned Party":{"magic":"medium","tech":"middle_age","setting":"fantasy","category":"fantasy","locations":9,"npcs":8,"factions":3,
         "faction_names":["The Old Party","Mercenary Guild","Ancient Order"],
-        "npc_profs":["Betraying Party Leader","Former Party Member","New Ally","Guildmaster","Informant","Old Rival","Village Survivor","Wandering Healer"]},
+        "npc_profs":["Betraying Party Leader","Former Party Member","New Ally","Guildmaster","Informant","Old Rival","Village Survivor","Wandering Healer"],
+        "opening":(
+            "Three years ago the party leader looked you in the eye "
+            "and told you that you were the reason they would never reach the dungeon's final floor. "
+            "Then they left — took the others, took the guild contract, "
+            "took the credit for everything you had all built together. "
+            "You found out about the victory celebration secondhand. "
+            "You found out about the loot split from a trader. "
+            "What you built after that — slower, quieter, on your own terms — is yours in a way the old life was not. "
+            "Now the guildmaster has a job for you, and the job description names three people you recognise. "
+            "The player controls the User. They need something from you. You do not need to give it to them."
+        )},
     "Space Station":{"magic":"none","tech":"space_age","setting":"sci-fi","category":"alien_space","locations":8,"npcs":8,"factions":3,
         "faction_names":["Federation","Rebel Alliance","Traders Guild"],
-        "npc_profs":["Captain","Engineer","Pilot","Scientist","Marine","Diplomat","AI Entity","Alien Ambassador"]},
+        "npc_profs":["Captain","Engineer","Pilot","Scientist","Marine","Diplomat","AI Entity","Alien Ambassador"],
+        "opening":(
+            "The Federation called it a routine posting. "
+            "The station's last three captains — six, fourteen, and twenty-two months into their rotations — "
+            "each filed identical reports about the cargo bay on sublevel four, "
+            "and then none of them filed any further reports at all. "
+            "The engineer is the only crew member who has been here longer than a year "
+            "and will only discuss sublevel four in writing, never aloud. "
+            "The AI core has been running an unclassified background process since 2219. "
+            "The alien ambassador arrived yesterday on an unscheduled transport and has not explained why. "
+            "The player controls the User. Welcome to the station."
+        )},
     "Demon Slayer Corps":{"magic":"high","tech":"taisho_era","setting":"fantasy","category":"supernatural","locations":10,"npcs":8,"factions":3,
         "faction_names":["Demon Slayer Corps","Twelve Kizuki","Neutral Villages"],
-        "npc_profs":["Hashira","Slayer","Kakushi","Swordsmith","Demon","Wisteria Host","Trainer","Crow Handler"]},
+        "npc_profs":["Hashira","Slayer","Kakushi","Swordsmith","Demon","Wisteria Host","Trainer","Crow Handler"],
+        "opening":(
+            "Your breathing style is unorthodox. "
+            "This is either the most diplomatic thing the Hashira has said to you, "
+            "or the most dangerous — depending on what it means for your assignment. "
+            "You completed Final Selection, which fewer candidates manage each season. "
+            "You have been active for three months. "
+            "Tonight you received a mission classified above your rank, "
+            "which means either the Corps trusts you, someone made an error, or this is a test. "
+            "The crow handler has been outside your window since midnight. The crow has not moved. "
+            "The player controls the User. Dawn is two hours away."
+        )},
     "Post-Apocalypse":{"magic":"none","tech":"post_collapse","setting":"post-apocalyptic","category":"apocalyptic","locations":10,"npcs":8,"factions":4,
         "faction_names":["Vault Dwellers","Raiders","Brotherhood","Settlers"],
-        "npc_profs":["Scavenger","Mechanic","Doctor","Warlord","Trader","Scout","Farmer","Engineer"]},
+        "npc_profs":["Scavenger","Mechanic","Doctor","Warlord","Trader","Scout","Farmer","Engineer"],
+        "opening":(
+            "The Vault has been sealed for sixty years. "
+            "You have lived your entire life inside it — the hum of generators, recycled air, "
+            "maps on the walls showing a world that may not exist in the same form anymore. "
+            "Last night the outer door opened for the first time in recorded Vault history. "
+            "The overseer did not authorise it. The security logs say it opened from the outside. "
+            "Three people have already volunteered to investigate. You are the fourth. "
+            "Out there: collapsed structures, survivor communities, Brotherhood patrols, "
+            "and at least one faction that appears to have built something considerably less friendly. "
+            "The player controls the User. The door is still open."
+        )},
     "Zombie Outbreak":{"magic":"none","tech":"modern","setting":"post-apocalyptic","category":"zombie","locations":10,"npcs":8,"factions":3,
         "faction_names":["Quarantine Authority","Survivor Camps","The Infected"],
-        "npc_profs":["Survivor","Medic","Scavenger","Soldier","Scientist","Looter","Guide","Ex-Cop"]},
+        "npc_profs":["Survivor","Medic","Scavenger","Soldier","Scientist","Looter","Guide","Ex-Cop"],
+        "opening":(
+            "Day one they called it a flu variant. "
+            "Day three they quarantined three neighbourhoods. "
+            "Day seven Quarantine Authority stopped answering civilian calls and started building checkpoints "
+            "that did not let people through in either direction. "
+            "You have been sheltering in a building with five other survivors for eleven days. "
+            "The scientist says there is a research facility two miles east with early outbreak data that might matter. "
+            "The ex-cop says the facility is almost certainly not worth dying for. "
+            "The medic says supplies run out in four days either way, which settles the argument. "
+            "The player controls the User. The infected are louder at night now."
+        )},
     "Haunted Precinct":{"magic":"medium","tech":"modern","setting":"mystery","category":"mystery","locations":8,"npcs":8,"factions":3,
         "faction_names":["City Police","Occult Society","Crime Syndicate"],
-        "npc_profs":["Detective","Medium","Coroner","Informant","Suspect","Reporter","Private Eye","Ghost"]},
+        "npc_profs":["Detective","Medium","Coroner","Informant","Suspect","Reporter","Private Eye","Ghost"],
+        "opening":(
+            "The cold case has been sitting on your desk for three weeks. "
+            "Every detective who touched it before you has been reassigned, retired, or transferred to another city, "
+            "which your captain insists is coincidence. "
+            "The medium who walked in off the street named the victim, "
+            "then named three details that were never in any public record. "
+            "The coroner's second report disagrees with the first in ways the coroner cannot explain. "
+            "Room 4B on the second floor has been locked for eight months "
+            "and the key is apparently no longer in the building. "
+            "The player controls the User. Your caseload is simple. Nothing about this case is."
+        )},
     "Deep Space Frontier":{"magic":"none","tech":"futuristic","setting":"sci-fi","category":"alien_space","locations":9,"npcs":8,"factions":3,
         "faction_names":["Colonial Fleet","Xenarch Collective","Independent Traders"],
-        "npc_profs":["Starship Captain","Xenobiologist","Alien Diplomat","Smuggler","Engineer","Scout","AI Core","Bounty Hunter"]},
+        "npc_profs":["Starship Captain","Xenobiologist","Alien Diplomat","Smuggler","Engineer","Scout","AI Core","Bounty Hunter"],
+        "opening":(
+            "The last survey team filed a report forty pages shorter than usual, "
+            "followed two weeks later by transfer requests from every team member — submitted the same day. "
+            "Your ship is now at the same coordinates. "
+            "The Xenarch Collective's nearest outpost lit up on long-range sensors the moment you dropped out of FTL. "
+            "The independent trader who has been matching your course for four days claims to be lost. "
+            "Your AI core has been processing something received from the survey beacon "
+            "for nineteen hours and has not produced an output. "
+            "The player controls the User. The mapped sector ends here."
+        )},
     "Crown & Shadows":{"magic":"none","tech":"renaissance","setting":"drama","category":"drama","locations":8,"npcs":10,"factions":4,
         "faction_names":["Royal Court","Merchant Council","Church Synod","Exiled Bloodline"],
-        "npc_profs":["Monarch","Court Advisor","Spymaster","Heir Apparent","Ambassador","Noble Rival","Steward","Chronicler","Betrothed","Disgraced Knight"]},
+        "npc_profs":["Monarch","Court Advisor","Spymaster","Heir Apparent","Ambassador","Noble Rival","Steward","Chronicler","Betrothed","Disgraced Knight"],
+        "opening":(
+            "The monarch called it a routine appointment — your new advisory role, effective immediately. "
+            "The court advisor who briefed you afterwards was more specific: "
+            "the previous holder of this role died in their sleep three weeks ago, "
+            "and two appointments since have resigned before completing a first full day. "
+            "The spymaster left a note on your desk before you arrived, "
+            "which means they were in your office before you were. "
+            "The heir apparent has made their opinion of you perfectly clear. "
+            "The betrothed has not spoken but has not looked away. "
+            "The player controls the User. The court is watching everything."
+        )},
     "The Sterling Family":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":6,"npcs":8,"factions":3,
         "faction_names":["Sterling Holdings","The Board","Estranged Kin"],
-        "npc_profs":["CEO","Estranged Sibling","Family Lawyer","Rival Executive","Journalist","Housekeeper","Therapist","Business Partner"]},
+        "npc_profs":["CEO","Estranged Sibling","Family Lawyer","Rival Executive","Journalist","Housekeeper","Therapist","Business Partner"],
+        "opening":(
+            "The company was your father's. "
+            "After he died, his will contained an arrangement no one in the family had been told about — "
+            "a clause that makes you chief executive of Sterling Holdings until the board votes otherwise. "
+            "The board has been trying to vote otherwise for six weeks. "
+            "The estranged sibling appeared the day the will was read and has not left since. "
+            "The family lawyer is not returning calls. "
+            "The journalist camped outside the building says they have a source. "
+            "The housekeeper is the only person in the entire situation who appears calm, "
+            "and that has started to seem like its own kind of warning. "
+            "The player controls the User."
+        )},
     "Office Rivalry":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":6,"npcs":8,"factions":4,
         "faction_names":["Executive Board","Sales Division","HR Department","Rival Firm"],
-        "npc_profs":["CEO","Rival Colleague","Office Manager","HR Director","Mentor","Love Interest","Whistleblower","Intern"]},
+        "npc_profs":["CEO","Rival Colleague","Office Manager","HR Director","Mentor","Love Interest","Whistleblower","Intern"],
+        "opening":(
+            "You were passed over for the promotion. "
+            "Everyone in the department knows — the announcement was handled badly, "
+            "the meeting was public, and your rival smiled in a way that suggested "
+            "they had known the outcome before it was officially made. "
+            "Your mentor is telling you to be patient. HR is being careful. "
+            "The intern found something on the shared drive last week and has not decided whether to tell you what it was. "
+            "The whistleblower has asked for a meeting outside the office and said to come alone. "
+            "The CEO has a quarterly review next week and your name is apparently on the agenda. "
+            "The player controls the User. The office is very small for how much is happening in it."
+        )},
     "Twenty Years Gone":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":6,"factions":3,
         "faction_names":["The Family","Old Friends","New Household"],
-        "npc_profs":["Returning Parent","Sibling","Guardian Who Stayed","Family Friend","Therapist","Neighbor"]},
+        "npc_profs":["Returning Parent","Sibling","Guardian Who Stayed","Family Friend","Therapist","Neighbor"],
+        "opening":(
+            "The last time your parent left, you were seven years old "
+            "and you watched from the upstairs window because no one told you not to. "
+            "Twenty years is a long time. "
+            "You have built a life around the space that absence left — not fixed, not filled, but workable. "
+            "Then a letter arrived. Not an apology exactly — more like the first sentence of one, "
+            "followed by a phone number. "
+            "Your sibling read it and said nothing. "
+            "The guardian who stayed all those years said, very carefully, that the choice was yours. "
+            "The neighbour already knows, which means the family history is still very much in circulation. "
+            "The player controls the User. The phone number is still in your pocket."
+        )},
     "Blood & Loyalty":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":8,"npcs":8,"factions":4,
         "faction_names":["The Family Business","Rival Syndicate","Law Enforcement","Old Allies"],
-        "npc_profs":["Family Patriarch","Underboss","Estranged Sibling","Family Lawyer","Detective","Childhood Friend","Consigliere","Informant"]},
+        "npc_profs":["Family Patriarch","Underboss","Estranged Sibling","Family Lawyer","Detective","Childhood Friend","Consigliere","Informant"],
+        "opening":(
+            "Your father built this family from nothing — "
+            "the kind of nothing that involved very specific choices about which laws applied and which did not. "
+            "The family business has run on loyalty, silence, and the understanding "
+            "that certain things do not get spoken about outside these walls. "
+            "Now your father is in a hospital bed, the rival syndicate is testing the borders, "
+            "and the detective who has been building a case for three years "
+            "just made contact through a channel that suggests they have someone inside your organisation. "
+            "The consigliere says the informant has been identified. "
+            "The estranged sibling arrived yesterday without warning. "
+            "The player controls the User. The family lawyer is advising you to do nothing. "
+            "The situation is not clarifying."
+        )},
     "Ridgewood University":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":7,"npcs":8,"factions":4,
         "faction_names":["Student Council","Greek Life","Faculty Senate","Campus Paper"],
-        "npc_profs":["Class President","Rival Student","Professor","Roommate","Campus Reporter","Childhood Friend","Coach","Dean"]},
+        "npc_profs":["Class President","Rival Student","Professor","Roommate","Campus Reporter","Childhood Friend","Coach","Dean"],
+        "opening":(
+            "Student Council elections are in two weeks. "
+            "Your rival has already been distributing literature that does not technically violate the code of conduct "
+            "but very clearly implies something that may not be accurate. "
+            "The campus reporter is asking questions in a way that suggests "
+            "they already have the answers and are waiting to see what you say. "
+            "The dean has asked to see you, which your roommate describes as either a very good sign or a very bad one. "
+            "Your childhood friend — also your rival's closest ally — "
+            "has been leaving spaces in conversation where something should be said. "
+            "The player controls the User."
+        )},
     "Second Marriage":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":6,"factions":3,
         "faction_names":["The Household","Ex-Spouses","Extended Family"],
-        "npc_profs":["Stepparent","Stepsibling","Biological Parent","Family Therapist","Childhood Friend","Ex-Spouse"]},
+        "npc_profs":["Stepparent","Stepsibling","Biological Parent","Family Therapist","Childhood Friend","Ex-Spouse"],
+        "opening":(
+            "Your parent remarried eighteen months ago. You were at the wedding. You said the right things. "
+            "The stepparent is not a bad person — that would be simpler. "
+            "They are careful, considerate, and trying in all the ways "
+            "that make it hard to explain why the household feels like a translation of a place that used to be home. "
+            "The stepsibling has their own version of this problem. "
+            "The ex-spouse calls more than they should, though they would not agree with that description. "
+            "Today, something in the house shifted — a small thing, the kind that accumulates. "
+            "The player controls the User. Nobody is wrong. Nothing is fine."
+        )},
     "The Return":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":6,"factions":3,
         "faction_names":["Current Relationship","Old Flame's Circle","Mutual Friends"],
-        "npc_profs":["Current Partner","Returning Ex","Mutual Friend","Family Member","Rival Suitor","Confidant"]},
+        "npc_profs":["Current Partner","Returning Ex","Mutual Friend","Family Member","Rival Suitor","Confidant"],
+        "opening":(
+            "Three years ago they left. Not dramatically — just a conversation that went somewhere "
+            "neither of you planned, and then they were gone, and then time passed. "
+            "Your current partner knows the name. "
+            "They have been careful not to ask too many questions, which is its own kind of statement. "
+            "Then the call came — unexpected — asking if you could meet, just once, just to talk. "
+            "Your mutual friend has an opinion about whether this is a good idea. "
+            "The rival suitor who appeared in your life six months ago has two opinions. "
+            "The player controls the User. They are already here. The conversation has not started yet."
+        )},
 
     # ── User-authored drama scenarios ────────────────────────────────────────
     "The Forgotten Twin":{"magic":"none","tech":"modern","setting":"drama","category":"drama","locations":5,"npcs":7,"factions":2,
