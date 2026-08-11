@@ -570,11 +570,38 @@ function renderScenarioCards(cats,filterKey){
  let all=[];
  cats.forEach(c=>{if(filterKey==='all'||c.key===filterKey)c.scenarios.forEach(s=>all.push({...s,catKey:c.key,catLabel:c.label}))});
  $('#scenarioCount').textContent=`${all.length} scenario${all.length!==1?'s':''}`;
- $('#scenarioCardsGrid').innerHTML=all.map(s=>`<div class="scenario-card" data-cat="${safe(s.catKey)}" data-name="${safe(s.name)}" data-type="${safe(s.type)}"><div class="scenario-card-img" style="background:${COLORS[s.catKey]||'#141c24'}" data-prompt="${safe(`a ${s.catLabel} rpg scene for ${s.name}, character portrait, cinematic fantasy illustration`)}"><span>${ICONS[s.catKey]||'⚔'}</span><img src="" alt=""></div><div class="scenario-card-body"><div class="scenario-card-genre">${safe(s.catLabel)}</div><div class="scenario-card-name">${safe(s.name)}</div><button class="scenario-card-play">▶ Play</button></div></div>`).join('')||'<div class="empty-state">No scenarios found.</div>';
+ $('#scenarioCardsGrid').innerHTML=all.map(s=>{
+  const op=s.opening||'';
+  const preview=op.length>0?`<div class="scenario-card-preview" hidden>${safe(op)}</div>`:'' ;
+  const teaser=op.length>0?`<div class="scenario-card-teaser">${safe(op.slice(0,120))}${op.length>120?'…':''}</div>`:'';
+  return `<div class="scenario-card" data-cat="${safe(s.catKey)}" data-name="${safe(s.name)}" data-type="${safe(s.type)}">
+   <div class="scenario-card-img" style="background:${COLORS[s.catKey]||'#141c24'}" data-prompt="${safe(`a ${s.catLabel} rpg scene for ${s.name}, character portrait, cinematic fantasy illustration`)}"><span>${ICONS[s.catKey]||'⚔'}</span><img src="" alt=""></div>
+   <div class="scenario-card-body">
+    <div class="scenario-card-genre">${safe(s.catLabel)}</div>
+    <div class="scenario-card-name">${safe(s.name)}</div>
+    ${teaser}
+    <div class="scenario-card-actions">
+     <button class="scenario-card-more" title="Show backstory">＋</button>
+     <button class="scenario-card-play">▶ Play</button>
+    </div>
+   </div>
+   ${preview}
+  </div>`;
+ }).join('')||'<div class="empty-state">No scenarios found.</div>';
  $$('#scenarioCardsGrid .scenario-card').forEach(card=>{
   const go=()=>{state.pendingCategory=cats.find(c=>c.key===card.dataset.cat);beginGame({category:card.dataset.cat,scenario_name:card.dataset.name,scenario_type:card.dataset.type})};
-  card.onclick=go;
   const pb=card.querySelector('.scenario-card-play');if(pb)pb.onclick=e=>{e.stopPropagation();go()};
+  const mb=card.querySelector('.scenario-card-more');
+  if(mb)mb.onclick=e=>{
+   e.stopPropagation();
+   const pv=card.querySelector('.scenario-card-preview');
+   if(!pv)return;
+   const open=pv.hidden;
+   pv.hidden=!open;
+   mb.textContent=open?'−':'＋';
+   mb.title=open?'Hide backstory':'Show backstory';
+  };
+  card.onclick=go;
  });
  if(_scObserver)_scObserver.disconnect();
  _scObserver=new IntersectionObserver(entries=>{entries.forEach(entry=>{

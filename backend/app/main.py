@@ -53,7 +53,7 @@ from backend.app.services.scenario_template_service import (
     render_template_scenario,
     save_scenario_template,
 )
-from backend.app.world.prebuilt import create_prebuilt_world, get_prebuilt_by_category
+from backend.app.world.prebuilt import create_prebuilt_world, get_prebuilt_by_category, get_prebuilt_opening
 from core import tactical_combat
 from backend.app.chat_io.character_builder import build_characters_from_chat
 from backend.app.chat_io.importer import import_chat_file, import_chat_url
@@ -1082,7 +1082,7 @@ def scenario_categories() -> list[dict]:
         elif category.get("presets") == "game":
             entry["scenarios"] = [{"type": "preset", "name": name} for name in GAME_PRESETS]
         else:
-            entry["scenarios"] = [{"type": "prebuilt", "name": name} for name in get_prebuilt_by_category(category["key"])]
+            entry["scenarios"] = [{"type": "prebuilt", "name": name, "opening": get_prebuilt_opening(name)} for name in get_prebuilt_by_category(category["key"])]
         result.append(entry)
     return result
 

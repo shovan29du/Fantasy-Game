@@ -568,6 +568,11 @@ def get_prebuilt_list(): return list(PREBUILT_WORLDS.keys())
 def get_prebuilt_by_category(category: str):
     return [name for name, t in PREBUILT_WORLDS.items() if t.get("category") == category]
 
+def get_prebuilt_opening(name: str) -> str:
+    """Return the full opening text for a scenario, empty string if none."""
+    t = PREBUILT_WORLDS.get(name, {})
+    return t.get("opening", "")
+
 def create_prebuilt_world(name, reality_type=None):
     t=PREBUILT_WORLDS.get(name)
     if not t: return {"error":"Unknown template"}
