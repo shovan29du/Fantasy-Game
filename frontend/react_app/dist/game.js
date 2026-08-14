@@ -1090,7 +1090,7 @@ $('#refreshHealth').onclick=loadHealth;
 $('#settingsVoiceForm')?.addEventListener('submit',async e=>{e.preventDefault();const txt=e.currentTarget.elements.vtext.value.trim();if(!txt)return;const out=$('#settingsVoiceResult');out.textContent='Generating…';try{const r=await api('/api/voice/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:txt})});if(r.url){out.innerHTML=`<audio controls src="${safe(r.url)}" style="width:100%;margin-top:6px"></audio>`}else{out.textContent='TTS unavailable (install edge-tts and ensure internet access)'}}catch(err){out.textContent=err.message}});
 
 // ═══ Tactical combat: turn-based grid battle with obstacles ═══
-let combatState=null, combatReachable=new Set(), combatAttackable={}, combatSpellTargets={};
+let combatState=null, combatReachable=new Set(), combatAttackable={}, combatSpellTargets={}, combatAutoTimer=null;
 const POWER_ATTACK_FEATS=new Set(['Great Weapon Master','Sharpshooter']);
 function tileKey(x,y){return `${x},${y}`}
 function lineClear(obstacleSet,x1,y1,x2,y2){
@@ -1123,7 +1123,26 @@ async function startCombat(){
  }catch(error){toast(error.message)}
 }
 function openCombat(encounter){combatState=encounter;$('#combatOverlay').classList.add('open');renderCombat()}
-function closeCombat(){$('#combatOverlay').classList.remove('open');combatState=null}
+function stopCombatPlay(){clearInterval(combatAutoTimer);combatAutoTimer=null;const btn=$('#combatPlayBtn');if(btn){btn.textContent='▶ Play';btn.classList.remove('cb-play-active');}}
+async function combatAutoStep(){
+  if(!combatState||combatState.status!=='active'){stopCombatPlay();return;}
+  const human=combatState.units.find(u=>u.stats?.is_human);
+  if(!human||combatState.current_unit_id!==human.id){stopCombatPlay();return;}
+  try{const result=await api(`/api/combat/${combatState.id}/end-turn`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id})});combatState=result;renderCombat();if(combatState.status!=='active')stopCombatPlay();}catch(e){stopCombatPlay();toast(e.message);}
+}
+function showCombatResult(){
+  if(!combatState)return;
+  const reward=combatState.reward||{};
+  const enemies=combatState.units.filter(u=>u.unit_type==='enemy');
+  const players=combatState.units.filter(u=>u.unit_type==='player');
+  const killed=enemies.filter(u=>!u.is_active).length;
+  const survived=players.filter(u=>u.is_active).length;
+  const won=combatState.status==='won';
+  const logLines=(combatState.log||[]).map(l=>`<div>${safe(l)}</div>`).join('');
+  $('#combatResultBody').innerHTML=`<div class="result-outcome ${won?'won':'lost'}">${won?'🏆 Victory!':'💀 Defeat'}</div><div class="result-stats"><div class="result-stat"><span>Enemies slain</span><strong>${killed}&thinsp;/&thinsp;${enemies.length}</strong></div><div class="result-stat"><span>Allies standing</span><strong>${survived}&thinsp;/&thinsp;${players.length}</strong></div><div class="result-stat"><span>Rounds fought</span><strong>${combatState.round_number}</strong></div>${reward.xp_awarded?`<div class="result-stat"><span>XP earned</span><strong>+${reward.xp_awarded}</strong></div>`:''}${reward.loot?`<div class="result-stat"><span>Loot found</span><strong>${safe(reward.loot)}</strong></div>`:''}${reward.leveled_up?`<div class="result-level">⬆ Level up!</div>`:''}</div><div class="result-log">${logLines}</div>`;
+  $('#combatResultModal').hidden=false;
+}
+function closeCombat(){stopCombatPlay();$('#combatOverlay').classList.remove('open');combatState=null}
 function computeCombatAffordances(){
  combatReachable=new Set();combatAttackable={};combatSpellTargets={};
  if(!combatState||combatState.status!=='active')return;
@@ -1203,7 +1222,7 @@ function renderCombat(){
    html+=`<div class="${classes.join(' ')}" data-x="${x}" data-y="${y}">${inner}</div>`;
   }
  }
- $('#combatBoard').innerHTML=html;
+ const _board=$('#combatBoard');_board.style.setProperty('--cb-cols',combatState.grid_width);_board.style.setProperty('--cb-rows',combatState.grid_height);_board.innerHTML=html;
  $$('#combatBoard .combat-tile').forEach(tile=>tile.onclick=()=>onCombatTileClick(+tile.dataset.x,+tile.dataset.y));
  $('#combatTurnList').innerHTML=combatState.turn_order.map(uid=>combatState.units.find(u=>u.id===uid)).filter(Boolean).map(u=>{
   const side=u.unit_type==='player'?'side-player':'side-enemy';
@@ -1224,10 +1243,13 @@ function renderCombat(){
  $('#combatHint').textContent=combatState.status!=='active'?'':(isHumanTurn?(spell?`Click a highlighted target to cast ${spell.name}, or click your own tile to target yourself.`:'Click a highlighted tile to move, or a highlighted enemy to attack.'):'Waiting for other combatants…');
  const outcome=$('#combatOutcome');
  if(combatState.status!=='active'){
+  stopCombatPlay();
   outcome.hidden=false;outcome.className=`combat-outcome ${combatState.status}`;
   outcome.textContent=combatState.status==='won'?`Victory!${combatState.reward?.loot?` +${combatState.reward.xp_awarded} XP, found: ${combatState.reward.loot}`:''}`:'Defeat… the enemies overwhelm you.';
-  $('#combatEndTurnBtn').hidden=true;$('#combatLeaveBtn').hidden=false;
- }else{outcome.hidden=true;$('#combatEndTurnBtn').hidden=false;$('#combatLeaveBtn').hidden=true}
+  $('#combatPlayBtn').hidden=true;$('#combatEndTurnBtn').hidden=true;$('#combatResultBtn').hidden=false;$('#combatEndBtn').hidden=false;
+ }else{
+  outcome.hidden=true;$('#combatPlayBtn').hidden=false;$('#combatEndTurnBtn').hidden=false;$('#combatResultBtn').hidden=true;$('#combatEndBtn').hidden=true;
+ }
 }
 async function onCombatTileClick(x,y){
  if(!combatState||combatState.status!=='active')return;
@@ -1265,7 +1287,11 @@ $('#combatEndTurnBtn').onclick=async()=>{
  if(!human)return;
  try{const result=await api(`/api/combat/${combatState.id}/end-turn`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id})});combatState=result;renderCombat()}catch(error){toast(error.message)}
 };
-$('#combatLeaveBtn').onclick=async()=>{closeCombat();await refreshCharacterState();renderParty();showPanel('character')};
+$('#combatPlayBtn').onclick=()=>{if(combatAutoTimer){stopCombatPlay();}else{combatAutoTimer=setInterval(combatAutoStep,1500);$('#combatPlayBtn').textContent='⏸ Pause';$('#combatPlayBtn').classList.add('cb-play-active');}};
+$('#combatResultBtn').onclick=showCombatResult;
+$('#combatEndBtn').onclick=async()=>{stopCombatPlay();closeCombat();await refreshCharacterState();renderParty();showPanel('character');};
+$('#combatResultCloseBtn').onclick=()=>{$('#combatResultModal').hidden=true;};
+$('#combatResultEndBtn').onclick=async()=>{$('#combatResultModal').hidden=true;stopCombatPlay();closeCombat();await refreshCharacterState();renderParty();showPanel('character');};
 
 // ── Explorer Random button ──
 const _randLibBtn=$('#randomLibraryBtn');

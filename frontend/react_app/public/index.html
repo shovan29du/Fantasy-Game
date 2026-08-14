@@ -375,6 +375,7 @@
           <div id="combatBoard" class="combat-board"></div>
           <div class="combat-hint" id="combatHint">Click a highlighted tile to move, or a highlighted enemy to attack.</div>
           <div class="combat-actions">
+            <button id="combatPlayBtn" class="ghost">▶ Play</button>
             <select id="combatSpellSelect" class="combat-spell-select">
               <option value="">⚔ Weapon attack</option>
             </select>
@@ -383,13 +384,24 @@
             </label>
             <button id="combatCastBtn" class="ghost" hidden>Cast</button>
             <button id="combatEndTurnBtn" class="ghost">Hold position / End turn</button>
-            <button id="combatLeaveBtn" class="gold" hidden>Continue</button>
+            <button id="combatResultBtn" class="gold" hidden>⚔ Result</button>
+            <button id="combatEndBtn" class="ghost" hidden>✕ End</button>
           </div>
         </div>
         <aside class="combat-log-panel">
           <div class="panel-title"><span>COMBAT LOG</span></div>
           <div id="combatLog" class="combat-log"></div>
         </aside>
+      </div>
+      <div id="combatResultModal" class="combat-result-modal" hidden>
+        <div class="combat-result-panel">
+          <h2>⚔ Battle Summary</h2>
+          <div id="combatResultBody"></div>
+          <div style="margin-top:18px;display:flex;gap:10px">
+            <button id="combatResultCloseBtn" class="ghost" style="flex:1;padding:10px">← Back to battlefield</button>
+            <button id="combatResultEndBtn" class="gold" style="flex:1;padding:10px">Leave battlefield</button>
+          </div>
+        </div>
       </div>
     </div>
   </section>

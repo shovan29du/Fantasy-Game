@@ -18,7 +18,7 @@ from backend.app.domain import spells as _spells
 
 log = get_logger(__name__)
 
-GRID_SIZE = 8
+GRID_SIZE = 16
 MOVE_POINTS = 3
 ENEMY_NAMES = ["Raider", "Cultist", "Marauder", "Feral Beast", "Drone", "Ghoul", "Bandit", "Wraith"]
 ALLY_DEFS = [("Kael Ironroot", 2, -2), ("Seraphine", 2, 2)]  # (name, x, y-offset from player row)
@@ -463,7 +463,7 @@ def start_encounter(session_id: str, world_id: int | None, character_id: int | N
     enemy_hp = 14 + danger * 3
     for i in range(enemy_count):
         while True:
-            pos = (random.randint(width - 3, width - 1), random.randint(0, height - 1))
+            pos = (random.randint(width - 6, width - 1), random.randint(0, height - 1))
             if pos not in exclude:
                 break
         exclude.add(pos)
@@ -477,7 +477,7 @@ def start_encounter(session_id: str, world_id: int | None, character_id: int | N
                                 "weapon_name": None, "weapon_tier": e_tier, "weapon_damage": _synthetic_weapon_damage(e_tier),
                                 "weapon_finesse_or_ranged": False, "feats": [], "character_id": None}})
 
-    obstacles = _random_obstacles(width, height, random.randint(5, 8), exclude)
+    obstacles = _random_obstacles(width, height, random.randint(20, 30), exclude)
 
     cur = conn.execute(
         "INSERT INTO combat_encounters (session_id,world_id,character_id,grid_width,grid_height,obstacles_json,"
