@@ -1150,11 +1150,12 @@ function computeCombatAffordances(){
  if(!human||combatState.current_unit_id!==human.id)return;
  const obstacles=new Set(combatState.obstacles.map(([x,y])=>tileKey(x,y)));
  const occupied=new Set(combatState.units.filter(u=>u.is_active&&u.id!==human.id).map(u=>tileKey(u.x,u.y)));
+ const moveRemaining=combatState.turn_state?.movement_remaining??6;
  const visited=new Map();visited.set(tileKey(human.x,human.y),0);
  const queue=[[human.x,human.y]];
  while(queue.length){
   const [cx,cy]=queue.shift();const d=visited.get(tileKey(cx,cy));
-  if(d>=3)continue;
+  if(d>=moveRemaining)continue;
   for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
    if(dx===0&&dy===0)continue;
    const nx=cx+dx,ny=cy+dy;
@@ -1211,13 +1212,15 @@ function renderCombat(){
    if(combatReachable.has(key))classes.push('reachable');
    if(key in combatAttackable)classes.push('attackable');
    if(key in combatSpellTargets)classes.push('attackable','spell-target');
-   const unit=unitByTile[key];
+   const unit=unitByTile[key]||(combatState.units.find(u=>!u.is_active&&u.unit_type==='player'&&u.x===x&&u.y===y));
    let inner='';
    if(unit){
     const side=unit.unit_type==='player'?'side-player':'side-enemy';
     const current=combatState.current_unit_id===unit.id?'current-turn':'';
+    const unconscious=!unit.is_active&&unit.unit_type==='player';
     const pct=Math.max(0,Math.round(unit.hp/unit.max_hp*100));
-    inner=`<div class="combat-unit ${side} ${current}" title="${safe(unit.unit_name)} (${unit.hp}/${unit.max_hp})">${safe(unit.unit_name.slice(0,2).toUpperCase())}<div class="hp-bar"><i style="width:${pct}%"></i></div></div>`;
+    const label=unconscious?`${safe(unit.unit_name.slice(0,2).toUpperCase())}💀`:`${safe(unit.unit_name.slice(0,2).toUpperCase())}`;
+    inner=`<div class="combat-unit ${side} ${current}${unconscious?' unconscious':''}" title="${safe(unit.unit_name)} ${unconscious?'(Unconscious)':'('+unit.hp+'/'+unit.max_hp+')'}">${label}<div class="hp-bar"><i style="width:${pct}%"></i></div></div>`;
    }
    html+=`<div class="${classes.join(' ')}" data-x="${x}" data-y="${y}">${inner}</div>`;
   }
@@ -1231,7 +1234,17 @@ function renderCombat(){
  }).join('');
  $('#combatLog').innerHTML=(combatState.log||[]).slice().reverse().map(line=>`<div>${safe(line)}</div>`).join('');
  $('#combatRoundInfo').textContent=`Round ${combatState.round_number}`;
+ const ts=combatState.turn_state||{};
+ const actionUsed=!!ts.action_used;
+ const moveRemaining2=ts.movement_remaining??6;
+ const hasDash=!!(ts.conditions||[]).includes('dashing');
+ const hasDodge=!!(ts.conditions||[]).includes('dodging');
+ const hasDisengage=!!(ts.conditions||[]).includes('disengaging');
  $('#combatEndTurnBtn').disabled=!isHumanTurn;
+ const dashBtn=$('#combatDashBtn');const disBtn=$('#combatDisengageBtn');const dodgeBtn=$('#combatDodgeBtn');
+ if(dashBtn){dashBtn.disabled=!isHumanTurn||actionUsed;dashBtn.classList.toggle('cb-play-active',hasDash);}
+ if(disBtn){disBtn.disabled=!isHumanTurn||actionUsed;disBtn.classList.toggle('cb-play-active',hasDisengage);}
+ if(dodgeBtn){dodgeBtn.disabled=!isHumanTurn||actionUsed;dodgeBtn.classList.toggle('cb-play-active',hasDodge);}
  const spell=selectedSpell();
  const canPowerAttack=isHumanTurn&&!spell&&(human.stats.feats||[]).some(f=>POWER_ATTACK_FEATS.has(f));
  $('#combatPowerAttackLabel').hidden=!canPowerAttack;
@@ -1240,15 +1253,24 @@ function renderCombat(){
  const needsNoTarget=spell&&spell.data&&!['attack','save','heal'].includes(spell.data.effect_type);
  castBtn.hidden=!needsNoTarget;
  if(!isHumanTurn)castBtn.hidden=true;
- $('#combatHint').textContent=combatState.status!=='active'?'':(isHumanTurn?(spell?`Click a highlighted target to cast ${spell.name}, or click your own tile to target yourself.`:'Click a highlighted tile to move, or a highlighted enemy to attack.'):'Waiting for other combatants…');
+ let hintText='';
+ if(combatState.status==='active'){
+  if(isHumanTurn){
+   const movePart=`Move: ${moveRemaining2}/${hasDash?12:6} tiles`;
+   const actPart=actionUsed?'Action: Used':'Action: Available';
+   if(spell)hintText=`${movePart} | ${actPart} — Click a highlighted target to cast ${spell.name}.`;
+   else hintText=`${movePart} | ${actPart} — Click a tile to move or an enemy to attack.`;
+  }else{hintText='Waiting for other combatants…';}
+ }
+ $('#combatHint').textContent=hintText;
  const outcome=$('#combatOutcome');
  if(combatState.status!=='active'){
   stopCombatPlay();
   outcome.hidden=false;outcome.className=`combat-outcome ${combatState.status}`;
   outcome.textContent=combatState.status==='won'?`Victory!${combatState.reward?.loot?` +${combatState.reward.xp_awarded} XP, found: ${combatState.reward.loot}`:''}`:'Defeat… the enemies overwhelm you.';
-  $('#combatPlayBtn').hidden=true;$('#combatEndTurnBtn').hidden=true;$('#combatResultBtn').hidden=false;$('#combatEndBtn').hidden=false;
+  $('#combatPlayBtn').hidden=true;$('#combatEndTurnBtn').hidden=true;$('#combatDashBtn').hidden=true;$('#combatDisengageBtn').hidden=true;$('#combatDodgeBtn').hidden=true;$('#combatResultBtn').hidden=false;$('#combatEndBtn').hidden=false;
  }else{
-  outcome.hidden=true;$('#combatPlayBtn').hidden=false;$('#combatEndTurnBtn').hidden=false;$('#combatResultBtn').hidden=true;$('#combatEndBtn').hidden=true;
+  outcome.hidden=true;$('#combatPlayBtn').hidden=false;$('#combatEndTurnBtn').hidden=false;$('#combatDashBtn').hidden=false;$('#combatDisengageBtn').hidden=false;$('#combatDodgeBtn').hidden=false;$('#combatResultBtn').hidden=true;$('#combatEndBtn').hidden=true;
  }
 }
 async function onCombatTileClick(x,y){
@@ -1287,6 +1309,15 @@ $('#combatEndTurnBtn').onclick=async()=>{
  if(!human)return;
  try{const result=await api(`/api/combat/${combatState.id}/end-turn`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id})});combatState=result;renderCombat()}catch(error){toast(error.message)}
 };
+async function combatSpecialAction(action){
+ if(!combatState)return;
+ const human=combatState.units.find(u=>u.stats?.is_human);
+ if(!human)return;
+ try{const result=await api(`/api/combat/${combatState.id}/special-action`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit_id:human.id,action})});combatState=result;renderCombat()}catch(error){toast(error.message)}
+}
+$('#combatDashBtn').onclick=()=>combatSpecialAction('dash');
+$('#combatDisengageBtn').onclick=()=>combatSpecialAction('disengage');
+$('#combatDodgeBtn').onclick=()=>combatSpecialAction('dodge');
 $('#combatPlayBtn').onclick=()=>{if(combatAutoTimer){stopCombatPlay();}else{combatAutoTimer=setInterval(combatAutoStep,1500);$('#combatPlayBtn').textContent='⏸ Pause';$('#combatPlayBtn').classList.add('cb-play-active');}};
 $('#combatResultBtn').onclick=showCombatResult;
 $('#combatEndBtn').onclick=async()=>{stopCombatPlay();closeCombat();await refreshCharacterState();renderParty();showPanel('character');};

@@ -488,6 +488,11 @@ class CombatUnitIn(BaseModel):
     unit_id: int
 
 
+class CombatSpecialActionIn(BaseModel):
+    unit_id: int
+    action: str  # "dash" | "disengage" | "dodge" | "help"
+
+
 class LawIn(BaseModel):
     name: str
     description: str = ""
@@ -1492,6 +1497,12 @@ def combat_cast(encounter_id: int, payload: CombatCastIn) -> dict:
 @app.post("/api/combat/{encounter_id}/end-turn")
 def combat_end_turn(encounter_id: int, payload: CombatUnitIn) -> dict:
     result = tactical_combat.end_turn(encounter_id, payload.unit_id)
+    return _combat_response(result, result.get("character_id"), result.get("world_id"))
+
+
+@app.post("/api/combat/{encounter_id}/special-action")
+def combat_special_action(encounter_id: int, payload: CombatSpecialActionIn) -> dict:
+    result = tactical_combat.special_action(encounter_id, payload.unit_id, payload.action)
     return _combat_response(result, result.get("character_id"), result.get("world_id"))
 
 
