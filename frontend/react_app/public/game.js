@@ -581,7 +581,7 @@ function renderScenarioCards(cats,filterKey){
     <div class="scenario-card-name">${safe(s.name)}</div>
     ${teaser}
     <div class="scenario-card-actions">
-     <button class="scenario-card-more" title="Show backstory">＋</button>
+     ${op.length>0?`<button class="scenario-card-more" title="Show backstory">＋</button>`:''}
      <button class="scenario-card-play">▶ Play</button>
     </div>
    </div>

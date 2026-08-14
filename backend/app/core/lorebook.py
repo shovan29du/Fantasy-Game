@@ -21,10 +21,12 @@ def create_entry(title: str, content: str, keywords: List[str], world_id: int = 
     return eid
 
 def get_triggered_entries(text: str, world_id: int = 0) -> List[Dict]:
-    """Find lorebook entries whose keywords appear in the text."""
+    """Find lorebook entries whose keywords appear in the text.
+    Scopes to global entries (world_id=0) plus the active world's entries."""
     conn = get_conn()
     rows = [dict(r) for r in conn.execute(
-        "SELECT * FROM lorebook WHERE enabled=1 ORDER BY priority DESC").fetchall()]
+        "SELECT * FROM lorebook WHERE enabled=1 AND (world_id=0 OR world_id=?) ORDER BY priority DESC",
+        (world_id,)).fetchall()]
     conn.close()
     triggered = []
     for r in rows:
