@@ -70,6 +70,12 @@ The editor now includes guarded adapters for:
 - Generative B-roll
 - Automatic advert localisation
 
+### Adjustable ModelScope text-to-video
+
+The app independently adopts the useful controls demonstrated by the supplied `ez-text2video` research archive: frames, FPS, inference steps, seed, width, height, automatic CUDA/MPS/CPU selection, CPU offload, attention slicing, and MP4 conversion. The old Streamlit application and its pinned 2023 environment are not executed or merged into the core environment.
+
+The optional `damo-vilab/text-to-video-ms-1.7b` weights download on first use and require substantial disk space. The model is licensed CC-BY-NC-4.0, so the interface requires an explicit non-commercial-use acknowledgement. It should not be used for commercial advertising unless the model owner grants separate permission.
+
 The local engine detects NVIDIA GPU memory and the following services:
 
 - ComfyUI at `http://127.0.0.1:8188`
@@ -85,10 +91,16 @@ Avatar, lip-sync, motion-transfer, presenter, and voice-cloning jobs require an 
 ## Video and document intelligence
 
 - Generate timed SRT and WebVTT subtitles from video or audio with local Whisper.
+- Automatically detect spoken language and create separately timed English SRT and WebVTT subtitles while preserving the original-language captions.
 - Scan video frames for slides, pictures, visible text, diagrams, charts, tables, mathematics, and formulas using Tesseract OCR plus an optional local Ollama vision model.
 - Create structured notes and export them as DOCX, PPTX, PDF, or XLSX.
 - Extract and read text aloud from PDF, DOCX, PPTX, XLSX, text, Markdown, CSV, JSON, HTML, subtitle, and image files.
 - Customize a local reader avatar's name, style, colours, speech speed, and pitch.
+- Detect scene changes, remove repetitive fixed-interval captures, and retain word-level subtitle timing and confidence.
+- Edit speaker labels and subtitle text, create bilingual translations, and switch between lecture, meeting, tutorial, and advertisement analysis.
+- Produce flashcards, quizzes, timestamped chapters, meeting decisions, formula candidates, and reconstructed spreadsheet tables when the local model can recover them reliably.
+- Export extracted frames, transcript, subtitles, and structured notes as a portable ZIP, plus narration as MP3 or WAV.
+- Install, update, or remove approved Ollama models from the local model manager.
 
 Extraction quality depends on the source resolution, frame interval, speech clarity, and model accuracy. The app preserves OCR/vision uncertainty; review formulas and numeric tables before relying on them.
 
@@ -111,6 +123,9 @@ python full_install.py --minimal
 python full_install.py --skip-models
 python full_install.py --import-research
 python full_install.py --import-research --launch
+python full_install.py --repair
+python full_install.py --diagnose
+python full_install.py --uninstall
 ```
 
 The full installation can download several gigabytes. `--minimal` skips the large AI engines. `--skip-models` installs Ollama but skips its language-model download. ComfyUI checkpoint files are not silently chosen because checkpoints are large creative assets with model-specific licences; add a checkpoint you are licensed to use to `engines/ComfyUI/models/checkpoints`. `--import-research` safely extracts compatible supplied archives from Downloads into isolated source folders without executing their setup scripts or merging conflicting historical dependencies into the core environment.

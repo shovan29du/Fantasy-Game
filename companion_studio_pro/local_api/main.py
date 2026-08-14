@@ -13,11 +13,15 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from pydantic import BaseModel
 from .gpu_modules import router as gpu_router
 from .intelligence import router as intelligence_router
+from .services import router as services_router
+from .text_video import router as text_video_router
 
 app = FastAPI(title="Companion Studio Local Engine", version="1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"], allow_methods=["*"], allow_headers=["*"])
 app.include_router(gpu_router)
 app.include_router(intelligence_router)
+app.include_router(services_router)
+app.include_router(text_video_router)
 ROOT = Path(__file__).resolve().parent
 OUTPUTS = ROOT / "outputs"
 OUTPUTS.mkdir(exist_ok=True)

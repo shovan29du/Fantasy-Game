@@ -57,6 +57,38 @@ def ensure_python():
         raise SystemExit("Python 3.11 or newer is required.")
 
 
+def preflight():
+    usage=shutil.disk_usage(ROOT)
+    free_gb=usage.free/1024**3
+    ram_gb=0.0
+    try:
+        if IS_WIN:
+            raw=subprocess.check_output(["powershell","-NoProfile","-Command","(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory"],text=True).strip();ram_gb=int(raw)/1024**3
+        else:
+            ram_gb=os.sysconf("SC_PAGE_SIZE")*os.sysconf("SC_PHYS_PAGES")/1024**3
+    except Exception:pass
+    log(f"Preflight: {free_gb:.1f} GB free, {ram_gb:.1f} GB RAM, GPU={'NVIDIA' if nvidia_present() else 'CPU/other'}")
+    if free_gb<12:raise SystemExit("At least 12 GB free storage is required for the full local installation. Use --minimal or free storage.")
+    if ram_gb and ram_gb<8:WARNINGS.append("Less than 8 GB RAM detected; large models may be slow.")
+
+
+def diagnose():
+    checks={"python":platform.python_version(),"node":executable("node"),"npm":executable("npm.cmd" if IS_WIN else "npm"),"git":executable("git"),"ffmpeg":executable("ffmpeg"),"tesseract":executable("tesseract"),"ollama":executable("ollama.exe" if IS_WIN else "ollama"),"venv":venv_python().exists(),"comfyui":(ROOT/"engines/ComfyUI/main.py").exists()}
+    log(json.dumps(checks,indent=2));(ROOT/"diagnostics.json").write_text(json.dumps(checks,indent=2),encoding="utf-8")
+    return 0
+
+
+def uninstall():
+    targets=[ROOT/".venv",ROOT/"engines",ROOT/"node_modules",ROOT/"install-state.json"]
+    for target in targets:
+        resolved=target.resolve()
+        if ROOT.resolve() not in resolved.parents:raise RuntimeError(f"Unsafe uninstall target: {resolved}")
+        if resolved.is_dir():shutil.rmtree(resolved)
+        elif resolved.exists():resolved.unlink()
+    log("Application dependencies removed. Your source files and projects were preserved.")
+    return 0
+
+
 def ensure_node():
     npm = executable("npm.cmd" if IS_WIN else "npm")
     if executable("node") and npm:
@@ -272,9 +304,15 @@ def main():
     parser.add_argument("--yes", action="store_true", help="retained for unattended compatibility")
     parser.add_argument("--no-shortcuts", action="store_true")
     parser.add_argument("--launch", action="store_true")
+    parser.add_argument("--repair", action="store_true", help="verify and reinstall missing or damaged dependencies")
+    parser.add_argument("--diagnose", action="store_true", help="write diagnostics.json without changing the installation")
+    parser.add_argument("--uninstall", action="store_true", help="remove installed dependencies while preserving projects and source")
     args = parser.parse_args()
     LOG.write_text("Companion Studio Pro complete installer\n", encoding="utf-8")
     ensure_python()
+    if args.diagnose:return diagnose()
+    if args.uninstall:return uninstall()
+    preflight()
     log(f"Companion Studio Pro - {platform.system()} {platform.machine()}")
     install_core(ensure_node())
     engines = {"ollama": False, "comfyui": False, "ocr": False}

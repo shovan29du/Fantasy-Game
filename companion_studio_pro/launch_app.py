@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os, socket, subprocess, sys, time, webbrowser
+import os, shutil, socket, subprocess, sys, time, webbrowser
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent
@@ -23,7 +23,14 @@ def main():
     py=ROOT/(".venv/Scripts/python.exe" if os.name=="nt" else ".venv/bin/python")
     if not py.exists():
         print("Run full_install.py first."); input("Press Enter to close…"); return 1
-    backend=None; frontend=None
+    backend=None; frontend=None; services=[]
+    ollama="ollama.exe" if os.name=="nt" else "ollama"
+    if free_port(11434) and shutil.which(ollama):
+        services.append(subprocess.Popen([ollama,"serve"],cwd=ROOT,creationflags=CREATE_NO_WINDOW))
+    comfy_py=ROOT/("engines/comfyui-venv/Scripts/python.exe" if os.name=="nt" else "engines/comfyui-venv/bin/python")
+    comfy_main=ROOT/"engines/ComfyUI/main.py"
+    if free_port(8188) and comfy_py.exists() and comfy_main.exists():
+        services.append(subprocess.Popen([str(comfy_py),str(comfy_main),"--listen","127.0.0.1","--port","8188"],cwd=ROOT,creationflags=CREATE_NO_WINDOW))
     if free_port(8765): backend=subprocess.Popen([str(py),"-m","uvicorn","local_api.main:app","--host","127.0.0.1","--port","8765"],cwd=ROOT,creationflags=CREATE_NO_WINDOW)
     npm="npm.cmd" if os.name=="nt" else "npm"
     if free_port(3000): frontend=subprocess.Popen([npm,"run","dev","--","--host","127.0.0.1","--port","3000"],cwd=ROOT,creationflags=CREATE_NO_WINDOW)
@@ -32,9 +39,8 @@ def main():
     try:
         while True: time.sleep(2)
     except KeyboardInterrupt:
-        for proc in (frontend,backend):
+        for proc in (frontend,backend,*services):
             if proc: proc.terminate()
     return 0
 
 if __name__=="__main__": raise SystemExit(main())
-

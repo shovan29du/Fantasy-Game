@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import base64, io, json, os, re, shutil, subprocess, tempfile, wave
+import base64, io, json, os, re, shutil, subprocess, tempfile, wave, zipfile
 from pathlib import Path
 
 import requests
@@ -32,23 +32,24 @@ def stamp(seconds):
     return f"{h:02}:{m:02}:{s:02},{ms:03}"
 
 
-def transcribe(path: Path, language=None):
+def transcribe(path: Path, language=None, task="transcribe"):
     try:
         from faster_whisper import WhisperModel
     except ImportError:
         raise HTTPException(503, "faster-whisper is not installed")
     model = WhisperModel("small", device="cpu", compute_type="int8")
-    segments, info = model.transcribe(str(path), vad_filter=True, language=language or None)
-    rows = [{"start": float(x.start), "end": float(x.end), "text": x.text.strip()} for x in segments]
+    segments, info = model.transcribe(str(path), vad_filter=True, language=language or None, word_timestamps=True, task=task)
+    rows = [{"start": float(x.start), "end": float(x.end), "text": x.text.strip(),"speaker":"Speaker 1","confidence":round(max(0,min(1,1-float(getattr(x,"avg_logprob",-1))/-5)),2),"words":[{"start":float(w.start),"end":float(w.end),"word":w.word,"confidence":round(float(getattr(w,"probability",0)),2)} for w in (x.words or [])]} for x in segments]
     return rows, getattr(info, "language", language or "unknown")
 
 
-def extract_frames(video: Path, folder: Path, interval: int):
+def extract_frames(video: Path, folder: Path, interval: int, scene_aware=True):
     exe = ffmpeg()
     if not exe: return []
     folder.mkdir(exist_ok=True)
     pattern = folder / "frame-%04d.jpg"
-    subprocess.run([exe, "-y", "-i", str(video), "-vf", f"fps=1/{max(3, interval)},scale=1280:-2", "-q:v", "3", str(pattern)], capture_output=True, check=True)
+    selector="select='gt(scene,0.28)',scale=1280:-2" if scene_aware else f"fps=1/{max(3, interval)},scale=1280:-2"
+    subprocess.run([exe, "-y", "-i", str(video), "-vf", selector, "-vsync", "vfr", "-q:v", "3", str(pattern)], capture_output=True, check=True)
     return sorted(folder.glob("frame-*.jpg"))[:80]
 
 
@@ -71,8 +72,8 @@ def vision_note(path: Path):
     return ""
 
 
-def summarize(transcript: str, visual_notes: list[dict]):
-    prompt = "Create accurate study notes from the transcript and frame observations. Return JSON with title, summary, key_points, chapters, terms, formulas, tables, action_items. Preserve uncertainty and never invent missing detail.\n" + json.dumps({"transcript": transcript[:50000], "visuals": visual_notes[:40]})
+def summarize(transcript: str, visual_notes: list[dict], mode="standard", purpose="lecture"):
+    prompt = f"Create {mode} accurate {purpose} notes. Return JSON with title, summary, key_points, chapters (each with time and title), terms, formulas (each with latex, mathml, source_time, confidence), tables (headers, rows, source_time, confidence), flashcards, quiz, mind_map, action_items, decisions, owners, deadlines. Every claim needs source_time. Preserve uncertainty; never invent missing detail.\n" + json.dumps({"transcript": transcript[:50000], "visuals": visual_notes[:40]})
     try:
         r = requests.post("http://127.0.0.1:11434/api/generate", json={"model":"qwen2.5:3b","prompt":prompt,"stream":False,"format":"json"}, timeout=180)
         r.raise_for_status(); return json.loads(r.json()["response"])
@@ -82,21 +83,31 @@ def summarize(transcript: str, visual_notes: list[dict]):
 
 
 @router.post("/analyze")
-async def analyze(file: UploadFile = File(...), language: str = Form(""), frame_interval: int = Form(20)):
+async def analyze(file: UploadFile = File(...), language: str = Form(""), frame_interval: int = Form(20), note_mode:str=Form("standard"), purpose:str=Form("lecture"), target_language:str=Form(""), scene_aware:bool=Form(True), translate_to_english:bool=Form(False)):
     work = Path(tempfile.mkdtemp(prefix="video-notes-")); source = work / (file.filename or "video.mp4")
     source.write_bytes(await file.read())
     try:
         segments, detected = transcribe(source, language)
-        frames = extract_frames(source, work / "frames", frame_interval)
+        frames = extract_frames(source, work / "frames", frame_interval, scene_aware)
         visuals=[]
         for index, frame in enumerate(frames):
             ocr=ocr_image(frame); description=vision_note(frame)
             if ocr or description:
-                visuals.append({"time":index*max(3,frame_interval),"ocr":ocr,"description":description,"image":"data:image/jpeg;base64,"+base64.b64encode(frame.read_bytes()).decode()})
+                visuals.append({"time":index*max(3,frame_interval),"ocr":ocr,"description":description,"confidence":0.9 if ocr else 0.55,"image":"data:image/jpeg;base64,"+base64.b64encode(frame.read_bytes()).decode()})
         transcript=" ".join(x["text"] for x in segments)
-        notes=summarize(transcript,visuals)
+        english_segments=[]
+        if translate_to_english:
+            english_segments=segments if detected.lower().startswith("en") else transcribe(source,language or None,task="translate")[0]
+        notes=summarize(transcript,visuals,note_mode,purpose)
+        translation=""
+        if target_language:
+            try:
+                p=f"Translate this transcript into {target_language}, preserving timestamps and speaker labels. Return plain text only.\n"+"\n".join(f"[{stamp(x['start'])[:-4]}] {x['speaker']}: {x['text']}" for x in segments)
+                r=requests.post("http://127.0.0.1:11434/api/generate",json={"model":"qwen2.5:3b","prompt":p,"stream":False},timeout=180);translation=r.json().get("response","")
+            except Exception: pass
         srt="\n\n".join(f"{i+1}\n{stamp(x['start'])} --> {stamp(x['end'])}\n{x['text']}" for i,x in enumerate(segments))+"\n"
-        return {"filename":file.filename,"language":detected,"transcript":transcript,"segments":segments,"srt":srt,"notes":notes,"visuals":visuals}
+        english_srt="\n\n".join(f"{i+1}\n{stamp(x['start'])} --> {stamp(x['end'])}\n{x['text']}" for i,x in enumerate(english_segments))+("\n" if english_segments else "")
+        return {"filename":file.filename,"language":detected,"translation":translation,"transcript":transcript,"segments":segments,"srt":srt,"english_segments":english_segments,"english_srt":english_srt,"notes":notes,"visuals":visuals,"settings":{"mode":note_mode,"purpose":purpose,"scene_aware":scene_aware,"translated_to_english":translate_to_english}}
     finally: shutil.rmtree(work,ignore_errors=True)
 
 
@@ -121,6 +132,10 @@ async def export_notes(payload: str = Form(...), format: str = Form("docx")):
     data=json.loads(payload); fmt=format.lower(); out=JOBS/f"video-notes.{fmt}"
     if fmt=="srt": out.write_text(data.get("srt",""),encoding="utf-8")
     elif fmt=="vtt": out.write_text("WEBVTT\n\n"+data.get("srt","").replace(",","."),encoding="utf-8")
+    elif fmt=="english-srt":
+        out=JOBS/"video-notes.english.srt";out.write_text(data.get("english_srt",""),encoding="utf-8")
+    elif fmt=="english-vtt":
+        out=JOBS/"video-notes.english.vtt";out.write_text("WEBVTT\n\n"+data.get("english_srt","").replace(",","."),encoding="utf-8")
     elif fmt=="docx":
         doc=Document(); add_doc_content(doc,data); doc.save(out)
     elif fmt=="pptx":
@@ -138,6 +153,12 @@ async def export_notes(payload: str = Form(...), format: str = Form("docx")):
         ws.column_dimensions["A"].width=12;ws.column_dimensions["B"].width=12;ws.column_dimensions["C"].width=90
         visual=wb.create_sheet("Visual extraction");visual.append(["Time","OCR text","Description"])
         for x in data.get("visuals",[]):visual.append([x["time"],x.get("ocr",""),x.get("description","")])
+        for index, table in enumerate(data.get("notes",{}).get("tables",[]),1):
+            sheet=wb.create_sheet(f"Table {index}")
+            if isinstance(table,dict):
+                sheet.append(list(map(str,table.get("headers",[]))))
+                for row in table.get("rows",[]):sheet.append(list(row) if isinstance(row,list) else [str(row)])
+                sheet["A1"].comment=None
         wb.save(out)
     elif fmt=="pdf":
         styles=getSampleStyleSheet(); story=[Paragraph(data.get("notes",{}).get("title","Video notes"),styles["Title"]),Spacer(1,12),Paragraph(data.get("notes",{}).get("summary",""),styles["BodyText"])]
@@ -146,6 +167,38 @@ async def export_notes(payload: str = Form(...), format: str = Form("docx")):
         SimpleDocTemplate(str(out),pagesize=letter,rightMargin=54,leftMargin=54).build(story)
     else: raise HTTPException(400,"Supported formats: srt, vtt, docx, pptx, pdf, xlsx")
     return FileResponse(out,filename=out.name)
+
+
+@router.post("/assets")
+async def export_assets(payload:str=Form(...)):
+    data=json.loads(payload);out=JOBS/"video-extracted-assets.zip"
+    with zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("transcript.txt",data.get("transcript",""));archive.writestr("subtitles.srt",data.get("srt",""));archive.writestr("notes.json",json.dumps(data.get("notes",{}),indent=2))
+        for i,item in enumerate(data.get("visuals",[]),1):
+            try:archive.writestr(f"frames/frame-{i:04}.jpg",base64.b64decode(item["image"].split(",",1)[1]))
+            except Exception:pass
+    return FileResponse(out,filename=out.name)
+
+
+@router.post("/narration")
+async def narration(text:str=Form(...),format:str=Form("mp3"),rate:float=Form(1.0)):
+    if not text.strip():raise HTTPException(400,"Add text to narrate")
+    work=Path(tempfile.mkdtemp(prefix="narration-"));wav=work/"voice.wav";out=JOBS/f"narration.{format}"
+    try:
+        if os.name=="nt":
+            safe=text[:100000].replace("'","''");target=str(wav).replace("'","''");speed=max(-10,min(10,round((rate-1)*10)))
+            script=f"Add-Type -AssemblyName System.Speech;$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;$s.Rate={speed};$s.SetOutputToWaveFile('{target}');$s.Speak('{safe}');$s.Dispose()"
+            subprocess.run(["powershell","-NoProfile","-Command",script],check=True,capture_output=True)
+        elif shutil.which("piper"):
+            subprocess.run(["piper","--output_file",str(wav)],input=text.encode(),check=True)
+        else:raise HTTPException(503,"Install a system speech voice or Piper")
+        if format=="wav":shutil.copy2(wav,out)
+        elif format=="mp3":
+            if not ffmpeg():raise HTTPException(503,"FFmpeg is required")
+            subprocess.run([ffmpeg(),"-y","-i",str(wav),"-codec:a","libmp3lame","-q:a","2",str(out)],check=True,capture_output=True)
+        else:raise HTTPException(400,"Use mp3 or wav")
+        return FileResponse(out,filename=out.name)
+    finally:shutil.rmtree(work,ignore_errors=True)
 
 
 def read_text(path: Path):
