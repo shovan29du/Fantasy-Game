@@ -69,6 +69,8 @@ function renderParty(){
  if(state.sheet){p.name=state.sheet.name||p.name;p.lv=state.sheet.calc_lv||state.sheet.level||1;p.role=`${safe(state.sheet.race||'Unknown')} · ${safe(state.sheet.profession||'Adventurer')}`;p.hp=100;p.initials=(state.sheet.name||'??').slice(0,2).toUpperCase()}
  const filled=state.characterId?1:0;
  const el=$('#partyCount');if(el)el.textContent=`${filled} / 6`;
+ const pt=$('#playerToken');if(pt){const sp=pt.querySelector('span');if(sp)sp.textContent=state.sheet?(state.sheet.name||'??').slice(0,2).toUpperCase():'?'}
+ if(!state.characterId){$('#partyList').innerHTML='<div style="padding:18px 8px;text-align:center"><p style="color:var(--muted);font-size:11px;margin:0 0 12px">No party members yet.</p><button id="goCreateCharBtn" class="add-member">+ Create Adventurer</button></div>';const b=$('#goCreateCharBtn');if(b)b.onclick=goCreateCharacter;return}
  $('#partyList').innerHTML=party.map((pt,i)=>`<div class="party-card ${i===state.selected?'active':''}" data-party="${i}"><div class="portrait">${safe(pt.initials)}</div><div><strong>${safe(pt.name)}</strong><small>${pt.role}</small><div class="hp"><i style="width:${pt.hp}%"></i></div></div><span class="level">LV ${safe(pt.lv)}</span></div>`).join('');
  $$('[data-party]').forEach(el=>el.onclick=()=>{const i=+el.dataset.party;if(i===0&&!state.characterId){goCreateCharacter();return}state.selected=i;renderParty();toast(`${party[state.selected].name} selected`)})
 }
@@ -188,6 +190,7 @@ function renderMapNodes(){
 }
 async function loadLocations(){
  const world=state.worlds[state.worldIndex]; if(!world)return;
+ $('#mapNodes').innerHTML='';
  try{state.locations=await api(`/api/worlds/${world.id}/locations`);renderMapNodes()}catch(error){state.locations=[];renderMapNodes()}
 }
 async function enterLocation(loc){
@@ -226,7 +229,7 @@ async function crossPortal(){
 
 function loadSessionFromStorage(){try{const raw=localStorage.getItem(SESSION_KEY);return raw?JSON.parse(raw):null}catch{return null}}
 function saveSessionToStorage(){localStorage.setItem(SESSION_KEY,JSON.stringify({sessionId:state.sessionId,worldId:state.worlds[0]?.id,characterId:state.characterId}))}
-function toWorldEntry(w){const locs=(w.locations||w.world_json?.locations||[]);const first=locs[0];return {id:w.id,name:w.name,ratings:w.ratings||{},reality_type:w.reality_type||'Prime Reality',space:w.space_alignment||'unknown',place:first?first.name:(w.name||'Unknown Location'),theme:'local',startX:first?first.x:50,startY:first?first.y:50}}
+function toWorldEntry(w){const locs=(w.locations||w.world_json?.locations||[]);const first=locs[0];const sp=w.space_alignment||'';const theme=sp==='sci-fi'||sp==='futuristic'?'universe':sp==='ancient_civilization'||sp==='prehistoric'?'area':'local';return {id:w.id,name:w.name,ratings:w.ratings||{},reality_type:w.reality_type||'Prime Reality',space:sp||'unknown',place:first?first.name:(w.name||'Unknown Location'),theme,startX:first?first.x:50,startY:first?first.y:50}}
 
 // ── Chat content formatter: **action**, "dialogue", 'dialogue', user: label ──
 function fmtChat(raw){
