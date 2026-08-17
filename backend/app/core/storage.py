@@ -14,7 +14,7 @@ DB_PATH = DATA_DIR / "aichat_pro.db"
 
 # Bump whenever a new entry is added to _MIGRATIONS or _TABLES so the
 # schema_version table reflects the schema the app expects.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 def get_conn():
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
@@ -202,6 +202,11 @@ _MIGRATIONS = [
     # encounter start rather than re-deriving them on every action.
     ("combat_state", "encounter_id", "INTEGER"),
     ("combat_state", "stats_json", "TEXT DEFAULT '{}'"),
+    # Multiverse character fields: origin world type (17 options), optional
+    # secondary ancestry for mixed-heritage characters, and values tracking.
+    ("characters", "origin", "TEXT DEFAULT 'Original fantasy world'"),
+    ("characters", "secondary_ancestry", "TEXT DEFAULT ''"),
+    ("characters", "values_json", "TEXT DEFAULT '{}'"),
 ]
 
 def _create_tables(conn):

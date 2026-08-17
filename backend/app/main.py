@@ -206,6 +206,9 @@ class CharacterIn(BaseModel):
     origin_world: str = ""
     reality_type: str = "Prime Reality"
     power_tier: int | None = None
+    origin: str = "Original fantasy world"
+    secondary_ancestry: str = ""
+    values_json: str = "{}"
 
 
 class ChatMessageIn(BaseModel):
@@ -572,6 +575,14 @@ def options() -> dict:
         "alignments": ALIGNMENTS,
         "imageStyles": IMAGE_STYLES,
         "presetSources": ALL_PRESET_SOURCES,
+        # Multiverse / character-origin expansion
+        "origins": multiverse.CHARACTER_ORIGINS,
+        "powerTiers": multiverse.POWER_TIERS,
+        "realityTypes": multiverse.REALITY_TYPE_NAMES,
+        "valuesAxes": multiverse.VALUES_AXES,
+        # World-scale axes (8 × 0-10 ratings)
+        "worldAxes": worldscale.WORLD_AXES,
+        "worldAxisLabels": worldscale.AXIS_LEVEL_LABELS,
     }
 
 
@@ -806,8 +817,19 @@ def _insert_character(character: dict) -> int:
                 now_iso(),
             ),
         )
+        char_id = cur.lastrowid
+        # Save fields added via schema migration (safe: columns exist after init_db).
+        conn.execute(
+            "UPDATE characters SET origin=?, secondary_ancestry=?, values_json=? WHERE id=?",
+            (
+                character.get("origin", "Original fantasy world"),
+                character.get("secondary_ancestry", ""),
+                character.get("values_json", "{}"),
+                char_id,
+            ),
+        )
         conn.commit()
-        return cur.lastrowid
+        return char_id
     finally:
         conn.close()
 

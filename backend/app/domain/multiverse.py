@@ -9,6 +9,39 @@ import random
 from . import weapons as _weapons
 from . import worldscale as _worldscale
 
+# 17 character origin types — where the character came from before this story.
+CHARACTER_ORIGINS = [
+    "Original fantasy world",
+    "Historical Earth",
+    "Modern Earth",
+    "Zombie apocalypse",
+    "Supernatural hidden world",
+    "Cyberpunk megacity",
+    "Alien civilization",
+    "Spacefaring future",
+    "Anime-inspired heroic world",
+    "Alternate history",
+    "Parallel reality",
+    "Mirror universe",
+    "Destroyed timeline",
+    "Magical version of Earth",
+    "Simulation",
+    "Divine realm",
+    "Unknown universe",
+]
+
+# Values axes for character morality tracking (each stored as 0-100, 50 = neutral).
+VALUES_AXES = {
+    "mercy_vs_ruthlessness": "Mercy (100) vs Ruthlessness (0)",
+    "order_vs_freedom": "Order (100) vs Freedom (0)",
+    "humanity_vs_corruption": "Humanity (100) vs Corruption (0)",
+    "nature_vs_industry": "Nature (100) vs Industry (0)",
+    "faith_vs_reason": "Faith (100) vs Reason (0)",
+    "loyalty_vs_ambition": "Loyalty (100) vs Ambition (0)",
+    "secrecy_vs_truth": "Secrecy (100) vs Truth (0)",
+    "individual_vs_collective": "Individual (100) vs Collective (0)",
+}
+
 REALITY_TYPES = {
     "Prime Reality": "The campaign's original reference universe.",
     "Alternate Reality": "History changed at a particular event.",
