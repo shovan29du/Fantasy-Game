@@ -197,6 +197,102 @@
       </section>
       <section class="studio-card library-card"><div class="card-title"><b>Saved characters</b><button id="refreshCharacters">↻</button></div><div id="characterLibrary" class="entity-list"><div class="empty-state">Loading character archive...</div></div></section>
     </div>
+
+    <!-- ═══ Extended Character Creation (v6) ═══ -->
+    <details id="extCharDetails" style="margin:0 0 24px">
+      <summary style="cursor:pointer;padding:12px 16px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font-weight:700;user-select:none;list-style:none;color:var(--gold)">⊕ Full Character Creation — Extended Fields</summary>
+      <div class="workspace-grid" style="margin-top:16px">
+        <section class="studio-card wide-card">
+          <div class="card-title" style="flex-wrap:wrap;gap:8px">
+            <div><b>Extended Character Creation</b><small style="margin-left:8px">Stats · Multi-select traits · Measurements</small></div>
+            <nav style="display:flex;gap:6px" id="v6TabNav">
+              <button class="ghost" id="v6tabSingle" style="font-size:10px;padding:4px 10px;border-color:var(--gold);color:var(--gold)">Single Character</button>
+              <button class="ghost" id="v6tabMulti" style="font-size:10px;padding:4px 10px">Multi (up to 10)</button>
+            </nav>
+          </div>
+
+          <!-- Single character tab -->
+          <div id="v6tab-single">
+            <form id="characterFormV6" class="studio-form">
+              <div class="wide"><b class="section-tag">IDENTITY</b></div>
+              <label class="wide">Character name<input name="name" required placeholder="Ari Solwyn"></label>
+              <label>Age<input name="age" type="number" min="0" max="10000" value="25"></label>
+              <label>Gender<select name="gender" id="v6genderSelect"></select></label>
+              <label>Race / ancestry<select name="race" id="v6raceSelect"></select></label>
+              <label>Secondary ancestry<select name="secondary_ancestry" id="v6secAncestrySelect"><option value="">— None —</option></select></label>
+              <label>Alignment<select name="alignment" id="v6alignSelect"></select></label>
+              <label>Background<select name="background" id="v6bgSelect"></select></label>
+              <label>Profession<select name="profession" id="v6profSelect"></select></label>
+              <label>Level<input name="level" type="number" min="1" max="20" value="1"></label>
+              <label>Character origin<select name="origin" id="v6originSelect"></select></label>
+              <label>Power tier<select name="power_tier" id="v6ptSelect"></select></label>
+
+              <div class="wide"><b class="section-tag">APPEARANCE</b></div>
+              <label>Skin<select name="skin" id="v6skinSelect"></select></label>
+              <label>Hair<select name="hair" id="v6hairSelect"></select></label>
+              <label>Eyes<select name="eyes" id="v6eyesSelect"></select></label>
+              <label>Body type<select name="body_type" id="v6bodySelect"></select></label>
+              <label>Height<input name="height" id="v6heightInp" placeholder='5&apos;9"'></label>
+              <div class="wide" style="margin:-6px 0 4px"><button type="button" id="v6randHeight" class="ghost" style="font-size:10px">🎲 Random height</button></div>
+
+              <div class="wide"><b class="section-tag">LANGUAGES <small>(Ctrl/⌘+click to pick multiple)</small></b></div>
+              <div class="wide"><select name="languages" id="v6langSelect" multiple size="4" class="v6-multi"></select></div>
+
+              <div class="wide"><b class="section-tag">MEASUREMENTS</b></div>
+              <label>Bust / Chest<input name="bust_chest" id="v6bust" placeholder='36"'></label>
+              <label>Waist<input name="waist" id="v6waist" placeholder='28"'></label>
+              <label>Hips<input name="hips" id="v6hips" placeholder='36"'></label>
+              <div class="wide" style="margin:-6px 0 4px"><button type="button" id="v6randMeasure" class="ghost" style="font-size:10px">🎲 Random measurements</button></div>
+
+              <div class="wide"><b class="section-tag">COMBAT</b></div>
+              <div class="wide"><label>Weapon training<select name="weapon_training" id="v6weaponSelect" multiple size="4" class="v6-multi"></select></label></div>
+              <div class="wide"><label>Magic type<select name="magic_type" id="v6magicSelect" multiple size="4" class="v6-multi"></select></label></div>
+              <div class="wide"><label>Power system<select name="power_system" id="v6powerSelect" multiple size="3" class="v6-multi"></select></label></div>
+
+              <div class="wide"><b class="section-tag">STATS (1–20)</b></div>
+              <label>Strength <span id="v6strVal">10</span><input type="range" name="strength" min="1" max="20" value="10" oninput="document.getElementById('v6strVal').textContent=this.value"></label>
+              <label>Dexterity <span id="v6dexVal">10</span><input type="range" name="dexterity" min="1" max="20" value="10" oninput="document.getElementById('v6dexVal').textContent=this.value"></label>
+              <label>Intelligence <span id="v6intVal">10</span><input type="range" name="intelligence" min="1" max="20" value="10" oninput="document.getElementById('v6intVal').textContent=this.value"></label>
+              <label>Wisdom <span id="v6wisVal">10</span><input type="range" name="wisdom" min="1" max="20" value="10" oninput="document.getElementById('v6wisVal').textContent=this.value"></label>
+              <label>Constitution <span id="v6conVal">10</span><input type="range" name="constitution" min="1" max="20" value="10" oninput="document.getElementById('v6conVal').textContent=this.value"></label>
+              <label>Speed <span id="v6spdVal">10</span><input type="range" name="speed" min="1" max="20" value="10" oninput="document.getElementById('v6spdVal').textContent=this.value"></label>
+              <label>Luck <span id="v6lckVal">10</span><input type="range" name="luck" min="1" max="20" value="10" oninput="document.getElementById('v6lckVal').textContent=this.value"></label>
+              <label>Charisma <span id="v6chaVal">10</span><input type="range" name="charisma_stat" min="1" max="20" value="10" oninput="document.getElementById('v6chaVal').textContent=this.value"></label>
+              <label>Looks <span id="v6lksVal">5</span><input type="range" name="looks" min="1" max="10" value="5" oninput="document.getElementById('v6lksVal').textContent=this.value"></label>
+
+              <div class="wide"><b class="section-tag">PERSONALITY</b></div>
+              <div class="wide"><label>Emotion styles<select name="emotion_styles" id="v6emotionSelect" multiple size="4" class="v6-multi"></select></label></div>
+              <div class="wide"><label>Traits<select name="traits" id="v6traitsSelect" multiple size="4" class="v6-multi"></select></label></div>
+              <div class="wide"><label>Quirks<select name="quirks" id="v6quirksSelect" multiple size="3" class="v6-multi"></select></label></div>
+              <div class="wide"><label>Skills<select name="skills" id="v6skillsSelect" multiple size="5" class="v6-multi"></select></label></div>
+              <label class="wide">Backstory<textarea name="backstory" rows="4" placeholder="Their history, defining moment, hidden debt..."></textarea></label>
+              <label class="wide">Scenario<textarea name="scenario" rows="2" placeholder="Opening scene or current situation..."></textarea></label>
+              <label class="wide">Goals<textarea name="goals" rows="2" placeholder="What do they want, and what will they sacrifice?"></textarea></label>
+
+              <div class="wide"><b class="section-tag">TAGS</b></div>
+              <div class="wide"><select name="tags" id="v6tagsSelect" multiple size="5" class="v6-multi"></select></div>
+
+              <div class="form-actions wide">
+                <button type="button" id="rndCharV6" class="ghost">🎲 Randomize All</button>
+                <button type="submit" class="gold">💾 Save character</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Multi-character tab -->
+          <div id="v6tab-multi" hidden>
+            <div class="studio-form">
+              <label>How many?<input type="number" id="v6multiNum" min="2" max="10" value="3" style="width:80px"></label>
+              <label class="wide">Group / party name<input id="v6groupName" value="The Party"></label>
+              <div class="form-actions wide" style="margin-top:0"><button type="button" id="v6genGroup" class="gold">🎲 Generate Group</button></div>
+              <div id="v6multiResults" style="margin-top:12px"></div>
+              <div id="v6multiSaveRow" hidden style="margin-top:8px"><button type="button" id="v6saveAll" class="gold">💾 Save All Characters</button></div>
+            </div>
+          </div>
+
+        </section>
+      </div>
+    </details>
   </section>
 
   <section id="view-explore" class="app-view workspace-view">

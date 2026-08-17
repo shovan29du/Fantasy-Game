@@ -790,7 +790,7 @@ $$('.side-nav button').forEach(button=>button.onclick=()=>openView(button.datase
 
 let studioOptions={};
 function fillSelect(selector,values){const el=$(selector);if(!el)return;const list=Array.isArray(values)?values:Object.keys(values||{});el.innerHTML=list.map(value=>`<option value="${safe(value)}">${safe(value)}</option>`).join('')}
-async function loadCharacterStudio(){try{if(!Object.keys(studioOptions).length){studioOptions=await api('/api/options');fillSelect('#raceSelect',studioOptions.races);fillSelect('#professionSelect',studioOptions.professions);fillSelect('#backgroundSelect',studioOptions.backgrounds);fillSelect('#alignmentSelect',studioOptions.alignments);fillSelect('#originSelect',studioOptions.origins||[]);const el=$('#secondaryAncestrySelect');if(el){el.innerHTML='<option value="">— None —</option>';(Object.keys(studioOptions.races||{})).forEach(r=>{el.innerHTML+=`<option value="${safe(r)}">${safe(r)}</option>`})}const ptEl=$('#powerTierSelect');if(ptEl){ptEl.innerHTML=(studioOptions.powerTiers||[]).map(t=>`<option value="${t.tier}">${t.tier} · ${safe(t.name)} — ${safe(t.scope)}</option>`).join('')}}const characters=await api('/api/characters');$('#characterLibrary').innerHTML=characters.length?characters.map(c=>{const av=c.photo_path?`<img src="${safe(c.photo_path)}" class="char-avatar-img" alt="portrait">`:`<span class="entity-avatar">${safe((c.name||'?').slice(0,2).toUpperCase())}</span>`;const isActive=String(c.id)===String(state.characterId);return`<article class="entity-card">${av}<div><b>${safe(c.name)}</b><small>${safe(c.gender?c.gender+' · ':'')}${safe(c.race||'Unknown ancestry')} · ${safe(c.profession||'Adventurer')}</small></div><em>LV ${safe(c.level||1)}</em><button data-use-char="${c.id}" class="ghost" style="font-size:9px;padding:3px 8px;${isActive?'color:var(--gold);border-color:var(--gold)':''}">${isActive?'Active':'Use'}</button></article>`}).join(''):'<div class="empty-state">No saved characters yet. Create your first companion.</div>';$$('[data-use-char]').forEach(btn=>btn.onclick=async()=>{const cid=+btn.dataset.useChar;if(state.characterId===cid)return;state.characterId=cid;await refreshCharacterState();renderParty();renderQuests();loadCharacterStudio();toast('Adventurer switched — ready for play')})}catch(error){$('#characterLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
+async function loadCharacterStudio(){try{if(!Object.keys(studioOptions).length){studioOptions=await api('/api/options');fillSelect('#raceSelect',studioOptions.races);fillSelect('#professionSelect',studioOptions.professions);fillSelect('#backgroundSelect',studioOptions.backgrounds);fillSelect('#alignmentSelect',studioOptions.alignments);fillSelect('#originSelect',studioOptions.origins||[]);const el=$('#secondaryAncestrySelect');if(el){el.innerHTML='<option value="">— None —</option>';(Object.keys(studioOptions.races||{})).forEach(r=>{el.innerHTML+=`<option value="${safe(r)}">${safe(r)}</option>`})}const ptEl=$('#powerTierSelect');if(ptEl){ptEl.innerHTML=(studioOptions.powerTiers||[]).map(t=>`<option value="${t.tier}">${t.tier} · ${safe(t.name)} — ${safe(t.scope)}</option>`).join('')}initCharFormV6();}const characters=await api('/api/characters');$('#characterLibrary').innerHTML=characters.length?characters.map(c=>{const av=c.photo_path?`<img src="${safe(c.photo_path)}" class="char-avatar-img" alt="portrait">`:`<span class="entity-avatar">${safe((c.name||'?').slice(0,2).toUpperCase())}</span>`;const isActive=String(c.id)===String(state.characterId);return`<article class="entity-card">${av}<div><b>${safe(c.name)}</b><small>${safe(c.gender?c.gender+' · ':'')}${safe(c.race||'Unknown ancestry')} · ${safe(c.profession||'Adventurer')}</small></div><em>LV ${safe(c.level||1)}</em><button data-use-char="${c.id}" class="ghost" style="font-size:9px;padding:3px 8px;${isActive?'color:var(--gold);border-color:var(--gold)':''}">${isActive?'Active':'Use'}</button></article>`}).join(''):'<div class="empty-state">No saved characters yet. Create your first companion.</div>';$$('[data-use-char]').forEach(btn=>btn.onclick=async()=>{const cid=+btn.dataset.useChar;if(state.characterId===cid)return;state.characterId=cid;await refreshCharacterState();renderParty();renderQuests();loadCharacterStudio();toast('Adventurer switched — ready for play')})}catch(error){$('#characterLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
 $('#characterForm').onsubmit=async event=>{
  event.preventDefault();
  const formEl=event.currentTarget; // native currentTarget is cleared once we `await`, so capture it now
@@ -1359,3 +1359,213 @@ if(_autoGenBtn)_autoGenBtn.onclick=async()=>{
 
 fillPortraitStyles();openView('play');
 initPlay();
+
+// ═══════════════════════════════════════════════════
+// Extended Character Creation — v6 System
+// ═══════════════════════════════════════════════════
+const V6_WEAPON_TYPES=["Sword","Greatsword","Rapier","Katana","Scimitar","Bow","Longbow","Crossbow","Gun","Rifle","Dual Pistols","Staff","Wand","Sceptre","Spear","Halberd","Trident","Javelin","Martial Arts","Boxing","Kickboxing","Magic Weapon","Enchanted Blade","Spirit Weapon","Dual Weapons","Dual Swords","Dual Daggers","Axe","Battleaxe","Hammer","War Hammer","Dagger","Hidden Blade","Throwing Knives","Whip","Chain Whip","Flail","Scythe","Nunchaku","Tonfas","Shield + Sword","Zanpakuto","Keyblade","Gunblade","Claws","Gauntlets","Fists","Phaser","Staff Weapon","Zat'nik'tel","Bat'leth","Custom"];
+const V6_MAGIC_TYPES=["Fire","Water","Earth","Wind","Lightning","Ice","Light","Dark","Healing","Summoning","Necromancy","Chaos","Sound","Divine","Wood","Curse","Death","Undead","Poison","Metal","Gravity","Time","Space","Blood","Nature","Psychic","Illusion","Enchantment","Divination","Abjuration","Transmutation","Conjuration","Shadow","Storm","Lava","Crystal","Sand","Void","Soul","Spirit","Rune","Arcane","Celestial","Infernal","Fey","Dream","Astral","Custom"];
+const V6_POWER_SYSTEMS=["Mana","Chakra","Qi / Ki","Spiritual Energy","Reiatsu","Soul Ring (Soul Land)","Devil Fruit (One Piece)","Guild Magic (Fairy Tail)","Haki","Nen (HxH)","Cursed Energy (JJK)","Breathing (Demon Slayer)","Alchemy (FMA)","Stands (JoJo)","The Force","Biotics","Aura (RWBY)","Domain Expansion","Quirk (MHA)","Psionic","Naquadah Enhanced","Ancient Gene","Custom"];
+const V6_EMOTION_STYLES=["Friendly","Serious","Mysterious","Romantic","Aggressive","Wise","Playful","Naughty","Confident","Calculative","Carefree","Mischievous","Bold","Strategic","Relaxed","Seductive","Cold","Warm","Sarcastic","Shy","Dominant","Submissive","Protective","Jealous","Tsundere","Yandere","Kuudere","Lustful","Teasing","Sadistic","Masochistic"];
+const V6_TRAITS_LIST=["Alert","Athlete","Actor","Charger","Defensive Duelist","Dual Wielder","Durable","Elemental Adept","Grappler","Great Weapon Master","Healer","Heavy Armour Master","Inspiring Leader","Keen Mind","Lucky","Mage Slayer","Magic Initiate","Mobile","Observant","Polearm Master","Resilient","Savage Attacker","Sentinel","Sharpshooter","Shield Master","Skilled","Skulker","Spell Sniper","Tavern Brawler","Tough","War Caster","Weapon Master","Elemental Affinity","Quick Reflexes","Iron Will","Silver Tongue","Beast Bond","Shadow Walker","Battle Instinct","Natural Leader","Tactical Mind","Berserker Rage","Eagle Eye","Cat-like Reflexes","Stone Skin","Night Vision","Sixth Sense","Photographic Memory","Fearless","Empathic","Intimidating Presence","Danger Sense","Brave","Custom"];
+const V6_QUIRKS_LIST=["Talks to self","Collects oddities","Never sits still","Always humming","Laughs at danger","Superstitious","Compulsive liar","Always late","Overly polite","Talks to animals","Collects rare objects","Sleeps very little","Eats constantly","Speaks in riddles","Whistles when nervous","Counts everything","Afraid of heights","Loves bad puns","Never removes gloves","Narrates own actions","Dramatic entrances","Afraid of the dark","Hoards food","Talks in third person","Refuses to lie","Custom"];
+const V6_SKILLS_LIST=["Acrobatics","Animal Handling","Arcana","Athletics","Deception","History","Insight","Intimidation","Investigation","Medicine","Nature","Perception","Performance","Persuasion","Religion","Sleight of Hand","Stealth","Survival","Cooking","Blacksmithing","Alchemy","Herbalism","Lockpicking","Enchanting","Cartography","Sailing","Riding","Climbing","Swimming","Tracking","First Aid","Negotiation","Gambling","Disguise","Potion Brewing","Beast Taming","Strategy","Leadership","Hacking","Programming","Engineering","Piloting","Diplomacy","Espionage","Seduction","Custom"];
+const V6_CHAR_TAGS=["Mom","Daughter","Wife","Girlfriend","Sister","Aunt","Cousin","Grandmother","Boyfriend","Husband","Father","Brother","Son","Uncle","Grandfather","Fiance(e)","Crush","Childhood Friend","Bestie","Rival","Frenemy","Co-worker","Boss","Classmate","Teacher","Student","Mentor","Apprentice","Tsundere","Yandere","Kuudere","Bad Boy","Bad Girl","Good Girl","Good Boy","Nerd","Jock","Goth","Punk","Adult","Mature","Fantasy","Sci-Fi","Modern","Historical","Supernatural","Mafia","Crime","Mystery","Horror","Romance","Drama","Villain","Anti-Hero","Companion","Royalty","Alien","Robot","Angel","Demon","Vampire","Werewolf","Ghost","Witch","God/Goddess","Neko","Kitsune","Adventure","Family","Forbidden","Taboo","Maid","Butler","Nurse","Custom"];
+const V6_BODY_TYPES=["Slim","Athletic","Average","Muscular","Curvy","Voluptuous","Petite","Tall","Short","Stocky","Elegant","Rugged","Thicc","Toned","Hourglass","Pear","Slender","Plus-size","Statuesque","Wiry","Custom"];
+const V6_GENDERS=["Male","Female","Non-binary","Androgynous","Gender-fluid","Custom"];
+const V6_LANGUAGES=["Common","Elvish","Dwarvish","Draconic","Giant","Gnomish","Halfling","Infernal","Orc","Celestial","Sylvan","Undercommon","Primordial","Aquan","Auran","Abyssal","Deep Speech","Druidic","Thieves' Cant","Vulcan","Klingon","Goa'uld","Ancient","Minbari","Narn","Centauri","Gith"];
+const V6_SKIN_OPTS=["Fair","Pale","Tan","Brown","Dark","Olive","Golden","Ebony","Red","Purple","Blue","Grey","Green","Bronze","Copper","Silver","Orange","Scaled","Pale Gold","Luminous","Spotted","Custom"];
+const V6_HAIR_OPTS=["Black","Brown","Blonde","Red","Auburn","Grey","White","Silver","Gold","Copper","Platinum","Blue","Purple","Pink","Orange","Green","None","Custom"];
+const V6_EYES_OPTS=["Brown","Blue","Green","Grey","Hazel","Amber","Gold","Silver","Violet","Red","Black","All-black","Heterochromic","Glowing","Custom"];
+
+let v6Inited=false;
+function fillV6Sel(id,arr){const el=$(id);if(!el)return;el.innerHTML=arr.map(v=>`<option value="${safe(v)}">${safe(v)}</option>`).join('');}
+function setMultiSel(id,vals){const el=$(id);if(!el)return;const s=new Set(vals||[]);Array.from(el.options).forEach(o=>o.selected=s.has(o.value));}
+function pickRnd(arr){return arr[Math.floor(Math.random()*arr.length)];}
+function pickN(arr,n){const s=[...arr];for(let i=s.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[s[i],s[j]]=[s[j],s[i]];}return s.slice(0,n);}
+
+function v6BuildRandom(){
+  const races=Object.keys(studioOptions.races||{});
+  const race=pickRnd(races)||'Human';
+  const g=pickRnd(V6_GENDERS.slice(0,3));
+  const profs=studioOptions.professions||[];
+  const bgs=studioOptions.backgrounds||[];
+  const aligns=studioOptions.alignments||[];
+  const origins=studioOptions.origins||[];
+  const names_m=["Aldric","Kael","Theron","Dax","Riven","Zane","Caspian","Fenris","Draven","Orion","Lucian","Talon","Ash","Blaze","Rex"];
+  const names_f=["Lyra","Seraphina","Aria","Nova","Elara","Freya","Nyx","Zara","Kira","Luna","Ember","Sage","Ivy","Raven","Jade"];
+  const names_n=["Morgan","Rowan","Quinn","Avery","Phoenix","River","Storm","Wren","Sky","Onyx","Echo","Vale","Aspen","Kai"];
+  const nl=g==='Male'?names_m:g==='Female'?names_f:names_n;
+  const stat=()=>6+Math.floor(Math.random()*13);
+  return{
+    name:pickRnd(nl)+'_'+(10+Math.floor(Math.random()*90)),
+    race,gender:g,age:18+Math.floor(Math.random()*182),
+    alignment:pickRnd(aligns)||'True Neutral',
+    background:pickRnd(bgs)||'Hermit',
+    profession:pickRnd(profs)||'Adventurer',
+    origin:pickRnd(origins)||'Original fantasy world',
+    power_tier:Math.floor(Math.random()*5),
+    skin:pickRnd(V6_SKIN_OPTS.slice(0,-1)),
+    hair:pickRnd(V6_HAIR_OPTS.slice(0,-1)),
+    eyes:pickRnd(V6_EYES_OPTS.slice(0,-1)),
+    body_type:pickRnd(V6_BODY_TYPES.slice(0,-1)),
+    height:`${4+Math.floor(Math.random()*3)}'${Math.floor(Math.random()*12)}"`,
+    bust_chest:`${28+Math.floor(Math.random()*16)}"`,
+    waist:`${22+Math.floor(Math.random()*14)}"`,
+    hips:`${30+Math.floor(Math.random()*16)}"`,
+    languages:['Common'],
+    strength:stat(),dexterity:stat(),intelligence:stat(),wisdom:stat(),constitution:stat(),speed:stat(),luck:stat(),charisma_stat:stat(),
+    looks:4+Math.floor(Math.random()*6),
+    weapon_training:pickN(V6_WEAPON_TYPES.slice(0,-1),2),
+    magic_type:pickN(V6_MAGIC_TYPES.slice(0,-1),2),
+    power_system:[pickRnd(V6_POWER_SYSTEMS.slice(0,-1))],
+    emotion_styles:pickN(V6_EMOTION_STYLES,2),
+    traits:pickN(V6_TRAITS_LIST.slice(0,-1),2),
+    quirks:[pickRnd(V6_QUIRKS_LIST.slice(0,-1))],
+    skills:pickN(V6_SKILLS_LIST.slice(0,-1),3),
+    tags:pickN(V6_CHAR_TAGS.slice(0,-1),3),
+    backstory:'',scenario:'',goals:''
+  };
+}
+
+function v6FillForm(ch){
+  const form=$('#characterFormV6');if(!form)return;
+  const set=(name,val)=>{const e=form.elements[name];if(e&&e.type!=='range')e.value=val??'';};
+  ['name','age','height','bust_chest','waist','hips','backstory','scenario','goals','gender','race','secondary_ancestry','alignment','background','profession','origin','skin','hair','eyes','body_type'].forEach(k=>set(k,ch[k]??''));
+  const pt=$('#v6ptSelect');if(pt)pt.value=ch.power_tier??0;
+  ['strength','dexterity','intelligence','wisdom','constitution','speed','luck','charisma_stat','looks'].forEach(s=>{
+    const e=form.elements[s];if(e&&e.type==='range'){e.value=ch[s]??10;e.dispatchEvent(new Event('input'));}
+  });
+  setMultiSel('#v6langSelect',ch.languages);
+  setMultiSel('#v6weaponSelect',ch.weapon_training);
+  setMultiSel('#v6magicSelect',ch.magic_type);
+  setMultiSel('#v6powerSelect',ch.power_system);
+  setMultiSel('#v6emotionSelect',ch.emotion_styles);
+  setMultiSel('#v6traitsSelect',ch.traits);
+  setMultiSel('#v6quirksSelect',ch.quirks);
+  setMultiSel('#v6skillsSelect',ch.skills);
+  setMultiSel('#v6tagsSelect',ch.tags);
+}
+
+function initCharFormV6(){
+  if(v6Inited)return;
+  const form=$('#characterFormV6');if(!form)return;
+  v6Inited=true;
+  // Populate selects from studioOptions + static lists
+  fillV6Sel('#v6genderSelect',V6_GENDERS);
+  fillV6Sel('#v6raceSelect',Object.keys(studioOptions.races||{}));
+  const sec=$('#v6secAncestrySelect');if(sec){sec.innerHTML='<option value="">— None —</option>';Object.keys(studioOptions.races||{}).forEach(r=>{sec.innerHTML+=`<option value="${safe(r)}">${safe(r)}</option>`;});}
+  fillV6Sel('#v6alignSelect',studioOptions.alignments||[]);
+  fillV6Sel('#v6bgSelect',studioOptions.backgrounds||[]);
+  fillV6Sel('#v6profSelect',studioOptions.professions||[]);
+  fillV6Sel('#v6originSelect',studioOptions.origins||[]);
+  const pt=$('#v6ptSelect');if(pt){pt.innerHTML=(studioOptions.powerTiers||[]).map(t=>`<option value="${t.tier}">${t.tier} · ${safe(t.name)}</option>`).join('');}
+  fillV6Sel('#v6skinSelect',V6_SKIN_OPTS);
+  fillV6Sel('#v6hairSelect',V6_HAIR_OPTS);
+  fillV6Sel('#v6eyesSelect',V6_EYES_OPTS);
+  fillV6Sel('#v6bodySelect',V6_BODY_TYPES);
+  fillV6Sel('#v6langSelect',V6_LANGUAGES);
+  fillV6Sel('#v6weaponSelect',V6_WEAPON_TYPES);
+  fillV6Sel('#v6magicSelect',V6_MAGIC_TYPES);
+  fillV6Sel('#v6powerSelect',V6_POWER_SYSTEMS);
+  fillV6Sel('#v6emotionSelect',V6_EMOTION_STYLES);
+  fillV6Sel('#v6traitsSelect',V6_TRAITS_LIST);
+  fillV6Sel('#v6quirksSelect',V6_QUIRKS_LIST);
+  fillV6Sel('#v6skillsSelect',V6_SKILLS_LIST);
+  fillV6Sel('#v6tagsSelect',V6_CHAR_TAGS);
+}
+
+// v6 tab switching
+const _v6tabSingle=$('#v6tabSingle'),_v6tabMulti=$('#v6tabMulti');
+if(_v6tabSingle&&_v6tabMulti){
+  _v6tabSingle.onclick=()=>{$('#v6tab-single').hidden=false;$('#v6tab-multi').hidden=true;_v6tabSingle.style.borderColor='var(--gold)';_v6tabSingle.style.color='var(--gold)';_v6tabMulti.style.borderColor='';_v6tabMulti.style.color='';};
+  _v6tabMulti.onclick=()=>{$('#v6tab-single').hidden=true;$('#v6tab-multi').hidden=false;_v6tabMulti.style.borderColor='var(--gold)';_v6tabMulti.style.color='var(--gold)';_v6tabSingle.style.borderColor='';_v6tabSingle.style.color='';};
+}
+
+// v6 form submit
+const _v6form=$('#characterFormV6');
+if(_v6form)_v6form.onsubmit=async event=>{
+  event.preventDefault();
+  const fd=new FormData(event.currentTarget);
+  const payload=Object.fromEntries(fd.entries());
+  const multiKeys=['weapon_training','magic_type','power_system','traits','quirks','emotion_styles','languages','skills','tags'];
+  multiKeys.forEach(k=>{payload[k]=fd.getAll(k);});
+  payload.age=Number(payload.age||25);
+  payload.level=Number(payload.level||1);
+  payload.looks=Number(payload.looks||5);
+  payload.power_tier=Number(payload.power_tier??0);
+  ['strength','dexterity','intelligence','wisdom','constitution','speed','luck','charisma_stat'].forEach(k=>{payload[k]=Number(payload[k]||10);});
+  payload.origin_world=state.worlds[state.worldIndex]?.name||'Aethoria Prime';
+  try{
+    const created=await api('/api/characters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    toast(`${payload.name} saved`);
+    event.currentTarget.reset();
+    // Reset range spans
+    ['str','dex','int','wis','con','spd','lck','cha'].forEach((k,i)=>{const id='v6'+k+'Val';const el=$(id);if(el)el.textContent='10';});
+    $('#v6lksVal') && ($('#v6lksVal').textContent='5');
+    await loadCharacterStudio();
+    if(created?.id&&!state.characterId){state.characterId=created.id;await refreshCharacterState();renderParty();renderQuests();toast(`${payload.name} is now your active adventurer`);}
+  }catch(err){toast(err.message);}
+};
+
+// v6 randomize
+const _rndV6=$('#rndCharV6');
+if(_rndV6)_rndV6.onclick=()=>{if(!Object.keys(studioOptions).length){toast('Loading options…');return;}v6FillForm(v6BuildRandom());toast('Random character generated');};
+
+// v6 random height button
+const _v6rh=$('#v6randHeight');
+if(_v6rh)_v6rh.onclick=()=>{
+  const raceEl=$('#v6raceSelect');const race=raceEl?raceEl.value:'Human';
+  const h=48+Math.floor(Math.random()*36);
+  const inp=$('#v6heightInp');if(inp)inp.value=`${Math.floor(h/12)}'${h%12}"`;
+};
+
+// v6 random measurements
+const _v6rm=$('#v6randMeasure');
+if(_v6rm)_v6rm.onclick=()=>{
+  const b=$('#v6bust'),w=$('#v6waist'),h=$('#v6hips');
+  if(b)b.value=`${28+Math.floor(Math.random()*16)}"`;
+  if(w)w.value=`${22+Math.floor(Math.random()*14)}"`;
+  if(h)h.value=`${30+Math.floor(Math.random()*16)}"`;
+};
+
+// v6 multi-character generation
+let _v6multiChars=[];
+const _v6gen=$('#v6genGroup');
+if(_v6gen)_v6gen.onclick=()=>{
+  if(!Object.keys(studioOptions).length){toast('Loading options…');return;}
+  const num=Math.min(10,Math.max(2,Number($('#v6multiNum').value)||3));
+  const group=$('#v6groupName').value||'The Party';
+  _v6multiChars=Array.from({length:num},(_,i)=>{const ch=v6BuildRandom();ch.scenario=`Member of: ${group}`;return ch;});
+  const res=$('#v6multiResults');
+  if(!res)return;
+  res.innerHTML=_v6multiChars.map((ch,i)=>`
+    <div class="v6-multi-card">
+      <h4>${i+1}. ${safe(ch.name)} — ${safe(ch.race)} ${safe(ch.gender)} ${safe(ch.profession)}</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px;color:var(--muted)">
+        <span>Alignment: ${safe(ch.alignment)}</span><span>Level: 1</span>
+        <span>STR ${ch.strength} DEX ${ch.dexterity} INT ${ch.intelligence}</span>
+        <span>WIS ${ch.wisdom} CON ${ch.constitution} CHA ${ch.charisma_stat}</span>
+        <span>Weapons: ${(ch.weapon_training||[]).join(', ')||'—'}</span>
+        <span>Magic: ${(ch.magic_type||[]).join(', ')||'—'}</span>
+      </div>
+    </div>
+  `).join('');
+  const sr=$('#v6multiSaveRow');if(sr)sr.hidden=false;
+};
+
+const _v6saveAll=$('#v6saveAll');
+if(_v6saveAll)_v6saveAll.onclick=async()=>{
+  if(!_v6multiChars.length){toast('Generate a group first');return;}
+  _v6saveAll.disabled=true;_v6saveAll.textContent='Saving…';
+  try{
+    for(const ch of _v6multiChars){
+      ch.origin_world=state.worlds[state.worldIndex]?.name||'Aethoria Prime';
+      await api('/api/characters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ch)});
+    }
+    toast(`${_v6multiChars.length} characters saved`);
+    _v6multiChars=[];$('#v6multiResults').innerHTML='';$('#v6multiSaveRow').hidden=true;
+    await loadCharacterStudio();
+  }catch(err){toast(err.message);}
+  finally{_v6saveAll.disabled=false;_v6saveAll.textContent='💾 Save All Characters';}
+};
