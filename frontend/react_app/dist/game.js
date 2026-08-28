@@ -191,7 +191,11 @@ function renderMapNodes(){
 async function loadLocations(){
  const world=state.worlds[state.worldIndex]; if(!world)return;
  $('#mapNodes').innerHTML='';
- try{state.locations=await api(`/api/worlds/${world.id}/locations`);renderMapNodes()}catch(error){state.locations=[];renderMapNodes()}
+ try{
+  state.locations=await api(`/api/worlds/${world.id}/locations`);
+  renderMapNodes();
+  if(state.pendingStartScene&&state.locations.length){state.pendingStartScene=false;enterLocation(state.locations[0]);}
+ }catch(error){state.locations=[];renderMapNodes()}
 }
 async function enterLocation(loc){
  const world=state.worlds[state.worldIndex];
@@ -203,7 +207,9 @@ async function enterLocation(loc){
  if(state.locationImageCache[loc.id]){img.src=state.locationImageCache[loc.id];img.style.opacity='1';loading.style.display='none';return}
  img.style.opacity='0';
  const character=state.sheet;
- const prompt=`${world?.name||'A realm'}, ${loc.terrain} region called ${loc.name}. ${loc.description||''} A ${character?.race||'traveller'} ${character?.profession||'adventurer'} named ${character?.name||'the hero'} stands in the scene.`;
+ const useOpening=state.openingText&&!state.openingTextUsed&&state.locations[0]&&loc.id===state.locations[0].id;
+ if(useOpening)state.openingTextUsed=true;
+ const prompt=useOpening?`${world?.name||'A realm'}: ${state.openingText.slice(0,280)}. The scene shows ${loc.terrain} terrain at ${loc.name}.`:`${world?.name||'A realm'}, ${loc.terrain} region called ${loc.name}. ${loc.description||''} A ${character?.race||'traveller'} ${character?.profession||'adventurer'} named ${character?.name||'the hero'} stands in the scene.`;
  try{
   const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Cinematic',width:1024,height:576,save_to_chat:false})});
   const url=result.url||result.path;
@@ -545,6 +551,7 @@ async function beginGame(payload){
   }
   try{await api('/api/chat/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'assistant',content:opening,session_id:state.sessionId})})}catch{}
   await loadChatHistory();
+  state.openingText=opening;state.openingTextUsed=false;state.pendingStartScene=true;
   updateWorld();move(world.startX??50,world.startY??50);renderParty();renderQuests();
   updateClock();startClockTick();
   toast(`New game started: ${world.name}`);
