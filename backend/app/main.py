@@ -1394,6 +1394,27 @@ def world_locations(world_id: int) -> list[dict]:
     return get_locations(world_id)
 
 
+class LocationIn(BaseModel):
+    name: str
+    terrain: str = "Plains"
+    loc_type: str = "area"
+    description: str = ""
+    x: float = 50.0
+    y: float = 50.0
+
+@app.post("/api/worlds/{world_id}/locations")
+def add_world_location(world_id: int, loc: LocationIn):
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO world_locations (world_id, name, loc_type, terrain, description, x, y) VALUES (?,?,?,?,?,?,?)",
+        (world_id, loc.name, loc.loc_type, loc.terrain, loc.description, int(loc.x), int(loc.y))
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM world_locations WHERE id=?", (cur.lastrowid,)).fetchone()
+    conn.close()
+    return dict(row)
+
+
 @app.post("/api/worlds/{world_id}/tick")
 def world_tick(world_id: int) -> dict:
     return advance_world_tick(world_id)

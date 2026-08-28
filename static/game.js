@@ -180,7 +180,7 @@ function worldTagsText(world){
 function updateWorld(){
  const w=state.worlds[state.worldIndex]; if(!w)return;
  $('#worldName').textContent=w.name;$('#worldTags').textContent=worldTagsText(w);$('#locationName').textContent=w.place;state.scale=w.theme;setScale(state.scale);
- loadLocations();
+ if(state.scale!=='universe')loadLocations();
 }
 
 // ═══ Locations: enter a map icon to generate a scene image and use it as background ═══
@@ -213,7 +213,7 @@ async function enterLocation(loc){
 }
 $('#exitSceneBtn').onclick=()=>$('#sceneOverlay').classList.remove('open');
 $('#mapLocCloseBtn').onclick=()=>{$('#mapLocationPanel').hidden=true};
-function setScale(scale){state.scale=scale;$('#map').className=`map map-${scale}`;$('#scaleLabel').textContent=`${scale.toUpperCase()} MAP`;$$('[data-scale]').forEach(b=>b.classList.toggle('active',b.dataset.scale===scale));}
+function setScale(scale){state.scale=scale;$('#map').className=`map map-${scale}`;$('#scaleLabel').textContent=`${scale.toUpperCase()} MAP`;$$('[data-scale]').forEach(b=>b.classList.toggle('active',b.dataset.scale===scale));if(scale==='universe')loadUniverseNodes();}
 function move(x,y){state.x=Math.max(4,Math.min(96,x));state.y=Math.max(6,Math.min(92,y));const p=$('#playerToken');p.style.setProperty('--x',state.x+'%');p.style.setProperty('--y',state.y+'%')}
 
 async function crossPortal(){
@@ -534,6 +534,7 @@ async function beginGame(payload){
   state.worldIndex=0;
   saveSessionToStorage();
   hidePlayHub();
+  {const _ga=$('#gameArea');_ga.style.opacity='0';requestAnimationFrame(()=>requestAnimationFrame(()=>{_ga.style.opacity='1';}));}
   // Full custom_text is stored as lorebook context on the server; show only the final hook line here
   let opening;
   if(payload.custom_text){
@@ -782,7 +783,7 @@ if(SpeechRecognitionApi){
   try{speechRecognizer.start()}catch{isListening=false;$('#micBtn').classList.remove('listening')}
  };
 }
-$('#chatForm').onsubmit=async e=>{e.preventDefault();const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',fmtChat(msg)));input.value='';$('#aiStatus').textContent='Thinking...';try{const world=state.worlds[state.worldIndex];const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',fmtChat(data.reply),data.id));$('#aiStatus').textContent='LM Studio connected';speakReply(data.reply)}catch(error){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(error.message||'The local storyteller cannot be reached.')));$('#aiStatus').textContent='Start LM Studio on port 1234'}$('#chatLog').scrollTop=$('#chatLog').scrollHeight};
+$('#chatForm').onsubmit=async e=>{e.preventDefault();const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',fmtChat(msg)));input.value='';$('#aiStatus').textContent='Thinking...';try{const world=state.worlds[state.worldIndex];const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',fmtChat(data.reply),data.id));$('#aiStatus').textContent='LM Studio connected';speakReply(data.reply);const _ds=detectScaleFromChat(data.reply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(data.reply)}catch(error){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(error.message||'The local storyteller cannot be reached.')));$('#aiStatus').textContent='Start LM Studio on port 1234'}$('#chatLog').scrollTop=$('#chatLog').scrollHeight};
 
 // ═══ AI Companion-style workspace navigation and studios ═══
 function openView(name){$$('.app-view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.side-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='play'){$('#playHub').hidden=state.hasActiveGame;$('#gameArea').hidden=!state.hasActiveGame}if(name==='characters')loadCharacterStudio();if(name==='explore')loadExplore();if(name==='worlds')loadWorlds();if(name==='knowledge'){loadLore();loadKnowledgeDocs()}if(name==='media')loadMediaTab();if(name==='settings'){checkModelStatus();loadSettingsExtras()}}
@@ -1445,6 +1446,59 @@ function v6FillForm(ch){
   setMultiSel('#v6quirksSelect',ch.quirks);
   setMultiSel('#v6skillsSelect',ch.skills);
   setMultiSel('#v6tagsSelect',ch.tags);
+}
+
+// ═══ Dynamic map: universe nodes, chat-driven locations, scale detection ═══
+async function loadUniverseNodes(){
+  $('#mapNodes').innerHTML='';
+  $('#locationName').textContent='Universe';
+  try{
+    const worlds=await api('/api/worlds');
+    if(!worlds.length){$('#mapNodes').innerHTML='<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--muted);font-size:11px;text-align:center">No saved worlds yet.<br>Create worlds in the World tab.</div>';return;}
+    const cols=4;
+    $('#mapNodes').innerHTML=worlds.map((w,i)=>{
+      const xi=i%cols,yi=Math.floor(i/cols);
+      const x=12+xi*22,y=14+yi*26;
+      const icon={fantasy:'⚔',sci_fi:'🚀',cyberpunk:'⚡',supernatural:'👁',apocalyptic:'☢',zombie:'🧟',mystery:'🔍',drama:'💔',alien_space:'🛸'}[w.space_alignment]||'🌍';
+      return `<button class="map-node" style="--x:${x}%;--y:${y}%;border-color:var(--purple);background:#1a103a;font-size:16px;width:42px;height:42px" data-uni-world="${w.id}" data-label="${safe(w.name)}" title="${safe(w.name)} — ${safe(w.space_alignment||'unknown')} · ${safe(w.reality_type||'Prime')}">${icon}</button>`;
+    }).join('');
+    $$('#mapNodes [data-uni-world]').forEach(el=>el.onclick=()=>{
+      const wid=parseInt(el.dataset.uniWorld);
+      const found=state.worlds.find(w=>w.id===wid);
+      if(found){state.worldIndex=state.worlds.indexOf(found);updateWorld();}
+      else toast('Traveling to '+el.getAttribute('data-label')+'…');
+    });
+    $('#locationName').textContent=`Universe — ${worlds.length} realm${worlds.length!==1?'s':''}`;
+  }catch(err){$('#mapNodes').innerHTML='';}
+}
+
+function detectScaleFromChat(text){
+  const t=(text||'').toLowerCase();
+  if(/\b(universe|multiverse|cosmos|star system|galaxy|dimension|parallel world|alternate (world|reality)|void between worlds|astral plane|realm between|realities|the void)\b/.test(t))return'universe';
+  if(/\b(world map|continent|kingdom|nation|country|empire|federation|world of|across the (land|realm|world|kingdom)|the known world|great war|realm-wide)\b/.test(t))return'world';
+  if(/\b(province|district|county|region|neighboring (city|town|village)|surrounding (area|lands?)|travelling (to|towards|through)|journeyed? to|rode (to|through)|arrived at|ventured (to|into)|headed (to|towards))\b/.test(t))return'area';
+  return null;
+}
+
+async function addLocationsFromChat(text){
+  const world=state.worlds[state.worldIndex];
+  if(!world||state.scale==='universe')return;
+  const re=/\b(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:district|village|town|city|temple|forest|castle|ruins|cave|dungeon|tavern|market|inn|port|keep|tower|manor|shrine|gate|bridge|outpost|citadel|settlement|encampment|camp|hall|arena|palace|sanctuary|spire|grove|crossing|waypoint|fortress|barracks|library|academy|peak)\b/g;
+  const found=new Set();let m;
+  while((m=re.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35)found.add(n);}
+  if(!found.size)return;
+  const existing=new Set(state.locations.map(l=>l.name.toLowerCase()));
+  const newOnes=[...found].filter(n=>!existing.has(n.toLowerCase())).slice(0,2);
+  if(!newOnes.length)return;
+  for(const name of newOnes){
+    const t=/forest|grove|jungle/i.test(name)?'Forest':/castle|fortress|keep|tower|ruins?|citadel/i.test(name)?'Ruins':/cave|dungeon|underground/i.test(name)?'Underground':/port|sea|ocean|bay/i.test(name)?'Ocean':/town|city|market|tavern|village|inn|gate|bridge|hall|library|academy|palace|barracks/i.test(name)?'City':'Plains';
+    const x=15+Math.random()*70,y=15+Math.random()*70;
+    try{
+      const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,terrain:t,x,y,description:`Discovered during adventure: ${name}`,loc_type:'area'})});
+      if(loc&&loc.id){state.locations.push(loc);toast(`📍 ${name} added to map`);}
+    }catch{}
+  }
+  if(newOnes.length)renderMapNodes();
 }
 
 function initCharFormV6(){

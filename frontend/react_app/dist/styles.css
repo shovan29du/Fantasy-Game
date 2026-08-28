@@ -70,3 +70,22 @@ input[type=range]{width:100%;accent-color:var(--gold);height:4px;cursor:pointer;
 #extCharDetails[open]>summary:before{content:"▾ "}
 .v6-multi-card{background:#0d1218;border:1px solid var(--line);padding:10px;margin-bottom:8px}
 .v6-multi-card h4{font-family:Georgia;margin:0 0 8px;color:#f4e2b0;font-size:13px}
+
+/* ═══ Game layout redesign: party panel top row, wide chat ═══ */
+.game-grid{grid-template-columns:minmax(360px,1fr) 540px 260px!important;grid-template-rows:80px 1fr!important}
+.party-panel{grid-row:1!important;grid-column:1/-1!important;display:flex!important;flex-direction:row!important;align-items:stretch!important;overflow-x:auto!important;overflow-y:hidden!important;padding:0!important}
+.party-panel .panel-title{flex-direction:column;justify-content:center;align-items:flex-start;border-bottom:none;border-right:1px solid var(--line);padding:6px 12px;flex-shrink:0;width:68px}
+#partyList{display:flex!important;flex-direction:row!important;align-items:stretch}
+.party-card{min-width:155px;max-width:195px;flex-shrink:0;border-bottom:none!important;border-right:1px solid #222b34!important;padding:7px 9px!important}
+.party-panel .add-member{margin:0!important;width:auto!important;min-width:96px;flex-shrink:0;border:none;border-left:1px dashed var(--line);border-radius:0;align-self:stretch;padding:0 12px}
+.party-panel .section-head{flex-shrink:0;border-bottom:none!important;border-left:1px solid var(--line);border-right:1px solid var(--line);padding:5px 9px;flex-direction:column;justify-content:center;margin-bottom:0!important;min-width:68px}
+#questList{display:flex!important;flex-direction:row!important;align-items:center;gap:5px;overflow-x:auto;flex:1;padding:0 8px;min-width:0}
+.party-panel .quest{border-bottom:none!important;border:1px solid var(--line);flex-shrink:0;min-width:115px;max-width:175px;padding:5px 7px}
+.party-panel .quest p{margin:2px 0!important;font-size:9px!important;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.party-panel .quest .quest-progress{font-size:8px}
+.map-column{grid-row:2!important;grid-column:1!important}
+#chatPanel{grid-row:2!important;grid-column:2!important}
+.detail-panel{grid-row:2!important;grid-column:3!important}
+#gameArea{transition:opacity .4s ease}
+@media(max-width:1360px){.game-grid{grid-template-columns:minmax(300px,1fr) 480px!important;grid-template-rows:80px 1fr!important}.detail-panel{display:none!important}.brand{min-width:auto}.world-readout{display:none}}
+@media(max-width:760px){.game-grid{grid-template-columns:1fr!important;grid-template-rows:auto auto auto!important;height:auto!important;display:grid!important}.party-panel{display:flex!important;min-height:65px;flex-wrap:nowrap;grid-row:1!important;grid-column:1!important}.map-column{grid-row:2!important;grid-column:1!important}.detail-panel{display:none!important}}
