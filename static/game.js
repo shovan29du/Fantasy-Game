@@ -1410,8 +1410,7 @@ function v6BuildRandom(){
   const bonuses=V6_RACE_BONUSES[race]||{};
   const bstat=(k)=>Math.min(20,stat()+(bonuses[k]||0));
   const gCatM=g==='Female'||g==='Futa / Futanari'?'f':g==='Non-binary'||g==='Androgynous'||g==='Gender-fluid'?'n':'m';
-  const mCat=V6_RACE_MEASURE_MAP[race]||'_default';
-  const mRng=V6_RACE_MEASUREMENTS[mCat][gCatM];
+  const mRng=(V6_RACE_MEASUREMENTS[race]||V6_RACE_MEASUREMENTS['_default'])[gCatM];
   const mRnd=(lo,hi)=>lo+Math.floor(Math.random()*(hi-lo+1));
   return{
     name:pickRnd(nl)+'_'+(10+Math.floor(Math.random()*90)),
@@ -1596,8 +1595,7 @@ if(_v6rm)_v6rm.onclick=()=>{
   const raceEl=$('#v6raceSelect');const race=raceEl?raceEl.value:'Human';
   const form=$('#characterFormV6');const gVal=form?form.elements['gender']?.value:'';
   const gCat=gVal==='Female'||gVal==='Futa / Futanari'?'f':gVal==='Non-binary'||gVal==='Androgynous'||gVal==='Gender-fluid'?'n':'m';
-  const cat=V6_RACE_MEASURE_MAP[race]||'_default';
-  const ranges=V6_RACE_MEASUREMENTS[cat][gCat];
+  const ranges=(V6_RACE_MEASUREMENTS[race]||V6_RACE_MEASUREMENTS['_default'])[gCat];
   const rnd=(lo,hi)=>lo+Math.floor(Math.random()*(hi-lo+1));
   const b=$('#v6bust'),w=$('#v6waist'),h=$('#v6hips');
   if(b)b.value=`${rnd(...ranges.bust)}"`;
@@ -1750,20 +1748,40 @@ const V6_DND_RACE_INFO={
   "Jaffa":{lore:"Warriors who carry a Goa'uld symbiote for extended life and strength.",height:'6\'0"–6\'6"',speed:30,size:"Medium",languages:["Common","Goa'uld"]}
 };
 
-// Race/gender-specific body measurements (bust/waist/hip in inches, [min,max])
-const V6_RACE_MEASUREMENTS={
-  _default:{m:{bust:[34,46],waist:[28,38],hip:[32,40]},f:{bust:[30,42],waist:[24,34],hip:[32,44]},n:{bust:[30,44],waist:[24,36],hip:[30,42]}},
-  _small:  {m:{bust:[22,32],waist:[18,26],hip:[22,30]},f:{bust:[20,30],waist:[16,24],hip:[22,32]},n:{bust:[20,30],waist:[16,26],hip:[20,30]}},
-  _large:  {m:{bust:[44,56],waist:[34,46],hip:[38,48]},f:{bust:[38,50],waist:[30,40],hip:[38,50]},n:{bust:[40,54],waist:[32,44],hip:[38,48]}},
-  _heavy:  {m:{bust:[38,52],waist:[30,42],hip:[34,44]},f:{bust:[34,46],waist:[26,36],hip:[34,46]},n:{bust:[36,48],waist:[28,40],hip:[34,46]}},
-  _slim:   {m:{bust:[30,40],waist:[24,32],hip:[28,36]},f:{bust:[28,38],waist:[22,28],hip:[30,40]},n:{bust:[28,38],waist:[22,30],hip:[28,38]}}
-};
-const V6_RACE_MEASURE_MAP={
-  'Gnome':'_small','Halfling':'_small','Ferengi':'_small',
-  'Goliath':'_large','Firbolg':'_large','Bear Person':'_large',
-  'Dragonborn':'_heavy','Half-Orc':'_heavy','Klingon':'_heavy','Jaffa':'_heavy','Narn':'_heavy','Shark Person':'_heavy','Tiger Person':'_heavy','Lion Person':'_heavy',
-  'Cat Person (Neko)':'_slim','Neko / Cat Person':'_slim','Kitsune / Fox Person':'_slim','Rabbit Person':'_slim','Bird Person (Harpy)':'_slim','Deer Person':'_slim','Tabaxi':'_slim','Kenku':'_slim'
-};
+// Race/gender-specific body measurements per race (bust/waist/hip in inches, [min,max])
+// Mirrors character_data.py RACE_MEASUREMENTS exactly
+(()=>{
+  const D={m:{bust:[34,46],waist:[28,38],hip:[32,40]},f:{bust:[30,42],waist:[24,34],hip:[32,44]},n:{bust:[30,44],waist:[24,36],hip:[30,42]}};
+  const S={m:{bust:[22,32],waist:[18,26],hip:[22,30]},f:{bust:[20,30],waist:[16,24],hip:[22,32]},n:{bust:[20,30],waist:[16,26],hip:[20,30]}};
+  const L={m:{bust:[44,56],waist:[34,46],hip:[38,48]},f:{bust:[38,50],waist:[30,40],hip:[38,50]},n:{bust:[40,54],waist:[32,44],hip:[38,48]}};
+  const H={m:{bust:[38,52],waist:[30,42],hip:[34,44]},f:{bust:[34,46],waist:[26,36],hip:[34,46]},n:{bust:[36,48],waist:[28,40],hip:[34,46]}};
+  const Sl={m:{bust:[30,40],waist:[24,32],hip:[28,36]},f:{bust:[28,38],waist:[22,28],hip:[30,40]},n:{bust:[28,38],waist:[22,30],hip:[28,38]}};
+  window.V6_RACE_MEASUREMENTS={
+    // D&D standard (default)
+    'Human':D,'Elf':D,'High Elf':D,'Wood Elf':D,'Drow':D,'Half-Elf':D,'Aasimar':D,'Tiefling':D,
+    'Changeling':D,'Warforged':D,'Githyanki':D,'Tortle':D,'Genasi':D,'Genasi (Fire)':D,'Genasi (Water)':D,
+    'Lizardfolk':D,'Kenku':D,'Triton':D,'Snake Person (Lamia)':D,'Dragon Person (Ryujin)':D,
+    'Dog Person (Inu)':D,'Wolf Person':D,'Fox Person (Kitsune)':D,'Horse Person (Centaur)':D,
+    'Vulcan':D,'Romulan':D,'Andorian':D,'Betazoid':D,'Trill':D,'Bajoran':D,'Cardassian':D,
+    'Orion':D,'Caitian':D,'El-Aurian':D,'Changeling (ST)':D,'Q (Omnipotent)':D,
+    'Tau\'ri (Human)':D,'Tok\'ra':D,'Goa\'uld Host':D,'Ancient (Alteran)':D,'Ori (Ascended)':D,'Athosian':D,'Lucian':D,
+    'Minbari':D,'Centauri (B5)':D,'Drazi':D,'Pak\'ma\'ra':D,'Shadow Agent':D,
+    // Dwarf — medium-default build
+    'Dwarf':D,
+    // Small races
+    'Gnome':S,'Halfling':S,'Ferengi':S,'Asgard (SG)':S,
+    // Large races
+    'Goliath':L,'Bear Person':L,'Firbolg':L,'Vorlon':L,
+    // Heavy/muscular races
+    'Dragonborn':H,'Half-Orc':H,'Klingon':H,'Jaffa':H,'Narn':H,
+    'Shark Person':H,'Tiger Person':H,'Lion Person':H,'Borg Drone':H,'Wraith':H,
+    // Slim races
+    'Cat Person (Neko)':Sl,'Rabbit Person (Usagi)':Sl,'Bird Person (Harpy)':Sl,'Deer Person':Sl,
+    'Neko / Cat Person':Sl,'Kitsune / Fox Person':Sl,'Tabaxi':Sl,
+    // Default fallback key
+    '_default':D
+  };
+})();
 
 // Race stat bonuses applied to random generation
 const V6_RACE_BONUSES={
