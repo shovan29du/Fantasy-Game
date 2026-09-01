@@ -967,6 +967,66 @@ if(SpeechRecognitionApi){
 $('#chatForm').onsubmit=async e=>{
   e.preventDefault();
   const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;
+
+  // ── /help command: show all chat commands ──
+  if(/^\/help\b/i.test(msg)){
+    input.value='';
+    const HELP_HTML=`<div style="font-size:11px;line-height:1.8">
+<b style="color:var(--gold);font-size:13px">⚔ Chat Commands</b><br>
+<code style="color:#8fb7c8">/place Name, Terrain, Description</code> — Add a new location to the current map<br>
+<small style="color:var(--muted)">Terrain options: Forest, City, Ruins, Underground, Ocean, Mountains, Plains, Desert, Swamp</small><br>
+<code style="color:#8fb7c8">/help</code> — Show this command list<br>
+<hr style="border-color:var(--line);margin:6px 0">
+<b style="color:var(--gold)">Dialogue Format (in AI replies)</b><br>
+<code>Name: Hello there.</code> — Character dialogue (name in gold)<br>
+<code>**Name draws their sword.**</code> — Action / narration text<br>
+<hr style="border-color:var(--line);margin:6px 0">
+<b style="color:var(--gold)">Map Controls</b><br>
+<kbd>1</kbd> Local · <kbd>2</kbd> Area · <kbd>3</kbd> World · <kbd>4</kbd> Universe<br>
+<kbd>W A S D</kbd> / Arrow keys — Move player token<br>
+Click a map icon — Enter that location (generates scene image)<br>
+<hr style="border-color:var(--line);margin:6px 0">
+<b style="color:var(--gold)">Party</b><br>
+Click a party member card — Speak as that character<br>
+✕ Narrator button — Return to GM narrator mode<br>
++ Add Member — Recruit a saved character as party companion</div>`;
+    const chatLog=$('#chatLog');
+    chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b>${HELP_HTML}</div></div>`);
+    chatLog.scrollTop=chatLog.scrollHeight;
+    return;
+  }
+
+  // ── /place command: add location to current map ──
+  if(/^\/place\b/i.test(msg)){
+    input.value='';
+    const body=msg.replace(/^\/place\s*/i,'').trim();
+    const parts=body.split(',').map(s=>s.trim());
+    const locName=parts[0];
+    if(!locName){toast('Usage: /place Name, Terrain, Description');return;}
+    const rawTerrain=parts[1]||'';
+    const desc=parts.slice(2).join(',').trim();
+    const TERRAIN_WORDS={forest:'Forest',wood:'Forest',jungle:'Forest',cave:'Underground',cavern:'Underground',dungeon:'Underground',mine:'Underground',ocean:'Ocean',sea:'Ocean',lake:'Ocean',river:'Ocean',port:'Ocean',coast:'Ocean',city:'City',town:'City',village:'City',market:'City',inn:'City',tavern:'City',castle:'Ruins',fortress:'Ruins',ruin:'Ruins',tower:'Ruins',temple:'Ruins',shrine:'Ruins',mountain:'Mountains',peak:'Mountains',hill:'Mountains',plains:'Plains',field:'Plains',meadow:'Plains',desert:'Desert',swamp:'Swamp',marsh:'Swamp'};
+    const tKey=rawTerrain.toLowerCase().replace(/[^a-z]/g,'');
+    const terrain=TERRAIN_WORDS[tKey]||(rawTerrain?rawTerrain.charAt(0).toUpperCase()+rawTerrain.slice(1):'Plains');
+    const world=state.worlds[state.worldIndex];
+    if(!world){toast('Start a game first');return;}
+    const existing=new Set(state.locations.map(l=>l.name.toLowerCase()));
+    if(existing.has(locName.toLowerCase())){toast(`${locName} already on map`);return;}
+    const x=10+Math.random()*80,y=10+Math.random()*80;
+    try{
+      const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:locName,terrain,x,y,description:desc||`Added by player: ${locName}`,loc_type:'area'})});
+      if(loc&&loc.id){
+        state.locations.push(loc);
+        renderMapNodes();
+        const chatLog=$('#chatLog');
+        chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">📍 ${safe(locName)} added to the ${safe(terrain.toLowerCase())} region of ${safe(world.name)}.</em>${desc?` <span style="color:var(--muted);font-size:11px">${safe(desc)}</span>`:''}</div></div></div>`);
+        chatLog.scrollTop=chatLog.scrollHeight;
+        toast(`📍 ${locName} → map`);
+      }
+    }catch(err){toast(`Failed to add location: ${err.message}`);}
+    return;
+  }
+
   const sp=state.activeSpeaker;
   const playerLabel=sp?`<b style="color:var(--gold)">${safe(sp.name)}:</b> `:'';
   $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',playerLabel+fmtChat(msg)));
