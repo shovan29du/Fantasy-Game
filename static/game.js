@@ -260,9 +260,22 @@ function updateWorld(){
  if(state.scale!=='universe')loadLocations();
 }
 
-// ═══ Locations: enter a map icon to generate a scene image and use it as background ═══
+// ═══ Map hierarchy: Local → Province → Country → Universe ═══
+// loc_type values: 'local'|'area' → Local tab; 'province' → Province tab;
+// 'country'|'kingdom'|'empire'|'nation'|'republic'|'duchy'|'realm'|'federation'|'territory'|'dominion' → Country tab
+const COUNTRY_TYPES=new Set(['country','kingdom','empire','nation','republic','duchy','realm','federation','territory','dominion','sultanate','commonwealth','confederation']);
+function _isCountryType(t){return COUNTRY_TYPES.has((t||'').toLowerCase())}
 function renderMapNodes(){
- $('#mapNodes').innerHTML=state.locations.map(loc=>`<button class="map-node" style="--x:${loc.x}%;--y:${loc.y}%" data-loc-id="${loc.id}" data-label="${safe(loc.name)}" title="${safe(loc.name)}">${TERRAIN_ICONS[loc.terrain]||'⌂'}</button>`).join('');
+ const scale=state.scale;
+ let shown;
+ if(scale==='local') shown=state.locations.filter(l=>!l.loc_type||l.loc_type==='local'||l.loc_type==='area');
+ else if(scale==='area') shown=state.locations.filter(l=>l.loc_type==='province');
+ else if(scale==='world') shown=state.locations.filter(l=>_isCountryType(l.loc_type));
+ else shown=[];
+ $('#mapNodes').innerHTML=shown.map(loc=>{
+  const tier=_isCountryType(loc.loc_type)?'macro':loc.loc_type==='province'?'mid':'micro';
+  return `<button class="map-node map-node-${tier}" style="--x:${loc.x}%;--y:${loc.y}%" data-loc-id="${loc.id}" data-label="${safe(loc.name)}" title="${safe(loc.name)}">${TERRAIN_ICONS[loc.terrain]||'⌂'}</button>`;
+ }).join('');
  $$('#mapNodes [data-loc-id]').forEach(el=>el.onclick=()=>{const loc=state.locations.find(l=>String(l.id)===el.dataset.locId);if(loc)enterLocation(loc)});
 }
 async function loadLocations(){
@@ -271,16 +284,53 @@ async function loadLocations(){
  try{
   state.locations=await api(`/api/worlds/${world.id}/locations`);
   renderMapNodes();
-  if(state.pendingStartScene&&state.locations.length){state.pendingStartScene=false;enterLocation(state.locations[0]);}
+  if(state.pendingStartScene&&state.locations.length){
+   state.pendingStartScene=false;
+   const localLoc=state.locations.find(l=>!l.loc_type||l.loc_type==='local'||l.loc_type==='area');
+   enterLocation(localLoc||state.locations[0]);
+  }
  }catch(error){state.locations=[];renderMapNodes()}
+}
+async function _aiDescribePlace(prompt){
+ const world=state.worlds[state.worldIndex];
+ try{
+  const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:prompt,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'System',character_name:'Worldweaver',participants:['Worldweaver'],temperature:0.9})});
+  const data=await r.json();
+  if(r.ok&&data.reply){
+   const chatLog=$('#chatLog');
+   chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',fmtChat(data.reply),data.id));
+   chatLog.scrollTop=chatLog.scrollHeight;
+   speakReply(data.reply);
+  }
+ }catch{}
 }
 async function enterLocation(loc){
  const world=state.worlds[state.worldIndex];
+ const chatLog=$('#chatLog');
+ // ── Country/Kingdom → switch to Province tab and describe the country ──
+ if(_isCountryType(loc.loc_type)){
+  setScale('area');
+  state._activeCountry=loc;
+  $('#mapLocName').textContent=loc.name;$('#mapLocSub').textContent=`${loc.loc_type||'Territory'} · ${world?.name||''}`;
+  chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">📌 Entering ${safe(loc.name)} — ${safe(loc.loc_type||'territory')} of ${safe(world?.name||'the realm')}.</em></div></div></div>`);
+  chatLog.scrollTop=chatLog.scrollHeight;
+  await _aiDescribePlace(`Describe the ${loc.loc_type||'territory'} of "${loc.name}" in ${world?.name||'this world'}. What notable provinces, cities, or landmarks does it contain? What is its culture, government, and defining character? 2 vivid paragraphs.`);
+  return;
+ }
+ // ── Province → switch to Local tab and describe the province ──
+ if(loc.loc_type==='province'){
+  setScale('local');
+  $('#mapLocName').textContent=loc.name;$('#mapLocSub').textContent=`Province · ${world?.name||''}`;
+  chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">📌 Entering the province of ${safe(loc.name)}.</em></div></div></div>`);
+  chatLog.scrollTop=chatLog.scrollHeight;
+  await _aiDescribePlace(`Describe the province/region of "${loc.name}" in ${world?.name||'this world'}. What towns, villages, or notable locations does it contain? What is everyday life like here? 1-2 paragraphs.`);
+  return;
+ }
+ // ── Local location → scene image + immersive description ──
  const panel=$('#mapLocationPanel'),img=$('#mapLocImg'),loading=$('#mapLocLoading');
  $('#mapLocName').textContent=loc.name;
  $('#mapLocSub').textContent=`${loc.terrain} · ${world?.name||''}`;
- panel.hidden=false;
- loading.style.display='flex';
+ panel.hidden=false;loading.style.display='flex';
  if(state.locationImageCache[loc.id]){
   const cached=state.locationImageCache[loc.id];
   img.src=cached;img.style.opacity='1';loading.style.display='none';
@@ -301,19 +351,9 @@ async function enterLocation(loc){
    img.src=url;img.onload=()=>{img.style.opacity='1'};
    const mapEl=$('#map');mapEl.style.backgroundImage=`url('${url}')`;mapEl.style.backgroundSize='cover';mapEl.style.backgroundPosition='center';
    if(useOpening){
-    const chatLog=$('#chatLog');
     chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><img src="${safe(url)}" class="chat-scene-img" alt="Opening scene: ${safe(loc.name)}"><span class="chat-scene-caption">📍 ${safe(loc.name)} · ${safe(loc.terrain)}</span></div></div>`);
     chatLog.scrollTop=chatLog.scrollHeight;
-    const descPrompt=`Describe the ${loc.terrain} location "${loc.name}" in ${world?.name||'this world'} as the player first arrives. Paint a vivid picture of the atmosphere — the sights, sounds, smells, and the feeling of this place. Describe any notable people, creatures, merchants, guards, or beings visible here.${partyLine} Keep it to 2-3 immersive paragraphs, written in second person ("You see...", "You smell...").`;
-    try{
-     const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:descPrompt,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'System',character_name:'Worldweaver',participants:['Worldweaver'],temperature:0.9})});
-     const data=await r.json();
-     if(r.ok&&data.reply){
-      chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',fmtChat(data.reply),data.id));
-      chatLog.scrollTop=chatLog.scrollHeight;
-      speakReply(data.reply);
-     }
-    }catch{}
+    await _aiDescribePlace(`Describe the ${loc.terrain} location "${loc.name}" in ${world?.name||'this world'} as the player first arrives. Paint a vivid picture of the atmosphere — the sights, sounds, smells, and the feeling of this place. Describe any notable people, creatures, merchants, guards, or beings visible here.${partyLine} Keep it to 2-3 immersive paragraphs, written in second person ("You see...", "You smell...").`);
    }
   }
  }catch(error){toast(`Scene generation failed: ${error.message}`)}
@@ -321,7 +361,8 @@ async function enterLocation(loc){
 }
 $('#exitSceneBtn').onclick=()=>$('#sceneOverlay').classList.remove('open');
 $('#mapLocCloseBtn').onclick=()=>{$('#mapLocationPanel').hidden=true};
-function setScale(scale){state.scale=scale;$('#map').className=`map map-${scale}`;$('#scaleLabel').textContent=`${scale.toUpperCase()} MAP`;$$('[data-scale]').forEach(b=>b.classList.toggle('active',b.dataset.scale===scale));if(scale==='universe')loadUniverseNodes();}
+const SCALE_LABELS={local:'LOCAL MAP',area:'PROVINCE MAP',world:'COUNTRY MAP',universe:'UNIVERSE MAP'};
+function setScale(scale){state.scale=scale;$('#map').className=`map map-${scale}`;$('#scaleLabel').textContent=SCALE_LABELS[scale]||`${scale.toUpperCase()} MAP`;$$('[data-scale]').forEach(b=>b.classList.toggle('active',b.dataset.scale===scale));if(scale==='universe')loadUniverseNodes();else renderMapNodes();}
 function move(x,y){state.x=Math.max(4,Math.min(96,x));state.y=Math.max(6,Math.min(92,y));const p=$('#playerToken');p.style.setProperty('--x',state.x+'%');p.style.setProperty('--y',state.y+'%')}
 
 async function crossPortal(){
@@ -973,30 +1014,33 @@ $('#chatForm').onsubmit=async e=>{
     input.value='';
     const HELP_HTML=`<div style="font-size:11px;line-height:1.8">
 <b style="color:var(--gold);font-size:13px">⚔ Chat Commands</b><br>
-<code style="color:#8fb7c8">/place Name, Terrain, Description</code> — Add a new location to the current map<br>
-<small style="color:var(--muted)">Terrain options: Forest, City, Ruins, Underground, Ocean, Mountains, Plains, Desert, Swamp</small><br>
+<code style="color:#8fb7c8">/place Name, Terrain, Description</code> — Add a location to the map<br>
+<small style="color:var(--muted)">Names containing kingdom/empire/island/federation → Country map; province/district/county → Province map; others → Local map</small><br>
+<small style="color:var(--muted)">Terrain: Forest, City, Ruins, Underground, Ocean, Mountains, Plains, Desert, Swamp</small><br>
 <code style="color:#8fb7c8">/help</code> — Show this command list<br>
+<hr style="border-color:var(--line);margin:6px 0">
+<b style="color:var(--gold)">Map Hierarchy</b><br>
+<kbd>1</kbd> <b>Local</b> — immediate area, click location to see scene image + description<br>
+<kbd>2</kbd> <b>Province</b> — regions &amp; districts within a country<br>
+<kbd>3</kbd> <b>Country</b> — kingdoms, empires, islands, federations in this world<br>
+<kbd>4</kbd> <b>Universe</b> — all saved worlds &amp; galaxies<br>
+<small style="color:var(--muted)">AI mentions of "X Kingdom", "X Province" etc. are auto-added to the correct map tab</small><br>
 <hr style="border-color:var(--line);margin:6px 0">
 <b style="color:var(--gold)">Dialogue Format (in AI replies)</b><br>
 <code>Name: Hello there.</code> — Character dialogue (name in gold)<br>
 <code>**Name draws their sword.**</code> — Action / narration text<br>
 <hr style="border-color:var(--line);margin:6px 0">
-<b style="color:var(--gold)">Map Controls</b><br>
-<kbd>1</kbd> Local · <kbd>2</kbd> Area · <kbd>3</kbd> World · <kbd>4</kbd> Universe<br>
-<kbd>W A S D</kbd> / Arrow keys — Move player token<br>
-Click a map icon — Enter that location (generates scene image)<br>
-<hr style="border-color:var(--line);margin:6px 0">
 <b style="color:var(--gold)">Party</b><br>
 Click a party member card — Speak as that character<br>
-✕ Narrator button — Return to GM narrator mode<br>
-+ Add Member — Recruit a saved character as party companion</div>`;
+✕ Narrator — Return to GM narrator mode<br>
++ Add Member — Recruit a saved character as companion</div>`;
     const chatLog=$('#chatLog');
     chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b>${HELP_HTML}</div></div>`);
     chatLog.scrollTop=chatLog.scrollHeight;
     return;
   }
 
-  // ── /place command: add location to current map ──
+  // ── /place command: add location to correct map level ──
   if(/^\/place\b/i.test(msg)){
     input.value='';
     const body=msg.replace(/^\/place\s*/i,'').trim();
@@ -1005,23 +1049,29 @@ Click a party member card — Speak as that character<br>
     if(!locName){toast('Usage: /place Name, Terrain, Description');return;}
     const rawTerrain=parts[1]||'';
     const desc=parts.slice(2).join(',').trim();
-    const TERRAIN_WORDS={forest:'Forest',forest:'Forest',wood:'Forest',jungle:'Forest',cave:'Underground',cavern:'Underground',dungeon:'Underground',mine:'Underground',ocean:'Ocean',sea:'Ocean',lake:'Ocean',river:'Ocean',port:'Ocean',coast:'Ocean',city:'City',town:'City',village:'City',market:'City',inn:'City',tavern:'City',castle:'Ruins',fortress:'Ruins',ruin:'Ruins',tower:'Ruins',temple:'Ruins',shrine:'Ruins',mountain:'Mountains',peak:'Mountains',hill:'Mountains',plains:'Plains',field:'Plains',meadow:'Plains',desert:'Desert',swamp:'Swamp',marsh:'Swamp'};
+    const TERRAIN_WORDS={forest:'Forest',wood:'Forest',jungle:'Forest',cave:'Underground',cavern:'Underground',dungeon:'Underground',mine:'Underground',ocean:'Ocean',sea:'Ocean',lake:'Ocean',river:'Ocean',port:'Ocean',coast:'Ocean',city:'City',town:'City',village:'City',market:'City',inn:'City',tavern:'City',castle:'Ruins',fortress:'Ruins',ruin:'Ruins',tower:'Ruins',temple:'Ruins',shrine:'Ruins',mountain:'Mountains',peak:'Mountains',hill:'Mountains',plains:'Plains',field:'Plains',meadow:'Plains',desert:'Desert',swamp:'Swamp',marsh:'Swamp'};
     const tKey=rawTerrain.toLowerCase().replace(/[^a-z]/g,'');
     const terrain=TERRAIN_WORDS[tKey]||(rawTerrain?rawTerrain.charAt(0).toUpperCase()+rawTerrain.slice(1):'Plains');
+    // Auto-detect loc_type from name keywords
+    const nameDesc=`${locName} ${desc}`.toLowerCase();
+    const loc_type=_isCountryType(nameDesc.match(/\b(\w+)\b/g)?.find(w=>COUNTRY_TYPES.has(w))||'')?'country':/\b(province|district|county|shire|region|canton|prefecture|march)\b/.test(nameDesc)?'province':'local';
     const world=state.worlds[state.worldIndex];
     if(!world){toast('Start a game first');return;}
     const existing=new Set(state.locations.map(l=>l.name.toLowerCase()));
     if(existing.has(locName.toLowerCase())){toast(`${locName} already on map`);return;}
     const x=10+Math.random()*80,y=10+Math.random()*80;
     try{
-      const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:locName,terrain,x,y,description:desc||`Added by player: ${locName}`,loc_type:'area'})});
+      const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:locName,terrain,x,y,description:desc||`Added by player: ${locName}`,loc_type})});
       if(loc&&loc.id){
         state.locations.push(loc);
-        renderMapNodes();
+        const tabForType={country:'world',province:'area',local:'local'};
+        const targetScale=tabForType[loc_type]||'local';
+        if(state.scale!==targetScale)setScale(targetScale);else renderMapNodes();
         const chatLog=$('#chatLog');
-        chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">📍 ${safe(locName)} added to the ${safe(terrain.toLowerCase())} region of ${safe(world.name)}.</em>${desc?` <span style="color:var(--muted);font-size:11px">${safe(desc)}</span>`:''}</div></div></div>`);
+        const tabLabel={country:'Country map',province:'Province map',local:'Local map'}[loc_type]||'map';
+        chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">📍 ${safe(locName)} added to the ${tabLabel} (${safe(terrain)}).</em>${desc?` <span style="color:var(--muted);font-size:11px">${safe(desc)}</span>`:''}</div></div></div>`);
         chatLog.scrollTop=chatLog.scrollHeight;
-        toast(`📍 ${locName} → map`);
+        toast(`📍 ${locName} → ${tabLabel}`);
       }
     }catch(err){toast(`Failed to add location: ${err.message}`);}
     return;
@@ -1048,7 +1098,8 @@ Click a party member card — Speak as that character<br>
     $('#aiStatus').textContent=sp?`${sp.name} · ${sp.race||sp.profession||''}`.trim():'LM Studio connected';
     speakReply(data.reply);
     detectStoryChars(data.reply);
-    const _ds=detectScaleFromChat(data.reply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(data.reply);
+    const _ds=detectScaleFromChat(data.reply);if(_ds&&_ds!==state.scale)setScale(_ds);
+    addLocationsFromChat(data.reply);addLocationsFromChat(msg);
   }catch(error){
     $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(error.message||'The local storyteller cannot be reached.')));
     $('#aiStatus').textContent='Start LM Studio on port 1234';
@@ -1759,22 +1810,28 @@ function detectScaleFromChat(text){
 async function addLocationsFromChat(text){
   const world=state.worlds[state.worldIndex];
   if(!world||state.scale==='universe')return;
-  const re=/\b(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:district|village|town|city|temple|forest|castle|ruins|cave|dungeon|tavern|market|inn|port|keep|tower|manor|shrine|gate|bridge|outpost|citadel|settlement|encampment|camp|hall|arena|palace|sanctuary|spire|grove|crossing|waypoint|fortress|barracks|library|academy|peak)\b/g;
-  const found=new Set();let m;
-  while((m=re.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35)found.add(n);}
-  if(!found.size)return;
   const existing=new Set(state.locations.map(l=>l.name.toLowerCase()));
-  const newOnes=[...found].filter(n=>!existing.has(n.toLowerCase())).slice(0,2);
-  if(!newOnes.length)return;
-  for(const name of newOnes){
-    const t=/forest|grove|jungle/i.test(name)?'Forest':/castle|fortress|keep|tower|ruins?|citadel/i.test(name)?'Ruins':/cave|dungeon|underground/i.test(name)?'Underground':/port|sea|ocean|bay/i.test(name)?'Ocean':/town|city|market|tavern|village|inn|gate|bridge|hall|library|academy|palace|barracks/i.test(name)?'City':'Plains';
+  const toAdd=[];let m;
+  // Country/Kingdom level: "Kingdom of X", "X Empire", "X Islands" etc.
+  const cRe=/\b(?:Kingdom|Empire|Republic|Duchy|Federation|Nation|Realm|Dominion|Commonwealth|Sultanate|Territory|Confederation)\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})|([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Kingdom|Empire|Republic|Duchy|Federation|Islands?|Nation|Realm|Territory|Lands)\b/g;
+  while((m=cRe.exec(text))!==null){const n=(m[1]||m[2]||'').trim();if(n.length>=3&&n.length<=40&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'country',terrain:'Plains'});existing.add(n.toLowerCase());}}
+  // Province level: "X Province", "X District", "X County" etc.
+  const pRe=/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Province|District|County|Shire|Region|March|Canton|Prefecture)\b/g;
+  while((m=pRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'province',terrain:'Plains'});existing.add(n.toLowerCase());}}
+  // Local level: "X tavern", "X castle", "X forest" etc.
+  const lRe=/\b(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:district|village|town|city|temple|forest|castle|ruins|cave|dungeon|tavern|market|inn|port|keep|tower|manor|shrine|gate|bridge|outpost|citadel|settlement|encampment|camp|hall|arena|palace|sanctuary|spire|grove|crossing|waypoint|fortress|barracks|library|academy|peak)\b/g;
+  while((m=lRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'local',terrain:'Plains'});existing.add(n.toLowerCase());}}
+  const deduped=toAdd.slice(0,4);
+  if(!deduped.length)return;
+  for(const entry of deduped){
+    const t=entry.loc_type==='local'?(/forest|grove|jungle/i.test(entry.name)?'Forest':/castle|fortress|keep|tower|ruins?|citadel/i.test(entry.name)?'Ruins':/cave|dungeon|underground/i.test(entry.name)?'Underground':/port|sea|ocean|bay/i.test(entry.name)?'Ocean':/town|city|market|tavern|village|inn/i.test(entry.name)?'City':'Plains'):'Plains';
     const x=15+Math.random()*70,y=15+Math.random()*70;
     try{
-      const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,terrain:t,x,y,description:`Discovered during adventure: ${name}`,loc_type:'area'})});
-      if(loc&&loc.id){state.locations.push(loc);toast(`📍 ${name} added to map`);}
+      const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:entry.name,terrain:t,x,y,description:`Mentioned in story`,loc_type:entry.loc_type})});
+      if(loc&&loc.id){state.locations.push(loc);toast(`📍 ${entry.name} → ${entry.loc_type} map`);}
     }catch{}
   }
-  if(newOnes.length)renderMapNodes();
+  renderMapNodes();
 }
 
 function initCharFormV6(){

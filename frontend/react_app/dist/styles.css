@@ -98,6 +98,12 @@ input[type=range]{width:100%;accent-color:var(--gold);height:4px;cursor:pointer;
 .map-loc-info{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#0d1217ee;border-top:1px solid var(--line);font-size:11px;flex-shrink:0}
 .map-loc-info strong{color:#e9ecf1;font-size:12px}
 .map-loc-info small{color:var(--muted);margin-left:4px}
+.map-node-macro{width:48px!important;height:48px!important;font-size:18px!important;border-color:var(--gold)!important;background:#2a2010!important;box-shadow:0 0 0 6px #0006,0 0 12px #c8a84455!important}
+.map-node-macro:after{font-size:10px!important;top:52px!important}
+.map-node-mid{width:38px!important;height:38px!important;font-size:15px!important;border-color:#7daa7d!important;background:#1a2a1a!important}
+.map-node-mid:after{font-size:9px!important;top:42px!important}
+.map-node-micro{width:34px;height:34px}
+.map-world{background-color:#1a2a3a;background-image:radial-gradient(ellipse at 55% 45%,#3a6a3a 0 18%,#2a5a2a 19% 30%,#1a3a1a 31% 45%,#0a2a3a 46%)}
 .chat-scene-img{width:100%;border-radius:4px;margin:4px 0;display:block;max-height:320px;object-fit:cover}
 .chat-scene-caption{font-size:9px;color:var(--muted);margin-top:2px;display:block}
 .chat-line{margin:1px 0}
