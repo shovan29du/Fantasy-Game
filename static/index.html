@@ -273,9 +273,18 @@
               <div class="wide"><label>Traits<select name="traits" id="v6traitsSelect" multiple size="4" class="v6-multi"></select></label></div>
               <div class="wide"><label>Quirks<select name="quirks" id="v6quirksSelect" multiple size="3" class="v6-multi"></select></label></div>
               <div class="wide"><label>Skills<select name="skills" id="v6skillsSelect" multiple size="5" class="v6-multi"></select></label></div>
-              <label class="wide">Backstory<textarea name="backstory" rows="4" placeholder="Their history, defining moment, hidden debt..."></textarea></label>
-              <label class="wide">Scenario<textarea name="scenario" rows="2" placeholder="Opening scene or current situation..."></textarea></label>
-              <label class="wide">Goals<textarea name="goals" rows="2" placeholder="What do they want, and what will they sacrifice?"></textarea></label>
+              <div class="wide" style="display:flex;flex-direction:column;gap:3px">
+                <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:10px;color:var(--muted)">Backstory</span><button type="button" id="v6randBackstory" class="ghost" style="font-size:10px;padding:2px 7px">🎲 Random</button></div>
+                <textarea name="backstory" rows="4" placeholder="Their history, defining moment, hidden debt..."></textarea>
+              </div>
+              <div class="wide" style="display:flex;flex-direction:column;gap:3px">
+                <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:10px;color:var(--muted)">Scenario</span><button type="button" id="v6randScenario" class="ghost" style="font-size:10px;padding:2px 7px">🎲 Random</button></div>
+                <textarea name="scenario" rows="2" placeholder="Opening scene or current situation..."></textarea>
+              </div>
+              <div class="wide" style="display:flex;flex-direction:column;gap:3px">
+                <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:10px;color:var(--muted)">Goals</span><button type="button" id="v6randGoals" class="ghost" style="font-size:10px;padding:2px 7px">🎲 Random</button></div>
+                <textarea name="goals" rows="2" placeholder="What do they want, and what will they sacrifice?"></textarea>
+              </div>
 
               <div class="wide"><b class="section-tag">TAGS</b></div>
               <div class="wide"><select name="tags" id="v6tagsSelect" multiple size="5" class="v6-multi"></select></div>
@@ -308,6 +317,7 @@
             <div class="studio-form">
               <label>How many?<input type="number" id="v6multiNum" min="2" max="10" value="3" style="width:80px"></label>
               <label class="wide">Group / party name<input id="v6groupName" value="The Party"></label>
+              <div class="wide"><label style="font-size:11px">Shared tags (optional)<select id="v6sharedTags" multiple size="3" class="v6-multi" style="width:100%"></select></label></div>
               <div class="form-actions wide" style="margin-top:0"><button type="button" id="v6genGroup" class="gold">🎲 Generate Group</button></div>
               <div id="v6multiResults" style="margin-top:12px"></div>
               <div id="v6multiSaveRow" hidden style="margin-top:8px"><button type="button" id="v6saveAll" class="gold">💾 Save All Characters</button></div>

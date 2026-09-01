@@ -1407,6 +1407,12 @@ function v6BuildRandom(){
   const names_n=["Morgan","Rowan","Quinn","Avery","Phoenix","River","Storm","Wren","Sky","Onyx","Echo","Vale","Aspen","Kai"];
   const nl=g==='Male'?names_m:g==='Female'?names_f:names_n;
   const stat=()=>6+Math.floor(Math.random()*13);
+  const bonuses=V6_RACE_BONUSES[race]||{};
+  const bstat=(k)=>Math.min(20,stat()+(bonuses[k]||0));
+  const gCatM=g==='Female'||g==='Futa / Futanari'?'f':g==='Non-binary'||g==='Androgynous'||g==='Gender-fluid'?'n':'m';
+  const mCat=V6_RACE_MEASURE_MAP[race]||'_default';
+  const mRng=V6_RACE_MEASUREMENTS[mCat][gCatM];
+  const mRnd=(lo,hi)=>lo+Math.floor(Math.random()*(hi-lo+1));
   return{
     name:pickRnd(nl)+'_'+(10+Math.floor(Math.random()*90)),
     race,gender:g,age:18+Math.floor(Math.random()*182),
@@ -1420,11 +1426,11 @@ function v6BuildRandom(){
     eyes:pickRnd(V6_EYES_OPTS.slice(0,-1)),
     body_type:pickRnd(V6_BODY_TYPES.slice(0,-1)),
     height:`${4+Math.floor(Math.random()*3)}'${Math.floor(Math.random()*12)}"`,
-    bust_chest:`${28+Math.floor(Math.random()*16)}"`,
-    waist:`${22+Math.floor(Math.random()*14)}"`,
-    hips:`${30+Math.floor(Math.random()*16)}"`,
+    bust_chest:`${mRnd(...mRng.bust)}"`,
+    waist:`${mRnd(...mRng.waist)}"`,
+    hips:`${mRnd(...mRng.hip)}"`,
     languages:['Common'],
-    strength:stat(),dexterity:stat(),intelligence:stat(),wisdom:stat(),constitution:stat(),speed:stat(),luck:stat(),charisma_stat:stat(),
+    strength:bstat('strength'),dexterity:bstat('dexterity'),intelligence:bstat('intelligence'),wisdom:bstat('wisdom'),constitution:bstat('constitution'),speed:stat(),luck:stat(),charisma_stat:bstat('charisma_stat'),
     looks:4+Math.floor(Math.random()*6),
     weapon_training:pickN(V6_WEAPON_TYPES.slice(0,-1),2),
     magic_type:pickN(V6_MAGIC_TYPES.slice(0,-1),2),
@@ -1536,6 +1542,7 @@ function initCharFormV6(){
   fillV6Sel('#v6quirksSelect',V6_QUIRKS_LIST);
   fillV6Sel('#v6skillsSelect',V6_SKILLS_LIST);
   fillV6Sel('#v6tagsSelect',V6_CHAR_TAGS);
+  fillV6Sel('#v6sharedTags',V6_CHAR_TAGS);
 }
 
 // v6 tab switching
@@ -1583,14 +1590,35 @@ if(_v6rh)_v6rh.onclick=()=>{
   const inp=$('#v6heightInp');if(inp)inp.value=`${Math.floor(h/12)}'${h%12}"`;
 };
 
-// v6 random measurements
+// v6 random measurements (race/gender-aware)
 const _v6rm=$('#v6randMeasure');
 if(_v6rm)_v6rm.onclick=()=>{
+  const raceEl=$('#v6raceSelect');const race=raceEl?raceEl.value:'Human';
+  const form=$('#characterFormV6');const gVal=form?form.elements['gender']?.value:'';
+  const gCat=gVal==='Female'||gVal==='Futa / Futanari'?'f':gVal==='Non-binary'||gVal==='Androgynous'||gVal==='Gender-fluid'?'n':'m';
+  const cat=V6_RACE_MEASURE_MAP[race]||'_default';
+  const ranges=V6_RACE_MEASUREMENTS[cat][gCat];
+  const rnd=(lo,hi)=>lo+Math.floor(Math.random()*(hi-lo+1));
   const b=$('#v6bust'),w=$('#v6waist'),h=$('#v6hips');
-  if(b)b.value=`${28+Math.floor(Math.random()*16)}"`;
-  if(w)w.value=`${22+Math.floor(Math.random()*14)}"`;
-  if(h)h.value=`${30+Math.floor(Math.random()*16)}"`;
+  if(b)b.value=`${rnd(...ranges.bust)}"`;
+  if(w)w.value=`${rnd(...ranges.waist)}"`;
+  if(h)h.value=`${rnd(...ranges.hip)}"`;
 };
+
+// v6 random backstory/scenario/goals
+async function v6RandPrompts(){
+  const form=$('#characterFormV6');if(!form)return{};
+  const race=(form.elements['race']||{}).value||'Human';
+  const prof=(form.elements['profession']||{}).value||'Adventurer';
+  try{return await api(`/api/random/prompts?race=${encodeURIComponent(race)}&profession=${encodeURIComponent(prof)}`);}
+  catch{return{};}
+}
+const _v6rb=$('#v6randBackstory');
+if(_v6rb)_v6rb.onclick=async()=>{const r=await v6RandPrompts();const el=$('#characterFormV6')?.elements['backstory'];if(el&&r.backstory)el.value=r.backstory;};
+const _v6rs2=$('#v6randScenario');
+if(_v6rs2)_v6rs2.onclick=async()=>{const r=await v6RandPrompts();const el=$('#characterFormV6')?.elements['scenario'];if(el&&r.scenario)el.value=r.scenario;};
+const _v6rg2=$('#v6randGoals');
+if(_v6rg2)_v6rg2.onclick=async()=>{const r=await v6RandPrompts();const el=$('#characterFormV6')?.elements['goals'];if(el&&r.goals)el.value=r.goals;};
 
 // v6 multi-character generation
 let _v6multiChars=[];
@@ -1598,22 +1626,56 @@ const _v6gen=$('#v6genGroup');
 if(_v6gen)_v6gen.onclick=()=>{
   if(!Object.keys(studioOptions).length){toast('Loading options…');return;}
   const num=Math.min(10,Math.max(2,Number($('#v6multiNum').value)||3));
-  const group=$('#v6groupName').value||'The Party';
-  _v6multiChars=Array.from({length:num},(_,i)=>{const ch=v6BuildRandom();ch.scenario=`Member of: ${group}`;return ch;});
+  const group=$('#v6groupName')?.value||'The Party';
+  const sharedTagEl=$('#v6sharedTags');
+  const sharedTags=sharedTagEl?Array.from(sharedTagEl.selectedOptions).map(o=>o.value):[];
+  _v6multiChars=Array.from({length:num},()=>{
+    const ch=v6BuildRandom();
+    ch.scenario=`Member of: ${group}`;
+    if(sharedTags.length)ch.tags=[...new Set([...(ch.tags||[]),...sharedTags])];
+    return ch;
+  });
   const res=$('#v6multiResults');
   if(!res)return;
   res.innerHTML=_v6multiChars.map((ch,i)=>`
-    <div class="v6-multi-card">
-      <h4>${i+1}. ${safe(ch.name)} — ${safe(ch.race)} ${safe(ch.gender)} ${safe(ch.profession)}</h4>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px;color:var(--muted)">
-        <span>Alignment: ${safe(ch.alignment)}</span><span>Level: 1</span>
+    <div class="v6-multi-card" id="mc-card-${i}">
+      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:4px 0" onclick="document.getElementById('mc-edit-${i}').hidden=!document.getElementById('mc-edit-${i}').hidden;this.querySelector('.mc-toggle').textContent=document.getElementById('mc-edit-${i}').hidden?'▶ Edit':'▼ Collapse'">
+        <h4 style="margin:0;font-size:12px">${i+1}. ${safe(ch.name)} <span style="color:var(--muted);font-weight:normal">— ${safe(ch.race)} ${safe(ch.gender)}, ${safe(ch.profession)}</span></h4>
+        <span class="mc-toggle" style="font-size:10px;color:var(--gold)">▶ Edit</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px;color:var(--muted);margin-bottom:6px">
+        <span>Age: ${ch.age} &nbsp;|&nbsp; ${safe(ch.alignment)}</span><span>Body: ${safe(ch.body_type)} ${safe(ch.height)}</span>
         <span>STR ${ch.strength} DEX ${ch.dexterity} INT ${ch.intelligence}</span>
         <span>WIS ${ch.wisdom} CON ${ch.constitution} CHA ${ch.charisma_stat}</span>
-        <span>Weapons: ${(ch.weapon_training||[]).join(', ')||'—'}</span>
-        <span>Magic: ${(ch.magic_type||[]).join(', ')||'—'}</span>
+        <span>⚔ ${(ch.weapon_training||[]).join(', ')||'—'}</span>
+        <span>✨ ${(ch.magic_type||[]).join(', ')||'—'}</span>
+      </div>
+      <div id="mc-edit-${i}" hidden style="border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <label style="font-size:10px">Name<input class="mc-f" data-i="${i}" data-k="name" value="${safe(ch.name)}" style="width:100%;margin-top:2px"></label>
+          <label style="font-size:10px">Age<input type="number" class="mc-f" data-i="${i}" data-k="age" value="${ch.age}" style="width:100%;margin-top:2px"></label>
+          <label style="font-size:10px">Gender<input class="mc-f" data-i="${i}" data-k="gender" value="${safe(ch.gender)}" style="width:100%;margin-top:2px"></label>
+          <label style="font-size:10px">Race<input class="mc-f" data-i="${i}" data-k="race" value="${safe(ch.race)}" style="width:100%;margin-top:2px"></label>
+          <label style="font-size:10px">Profession<input class="mc-f" data-i="${i}" data-k="profession" value="${safe(ch.profession)}" style="width:100%;margin-top:2px"></label>
+          <label style="font-size:10px">Alignment<input class="mc-f" data-i="${i}" data-k="alignment" value="${safe(ch.alignment)}" style="width:100%;margin-top:2px"></label>
+          <label style="font-size:10px">Body Type<input class="mc-f" data-i="${i}" data-k="body_type" value="${safe(ch.body_type)}" style="width:100%;margin-top:2px"></label>
+          <label style="font-size:10px">Height<input class="mc-f" data-i="${i}" data-k="height" value="${safe(ch.height)}" style="width:100%;margin-top:2px"></label>
+          <label style="font-size:10px">Looks (1-10)<input type="number" min="1" max="10" class="mc-f" data-i="${i}" data-k="looks" value="${ch.looks}" style="width:100%;margin-top:2px"></label>
+        </div>
+        <label style="font-size:10px">Backstory<textarea class="mc-f" data-i="${i}" data-k="backstory" rows="2" style="width:100%;resize:vertical;margin-top:2px">${safe(ch.backstory||'')}</textarea></label>
+        <label style="font-size:10px">Tags (comma-separated)<input class="mc-f" data-i="${i}" data-k="tags_raw" value="${(ch.tags||[]).join(', ')}" style="width:100%;margin-top:2px"></label>
       </div>
     </div>
   `).join('');
+  // Live-edit event delegation
+  res.oninput=e=>{
+    const el=e.target.closest('.mc-f');if(!el)return;
+    const i=Number(el.dataset.i),k=el.dataset.k;
+    if(!_v6multiChars[i])return;
+    if(k==='tags_raw')_v6multiChars[i].tags=el.value.split(',').map(s=>s.trim()).filter(Boolean);
+    else if(k==='age'||k==='looks')_v6multiChars[i][k]=Number(el.value);
+    else _v6multiChars[i][k]=el.value;
+  };
   const sr=$('#v6multiSaveRow');if(sr)sr.hidden=false;
 };
 
@@ -1686,6 +1748,39 @@ const V6_DND_RACE_INFO={
   "Vulcan":{lore:"Highly logical humanoids from a desert world, with exceptional mental discipline.",height:'5\'8"–6\'2"',speed:30,size:"Medium",languages:["Common","Vulcan"]},
   "Klingon":{lore:"Proud warrior species who value honour and combat above all.",height:'5\'10"–6\'6"',speed:30,size:"Medium",languages:["Common","Klingon"]},
   "Jaffa":{lore:"Warriors who carry a Goa'uld symbiote for extended life and strength.",height:'6\'0"–6\'6"',speed:30,size:"Medium",languages:["Common","Goa'uld"]}
+};
+
+// Race/gender-specific body measurements (bust/waist/hip in inches, [min,max])
+const V6_RACE_MEASUREMENTS={
+  _default:{m:{bust:[34,46],waist:[28,38],hip:[32,40]},f:{bust:[30,42],waist:[24,34],hip:[32,44]},n:{bust:[30,44],waist:[24,36],hip:[30,42]}},
+  _small:  {m:{bust:[22,32],waist:[18,26],hip:[22,30]},f:{bust:[20,30],waist:[16,24],hip:[22,32]},n:{bust:[20,30],waist:[16,26],hip:[20,30]}},
+  _large:  {m:{bust:[44,56],waist:[34,46],hip:[38,48]},f:{bust:[38,50],waist:[30,40],hip:[38,50]},n:{bust:[40,54],waist:[32,44],hip:[38,48]}},
+  _heavy:  {m:{bust:[38,52],waist:[30,42],hip:[34,44]},f:{bust:[34,46],waist:[26,36],hip:[34,46]},n:{bust:[36,48],waist:[28,40],hip:[34,46]}},
+  _slim:   {m:{bust:[30,40],waist:[24,32],hip:[28,36]},f:{bust:[28,38],waist:[22,28],hip:[30,40]},n:{bust:[28,38],waist:[22,30],hip:[28,38]}}
+};
+const V6_RACE_MEASURE_MAP={
+  'Gnome':'_small','Halfling':'_small','Ferengi':'_small',
+  'Goliath':'_large','Firbolg':'_large','Bear Person':'_large',
+  'Dragonborn':'_heavy','Half-Orc':'_heavy','Klingon':'_heavy','Jaffa':'_heavy','Narn':'_heavy','Shark Person':'_heavy','Tiger Person':'_heavy','Lion Person':'_heavy',
+  'Cat Person (Neko)':'_slim','Neko / Cat Person':'_slim','Kitsune / Fox Person':'_slim','Rabbit Person':'_slim','Bird Person (Harpy)':'_slim','Deer Person':'_slim','Tabaxi':'_slim','Kenku':'_slim'
+};
+
+// Race stat bonuses applied to random generation
+const V6_RACE_BONUSES={
+  'Human':{strength:1,dexterity:1,intelligence:1,wisdom:1,constitution:1,charisma_stat:1},
+  'Elf':{dexterity:2,intelligence:1},'High Elf':{dexterity:2,intelligence:1},
+  'Wood Elf':{dexterity:2,wisdom:1},'Drow':{dexterity:2,charisma_stat:1},
+  'Dwarf':{constitution:2},'Halfling':{dexterity:2},'Gnome':{intelligence:2},
+  'Half-Elf':{charisma_stat:2,dexterity:1,wisdom:1},'Half-Orc':{strength:2,constitution:1},
+  'Tiefling':{charisma_stat:2,intelligence:1},'Aasimar':{charisma_stat:2,wisdom:1},
+  'Dragonborn':{strength:2,charisma_stat:1},'Goliath':{strength:2,constitution:1},
+  'Tabaxi':{dexterity:2,charisma_stat:1},'Warforged':{constitution:2,strength:1},
+  'Firbolg':{wisdom:2,strength:1},'Genasi':{constitution:2},'Lizardfolk':{constitution:2,wisdom:1},
+  'Triton':{strength:1,constitution:1,charisma_stat:1},'Kenku':{dexterity:2,wisdom:1},
+  'Changeling':{charisma_stat:2},'Neko / Cat Person':{dexterity:2,charisma_stat:1},
+  'Kitsune / Fox Person':{dexterity:2,charisma_stat:2},'Wolf Person':{strength:2,constitution:1},
+  'Cat Person (Neko)':{dexterity:2,charisma_stat:1},
+  'Klingon':{strength:2,constitution:2},'Vulcan':{intelligence:2,wisdom:2},'Jaffa':{strength:2,constitution:1}
 };
 
 // Init preset source select
