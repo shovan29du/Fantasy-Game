@@ -281,16 +281,41 @@ async function enterLocation(loc){
  $('#mapLocSub').textContent=`${loc.terrain} · ${world?.name||''}`;
  panel.hidden=false;
  loading.style.display='flex';
- if(state.locationImageCache[loc.id]){img.src=state.locationImageCache[loc.id];img.style.opacity='1';loading.style.display='none';return}
+ if(state.locationImageCache[loc.id]){
+  const cached=state.locationImageCache[loc.id];
+  img.src=cached;img.style.opacity='1';loading.style.display='none';
+  const mapEl=$('#map');mapEl.style.backgroundImage=`url('${cached}')`;mapEl.style.backgroundSize='cover';mapEl.style.backgroundPosition='center';
+  return;
+ }
  img.style.opacity='0';
  const character=state.sheet;
  const useOpening=state.openingText&&!state.openingTextUsed&&state.locations[0]&&loc.id===state.locations[0].id;
  if(useOpening)state.openingTextUsed=true;
+ const partyLine=state.partyChars.length>1?` Party members present: ${state.partyChars.slice(1).map(c=>`${c.name} (${c.race} ${c.profession})`).join(', ')}.`:'';
  const prompt=useOpening?`${world?.name||'A realm'}: ${state.openingText.slice(0,280)}. The scene shows ${loc.terrain} terrain at ${loc.name}.`:`${world?.name||'A realm'}, ${loc.terrain} region called ${loc.name}. ${loc.description||''} A ${character?.race||'traveller'} ${character?.profession||'adventurer'} named ${character?.name||'the hero'} stands in the scene.`;
  try{
   const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Cinematic',width:1024,height:576,save_to_chat:false})});
   const url=result.url||result.path;
-  if(url){state.locationImageCache[loc.id]=url;img.src=url;img.onload=()=>{img.style.opacity='1'}}
+  if(url){
+   state.locationImageCache[loc.id]=url;
+   img.src=url;img.onload=()=>{img.style.opacity='1'};
+   const mapEl=$('#map');mapEl.style.backgroundImage=`url('${url}')`;mapEl.style.backgroundSize='cover';mapEl.style.backgroundPosition='center';
+   if(useOpening){
+    const chatLog=$('#chatLog');
+    chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><img src="${safe(url)}" class="chat-scene-img" alt="Opening scene: ${safe(loc.name)}"><span class="chat-scene-caption">📍 ${safe(loc.name)} · ${safe(loc.terrain)}</span></div></div>`);
+    chatLog.scrollTop=chatLog.scrollHeight;
+    const descPrompt=`Describe the ${loc.terrain} location "${loc.name}" in ${world?.name||'this world'} as the player first arrives. Paint a vivid picture of the atmosphere — the sights, sounds, smells, and the feeling of this place. Describe any notable people, creatures, merchants, guards, or beings visible here.${partyLine} Keep it to 2-3 immersive paragraphs, written in second person ("You see...", "You smell...").`;
+    try{
+     const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:descPrompt,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'System',character_name:'Worldweaver',participants:['Worldweaver'],temperature:0.9})});
+     const data=await r.json();
+     if(r.ok&&data.reply){
+      chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',fmtChat(data.reply),data.id));
+      chatLog.scrollTop=chatLog.scrollHeight;
+      speakReply(data.reply);
+     }
+    }catch{}
+   }
+  }
  }catch(error){toast(`Scene generation failed: ${error.message}`)}
  loading.style.display='none';
 }
@@ -314,9 +339,28 @@ function loadSessionFromStorage(){try{const raw=localStorage.getItem(SESSION_KEY
 function saveSessionToStorage(){localStorage.setItem(SESSION_KEY,JSON.stringify({sessionId:state.sessionId,worldId:state.worlds[0]?.id,characterId:state.characterId}))}
 function toWorldEntry(w){const locs=(w.locations||w.world_json?.locations||[]);const first=locs[0];const sp=w.space_alignment||'';const theme=sp==='sci-fi'||sp==='futuristic'?'universe':sp==='ancient_civilization'||sp==='prehistoric'?'area':'local';return {id:w.id,name:w.name,ratings:w.ratings||{},reality_type:w.reality_type||'Prime Reality',space:sp||'unknown',place:first?first.name:(w.name||'Unknown Location'),theme,startX:first?first.x:50,startY:first?first.y:50}}
 
-// ── Chat content formatter: **action**, "dialogue", 'dialogue', user: label ──
+// ── Chat content formatter: **action**, *action*, "dialogue", Name: line ──
+// Screenplay format: "Liam: Hello" → name badge + dialogue; **text** → action narration
 function fmtChat(raw){
  const s=String(raw??'');
+ // Process line by line to handle "Name: dialogue" screenplay format
+ const lines=s.split(/\r?\n/);
+ const nameColonRe=/^([A-Z][a-zA-Z0-9 '\-]{1,30}):\s*(.+)/;
+ return lines.map(line=>{
+  // Check for screenplay dialogue: "Name: text"
+  const nc=nameColonRe.exec(line.trim());
+  if(nc){
+   const spkr=safe(nc[1]);
+   const rest=fmtInline(nc[2]);
+   return `<div class="chat-line-speech"><span class="chat-speaker-name">${spkr}:</span> ${rest}</div>`;
+  }
+  // Otherwise apply inline formatting
+  const formatted=fmtInline(line);
+  return formatted?`<div class="chat-line">${formatted}</div>`:'';
+ }).filter(Boolean).join('');
+}
+function fmtInline(s){
+ s=String(s??'');
  let result='';
  // **action** or *action* → italic narration; "dialogue" or 'dialogue' → spoken line
  const re=/\*\*([^*]+?)\*\*|\*([^*\n]+?)\*|"([^"\n]+?)"|'([^'\n]+?)'/g;
@@ -330,7 +374,6 @@ function fmtChat(raw){
   last=re.lastIndex;
  }
  if(last<s.length)result+=safe(s.slice(last));
- result=result.replace(/^(user|User|USER):\s*/,'<span class="chat-speaker">$1:</span> ');
  return result;
 }
 
