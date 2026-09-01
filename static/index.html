@@ -212,6 +212,12 @@
           </div>
 
           <!-- Single character tab -->
+          <div style="margin:0 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)">Preset Source
+              <select id="v6presetSrc" style="background:#141c24;border:1px solid var(--line);color:#e9ecf1;padding:4px 8px;border-radius:4px;font-size:11px"></select>
+            </label>
+            <button type="button" id="v6totalRandom" class="gold" style="font-size:11px;padding:5px 12px">🎲 Total Random Character</button>
+          </div>
           <div id="v6tab-single">
             <form id="characterFormV6" class="studio-form">
               <div class="wide"><b class="section-tag">IDENTITY</b></div>
@@ -219,6 +225,7 @@
               <label>Age<input name="age" type="number" min="0" max="10000" value="25"></label>
               <label>Gender<select name="gender" id="v6genderSelect"></select></label>
               <label>Race / ancestry<select name="race" id="v6raceSelect"></select></label>
+              <div id="v6raceInfo" class="wide" style="display:none;background:#0d1520;border:1px solid var(--line);border-radius:6px;padding:10px 14px;margin-bottom:4px;font-size:11px;line-height:1.6"></div>
               <label>Secondary ancestry<select name="secondary_ancestry" id="v6secAncestrySelect"><option value="">— None —</option></select></label>
               <label>Alignment<select name="alignment" id="v6alignSelect"></select></label>
               <label>Background<select name="background" id="v6bgSelect"></select></label>
@@ -248,6 +255,7 @@
               <div class="wide"><label>Weapon training<select name="weapon_training" id="v6weaponSelect" multiple size="4" class="v6-multi"></select></label></div>
               <div class="wide"><label>Magic type<select name="magic_type" id="v6magicSelect" multiple size="4" class="v6-multi"></select></label></div>
               <div class="wide"><label>Power system<select name="power_system" id="v6powerSelect" multiple size="3" class="v6-multi"></select></label></div>
+              <div class="wide" id="v6abilitiesRow" style="display:none"><label>Abilities (preset)<select name="abilities" id="v6abilitiesSelect" multiple size="4" class="v6-multi"></select></label></div>
 
               <div class="wide"><b class="section-tag">STATS (1–20)</b></div>
               <label>Strength <span id="v6strVal">10</span><input type="range" name="strength" min="1" max="20" value="10" oninput="document.getElementById('v6strVal').textContent=this.value"></label>
@@ -272,9 +280,25 @@
               <div class="wide"><b class="section-tag">TAGS</b></div>
               <div class="wide"><select name="tags" id="v6tagsSelect" multiple size="5" class="v6-multi"></select></div>
 
-              <div class="form-actions wide">
+              <div class="wide"><b class="section-tag">PHOTO</b></div>
+              <div class="wide" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)">Style
+                  <select id="v6photoStyle" style="background:#141c24;border:1px solid var(--line);color:#e9ecf1;padding:4px 8px;border-radius:4px;font-size:11px"></select>
+                </label>
+                <button type="button" id="v6genPhoto" class="gold" style="font-size:11px;padding:5px 12px">🎨 Generate Photo (FREE)</button>
+                <label style="font-size:11px;cursor:pointer;color:var(--muted);display:flex;align-items:center;gap:4px"><input id="v6photoUpload" type="file" accept="image/*" style="display:none">📁 Upload Photo</label>
+              </div>
+              <div id="v6photoPreview" class="wide" style="margin-top:8px"></div>
+              <input type="hidden" name="photo_path" id="v6photoPath">
+
+              <div class="form-actions wide" style="flex-wrap:wrap;gap:6px">
                 <button type="button" id="rndCharV6" class="ghost">🎲 Randomize All</button>
+                <button type="button" id="v6importJson" class="ghost">📥 Import .json</button>
+                <button type="button" id="v6resetAll" class="ghost">🔄 Reset All</button>
                 <button type="submit" class="gold">💾 Save character</button>
+              </div>
+              <div id="v6importRow" style="display:none;margin-top:8px">
+                <input id="v6importFile" type="file" accept=".json" style="font-size:11px;color:var(--muted)">
               </div>
             </form>
           </div>
@@ -291,6 +315,13 @@
           </div>
 
         </section>
+      </div>
+      <div style="margin-top:14px;padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:6px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <b style="font-size:12px;color:var(--gold)">Saved Characters</b>
+          <button class="ghost" id="v6refreshSaved" style="font-size:10px;padding:3px 8px">↻ Refresh</button>
+        </div>
+        <div id="v6savedChars" class="entity-list"><div class="empty-state">Open this panel to load characters.</div></div>
       </div>
     </details>
   </section>

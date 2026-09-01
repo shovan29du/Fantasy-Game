@@ -1551,7 +1551,7 @@ if(_v6form)_v6form.onsubmit=async event=>{
   event.preventDefault();
   const fd=new FormData(event.currentTarget);
   const payload=Object.fromEntries(fd.entries());
-  const multiKeys=['weapon_training','magic_type','power_system','traits','quirks','emotion_styles','languages','skills','tags'];
+  const multiKeys=['weapon_training','magic_type','power_system','abilities','traits','quirks','emotion_styles','languages','skills','tags'];
   multiKeys.forEach(k=>{payload[k]=fd.getAll(k);});
   payload.age=Number(payload.age||25);
   payload.level=Number(payload.level||1);
@@ -1631,4 +1631,234 @@ if(_v6saveAll)_v6saveAll.onclick=async()=>{
     await loadCharacterStudio();
   }catch(err){toast(err.message);}
   finally{_v6saveAll.disabled=false;_v6saveAll.textContent='💾 Save All Characters';}
+};
+
+// ═══ AiChat Pro — Preset Source, Race Info, Photo, Import/Export, Saved Chars ═══
+const V6_PRESET_SOURCES=["All (Combined)","D&D 5e (Standard)","Fairy Tail","One Piece","Naruto","Bleach","Soul Land","Dragon Ball","Jujutsu Kaisen","Demon Slayer","Hunter x Hunter","Mass Effect","Baldur's Gate 3","DC Comics","Marvel Comics","Elder Scrolls","Witcher","Star Trek","Stargate","Babylon 5","Custom (No Preset)"];
+const V6_PRESETS={
+  "Fairy Tail":{races:["Human","Exceed","Demon","Dragon"],eye_colors:["Brown","Blue","Green","Red","Gold","Scarlet"],hair_colors:["Pink","Blonde","Scarlet Red","Blue","White","Black","Silver"],abilities:["Fire Dragon Slayer","Ice Make","Requip","Celestial Spirit Magic","Dragon Force","Fairy Law"]},
+  "One Piece":{races:["Human","Fishman","Giant","Mink","Cyborg"],eye_colors:["Black","Brown","Blue","Red","Gold"],hair_colors:["Black","Green","Blonde","Orange","Blue","Pink","White"],abilities:["Observation Haki","Armament Haki","Conqueror's Haki","Gear Fifth"]},
+  "Naruto":{races:["Human","Otsutsuki","Jinchuriki"],eye_colors:["Black","Blue","Green","Red (Sharingan)","White (Byakugan)","Purple (Rinnegan)"],hair_colors:["Blonde","Black","Pink","Red","White","Silver"],abilities:["Rasengan","Chidori","Shadow Clone","Sharingan","Sage Mode","Susanoo"]},
+  "Bleach":{races:["Human","Shinigami","Hollow","Arrancar","Quincy"],eye_colors:["Brown","Blue","Green","Gold","Red"],hair_colors:["Orange","Black","White","Red","Blue","Silver"],abilities:["Shikai","Bankai","Cero","Flash Step","Getsuga Tensho"]},
+  "Dragon Ball":{races:["Human","Saiyan","Namekian","Android","Majin"],eye_colors:["Black","Blue","Green","Red"],hair_colors:["Black","Gold","Blue","Silver","White"],abilities:["Kamehameha","Spirit Bomb","Instant Transmission","Fusion Dance"]},
+  "Jujutsu Kaisen":{races:["Human","Cursed Spirit","Special Grade"],eye_colors:["Black","Blue","Purple","Red"],hair_colors:["Black","White","Pink","Silver","Orange"],abilities:["Domain Expansion","Infinity","Ten Shadows","Black Flash"]},
+  "Demon Slayer":{races:["Human","Demon","Upper Moon"],eye_colors:["Brown","Red","Blue","Purple","Gold"],hair_colors:["Black","Red","Yellow","Pink","White","Blue"],abilities:["Water Breathing","Thunder Breathing","Flame Breathing","Sun Breathing"]},
+  "Soul Land":{races:["Human","Spirit Beast","God Realm Being"],eye_colors:["Blue","Gold","Purple","Red","Silver"],hair_colors:["Black","Blue","Silver","White","Purple","Gold"],abilities:["Spirit Ring Absorption","Twin Spirits","Domain Expansion","Clear Sky Hammer"]},
+  "Hunter x Hunter":{races:["Human","Chimera Ant"],eye_colors:["Brown","Red","Blue","Green","Gold"],hair_colors:["Black","White","Silver","Green","Blonde"],abilities:["Nen","Jajanken","Bungee Gum","Godspeed"]},
+  "Mass Effect":{races:["Human","Asari","Turian","Salarian","Krogan","Quarian","Drell"],eye_colors:["Brown","Blue","Green","Glowing"],hair_colors:["Black","Brown","Blonde","Red","Bald"],abilities:["Singularity","Charge","Overload","Tactical Cloak","Nova"]},
+  "Baldur's Gate 3":{races:["Human","Elf","Dwarf","Halfling","Gnome","Half-Elf","Half-Orc","Tiefling","Dragonborn","Githyanki","Drow"],eye_colors:["Brown","Blue","Green","Gold","Red","Violet"],hair_colors:["Black","Brown","Blonde","White","Silver","Red"],abilities:["Action Surge","Eldritch Blast","Sneak Attack","Divine Smite","Wild Shape","Rage"]},
+  "DC Comics":{races:["Human","Kryptonian","Amazonian","Atlantean","Martian","Metahuman"],eye_colors:["Blue","Brown","Green","Red","Glowing"],hair_colors:["Black","Brown","Blonde","Red","White"],abilities:["Heat Vision","Super Speed","Power Ring","Lasso of Truth"]},
+  "Marvel Comics":{races:["Human","Mutant","Inhuman","Asgardian","Eternal","Symbiote Host"],eye_colors:["Blue","Brown","Green","Red","Gold"],hair_colors:["Brown","Black","Blonde","Red","White","Silver"],abilities:["Adamantium Claws","Repulsor Beams","Mjolnir","Web-Slinging","Telepathy"]},
+  "Elder Scrolls":{races:["Nord","Imperial","Breton","Redguard","Dunmer","Altmer","Bosmer","Orc","Khajiit","Argonian"],eye_colors:["Blue","Brown","Green","Red","Gold","Yellow"],hair_colors:["Blonde","Brown","Black","Red","White","Grey"],abilities:["Thu'um","Destruction Magic","Restoration","Conjuration","Enchanting"]},
+  "Witcher":{races:["Human","Elf","Dwarf","Witcher (mutated)","Sorceress"],eye_colors:["Yellow (cat)","Blue","Green","Brown","Violet"],hair_colors:["White","Black","Red","Brown","Blonde"],abilities:["Igni","Aard","Quen","Yrden","Axii"]},
+  "Star Trek":{races:["Human","Vulcan","Klingon","Romulan","Andorian","Betazoid","Trill","Bajoran","Cardassian","Ferengi","Orion","Borg Drone"],eye_colors:["Brown","Blue","Green","Black","All-black","Cybernetic"],hair_colors:["Black","Brown","Blonde","Bald","White","Silver"],abilities:["Mind Meld","Nerve Pinch","Bat'leth Mastery","Telepathy","Assimilation"]},
+  "Stargate":{races:["Tau'ri (Human)","Jaffa","Tok'ra","Goa'uld Host","Wraith","Ancient (Alteran)","Asgard (SG)","Athosian"],eye_colors:["Brown","Blue","Green","Glowing gold","Yellow slit"],hair_colors:["Brown","Black","Blonde","Bald","White","Silver"],abilities:["Staff Weapon Mastery","Zat'nik'tel","Healing Device","Ancient Tech","Life Draining"]},
+  "Babylon 5":{races:["Human","Minbari","Narn","Centauri (B5)","Vorlon","Drazi","Shadow Agent"],eye_colors:["Brown","Blue","Grey","Red","Dark","Glowing"],hair_colors:["Brown","Black","Blonde","None","Fan-shaped"],abilities:["Pike Fighting","Telepathy","Vorlon Enhancement","Shadow Technology"]}
+};
+const V6_IMAGE_STYLES=["Realistic Photo","Fantasy Art","Anime","3D Render","Sci-Fi","Cartoon","Oil Painting","Watercolour","Pixel Art","Comic Book","Cyberpunk","Steampunk","Dark Fantasy","Studio Portrait","Cinematic","Manga","Chibi","Concept Art","Gothic","Pin-Up","Noir","Custom"];
+const V6_DND_RACE_INFO={
+  "Human":{lore:"Versatile and adaptable, the most common race.",height:'5\'6"–6\'2"',speed:30,size:"Medium",languages:["Common"]},
+  "Elf":{lore:"Ancient, graceful folk with keen senses and long memories.",height:'5\'4"–6\'0"',speed:30,size:"Medium",languages:["Common","Elvish"]},
+  "High Elf":{lore:"Supremely intelligent elves with innate magical gifts.",height:'5\'4"–6\'0"',speed:30,size:"Medium",languages:["Common","Elvish"]},
+  "Wood Elf":{lore:"Fleet-footed forest-dwellers with preternatural stealth.",height:'5\'4"–6\'0"',speed:35,size:"Medium",languages:["Common","Elvish"]},
+  "Drow":{lore:"Subterranean elves shrouded in shadow and dark magic.",height:'5\'2"–5\'10"',speed:30,size:"Medium",languages:["Common","Elvish","Undercommon"]},
+  "Dwarf":{lore:"Stout and resilient, masters of stone and metal craft.",height:'4\'4"–4\'10"',speed:25,size:"Medium",languages:["Common","Dwarvish"]},
+  "Halfling":{lore:"Small, nimble folk with remarkable luck and cheer.",height:'2\'9"–3\'1"',speed:25,size:"Small",languages:["Common","Halfling"]},
+  "Gnome":{lore:"Clever, curious inventors with a knack for illusion.",height:'3\'0"–3\'6"',speed:25,size:"Small",languages:["Common","Gnomish"]},
+  "Half-Elf":{lore:"Born between two worlds, naturally charismatic.",height:'5\'2"–6\'0"',speed:30,size:"Medium",languages:["Common","Elvish","one extra"]},
+  "Half-Orc":{lore:"Fierce and enduring, with savage strength.",height:'5\'10"–6\'4"',speed:30,size:"Medium",languages:["Common","Orc"]},
+  "Tiefling":{lore:"Infernal heritage grants dark powers and striking looks.",height:'5\'6"–6\'0"',speed:30,size:"Medium",languages:["Common","Infernal"]},
+  "Aasimar":{lore:"Touched by celestial power and divine radiance.",height:'5\'6"–6\'2"',speed:30,size:"Medium",languages:["Common","Celestial"]},
+  "Dragonborn":{lore:"Descendants of dragons with draconic breath weapons.",height:'6\'0"–6\'8"',speed:30,size:"Medium",languages:["Common","Draconic"]},
+  "Goliath":{lore:"Mountain-born titans of prodigious strength.",height:'7\'0"–8\'0"',speed:30,size:"Medium",languages:["Common","Giant"]},
+  "Tabaxi":{lore:"Cat-folk from distant jungles, driven by curiosity.",height:'5\'8"–6\'2"',speed:30,size:"Medium",languages:["Common"]},
+  "Warforged":{lore:"Living constructs forged for war, seeking purpose.",height:'5\'10"–6\'6"',speed:30,size:"Medium",languages:["Common"]},
+  "Changeling":{lore:"Shapeshifters of mercurial nature and fluid identity.",height:'5\'6"–6\'0"',speed:30,size:"Medium",languages:["Common"]},
+  "Firbolg":{lore:"Giant-kin who dwell peacefully in forest depths.",height:'7\'0"–8\'0"',speed:30,size:"Medium",languages:["Common","Elvish","Giant"]},
+  "Genasi":{lore:"Mortals with an elemental spirit—fire, water, earth, or air.",height:'5\'4"–6\'2"',speed:30,size:"Medium",languages:["Common","Primordial"]},
+  "Lizardfolk":{lore:"Cold-blooded reptilians guided by practicality and survival.",height:'5\'8"–6\'2"',speed:30,size:"Medium",languages:["Common","Draconic"]},
+  "Kenku":{lore:"Cursed bird-folk who mimic sounds they've heard.",height:'5\'0"–5\'6"',speed:30,size:"Medium",languages:["Common","Auran"]},
+  "Triton":{lore:"Aquatic guardians of the sea's darkness.",height:'5\'0"–5\'8"',speed:30,size:"Medium",languages:["Common","Primordial"]},
+  "Neko / Cat Person":{lore:"Feline-human hybrids with sharp senses and agile grace.",height:'5\'0"–5\'10"',speed:35,size:"Medium",languages:["Common"]},
+  "Kitsune / Fox Person":{lore:"Fox spirits with shapeshifting gifts and innate magic.",height:'5\'2"–5\'10"',speed:35,size:"Medium",languages:["Common"]},
+  "Wolf Person":{lore:"Pack-oriented wolf-folk with keen instincts.",height:'5\'8"–6\'4"',speed:35,size:"Medium",languages:["Common"]},
+  "Cat Person (Neko)":{lore:"Playful cat-folk with fast reflexes and a curious nature.",height:'5\'0"–5\'10"',speed:35,size:"Medium",languages:["Common"]},
+  "Vulcan":{lore:"Highly logical humanoids from a desert world, with exceptional mental discipline.",height:'5\'8"–6\'2"',speed:30,size:"Medium",languages:["Common","Vulcan"]},
+  "Klingon":{lore:"Proud warrior species who value honour and combat above all.",height:'5\'10"–6\'6"',speed:30,size:"Medium",languages:["Common","Klingon"]},
+  "Jaffa":{lore:"Warriors who carry a Goa'uld symbiote for extended life and strength.",height:'6\'0"–6\'6"',speed:30,size:"Medium",languages:["Common","Goa'uld"]}
+};
+
+// Init preset source select
+const _v6ps=$('#v6presetSrc');
+if(_v6ps){
+  _v6ps.innerHTML=V6_PRESET_SOURCES.map(s=>`<option value="${safe(s)}">${safe(s)}</option>`).join('');
+  _v6ps.onchange=()=>v6ApplyPreset(_v6ps.value);
+}
+// Init photo style select
+const _v6phSel=$('#v6photoStyle');
+if(_v6phSel) _v6phSel.innerHTML=V6_IMAGE_STYLES.map(s=>`<option value="${safe(s)}">${safe(s)}</option>`).join('');
+
+function v6ApplyPreset(src){
+  const preset=V6_PRESETS[src];
+  const raceEl=$('#v6raceSelect');
+  if(preset&&raceEl){
+    const races=[...preset.races,'Custom'];
+    raceEl.innerHTML=races.map(r=>`<option value="${safe(r)}">${safe(r)}</option>`).join('');
+  } else if(raceEl){
+    fillV6Sel('#v6raceSelect',Object.keys(studioOptions.races||{}));
+  }
+  if(preset&&preset.hair_colors) fillV6Sel('#v6hairSelect',[...preset.hair_colors,'Custom']);
+  else fillV6Sel('#v6hairSelect',V6_HAIR_OPTS);
+  if(preset&&preset.eye_colors) fillV6Sel('#v6eyesSelect',[...preset.eye_colors,'Custom']);
+  else fillV6Sel('#v6eyesSelect',V6_EYES_OPTS);
+  const abRow=$('#v6abilitiesRow'),abSel=$('#v6abilitiesSelect');
+  if(preset&&preset.abilities&&abSel){
+    abRow.style.display='';
+    abSel.innerHTML=preset.abilities.map(a=>`<option value="${safe(a)}">${safe(a)}</option>`).join('');
+  } else if(abRow){ abRow.style.display='none'; }
+}
+
+function v6UpdateRaceInfo(race){
+  const div=$('#v6raceInfo');if(!div)return;
+  const info=V6_DND_RACE_INFO[race];
+  if(!info){div.style.display='none';return;}
+  div.style.display='';
+  div.innerHTML=`<b style="color:var(--gold)">🛡️ ${safe(race)}</b>&nbsp;<span style="color:var(--muted)">${safe(info.lore||'')}</span><br>`+
+    `<span>📏 ${safe(info.height||'?')} &nbsp;|&nbsp; 👟 ${info.speed||30}ft &nbsp;|&nbsp; ⚖️ ${safe(info.size||'?')} &nbsp;|&nbsp; 🗣️ ${(info.languages||[]).join(', ')}</span>`;
+}
+const _v6raceSelEl=$('#v6raceSelect');
+if(_v6raceSelEl)_v6raceSelEl.addEventListener('change',e=>v6UpdateRaceInfo(e.target.value));
+
+// Total Random button
+const _v6totalRnd=$('#v6totalRandom');
+if(_v6totalRnd)_v6totalRnd.onclick=()=>{if(!Object.keys(studioOptions).length){toast('Loading options…');return;}v6FillForm(v6BuildRandom());toast('Total random character generated');};
+
+// Photo generation via Pollinations.ai
+const _v6genPhoto=$('#v6genPhoto');
+if(_v6genPhoto)_v6genPhoto.onclick=()=>{
+  const form=$('#characterFormV6');if(!form)return;
+  const fd=new FormData(form);
+  const style=($('#v6photoStyle')||{}).value||'Fantasy Art';
+  const prompt=`${style} character portrait, ${fd.get('gender')||''} ${fd.get('race')||''} ${fd.get('profession')||''}, ${fd.get('hair')||''} hair, ${fd.get('eyes')||''} eyes, ${fd.get('body_type')||''} build, ${fd.get('skin')||''} skin, detailed, high quality`;
+  const url=`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=768&nologo=true&nofeed=true`;
+  const prev=$('#v6photoPreview');
+  if(prev)prev.innerHTML=`<div style="font-size:10px;color:var(--muted);margin-bottom:4px" id="v6photoStatus">Generating…</div><img src="${url}" style="max-width:220px;border-radius:6px;border:1px solid var(--line)" onload="document.getElementById('v6photoStatus')&&(document.getElementById('v6photoStatus').textContent='Generated!')" onerror="document.getElementById('v6photoStatus')&&(document.getElementById('v6photoStatus').textContent='Generation failed — check connection')">`;
+  const ph=$('#v6photoPath');if(ph)ph.value=url;
+};
+
+// Photo upload
+const _v6pu=$('#v6photoUpload');
+if(_v6pu)_v6pu.onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    const prev=$('#v6photoPreview');
+    if(prev)prev.innerHTML=`<img src="${ev.target.result}" style="max-width:220px;border-radius:6px;border:1px solid var(--line)">`;
+    const ph=$('#v6photoPath');if(ph)ph.value=ev.target.result;
+  };
+  r.readAsDataURL(f);
+};
+
+// Import JSON
+const _v6impBtn=$('#v6importJson');
+if(_v6impBtn)_v6impBtn.onclick=()=>{
+  const row=$('#v6importRow');if(row)row.style.display=row.style.display==='none'?'':'none';
+};
+const _v6impFile=$('#v6importFile');
+if(_v6impFile)_v6impFile.onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const ch=JSON.parse(ev.target.result);
+      ['weapon_training','magic_type','power_system','traits','quirks','skills','emotion_styles','tags','languages','abilities'].forEach(k=>{if(typeof ch[k]==='string')try{ch[k]=JSON.parse(ch[k]);}catch{ch[k]=[ch[k]];}});
+      if(ch.measurements&&typeof ch.measurements==='string'){try{const m=JSON.parse(ch.measurements);Object.assign(ch,m);}catch{}}
+      if(ch.personality&&typeof ch.personality==='string'&&!ch.tags){try{ch.tags=JSON.parse(ch.personality);}catch{}}
+      v6FillForm(ch);toast('Character imported');
+      const row=$('#v6importRow');if(row)row.style.display='none';
+      e.target.value='';
+    }catch{toast('Invalid JSON file');}
+  };
+  r.readAsText(f);
+};
+
+// Reset All
+const _v6resetAll=$('#v6resetAll');
+if(_v6resetAll)_v6resetAll.onclick=()=>{
+  const form=$('#characterFormV6');if(form)form.reset();
+  ['str','dex','int','wis','con','spd','lck','cha'].forEach(k=>{const el=$(`#v6${k}Val`);if(el)el.textContent='10';});
+  const lks=$('#v6lksVal');if(lks)lks.textContent='5';
+  const prev=$('#v6photoPreview');if(prev)prev.innerHTML='';
+  const ph=$('#v6photoPath');if(ph)ph.value='';
+  toast('Form reset');
+};
+
+// Saved Characters list
+async function v6LoadSavedChars(){
+  const div=$('#v6savedChars');if(!div)return;
+  div.innerHTML='<div class="empty-state">Loading…</div>';
+  try{
+    const chars=await api('/api/characters');
+    if(!chars||!chars.length){div.innerHTML='<div class="empty-state">No characters saved yet.</div>';return;}
+    div.innerHTML=chars.slice(0,50).map(c=>`
+      <div class="entity-row" id="v6sc_${c.id}" style="flex-direction:column;align-items:flex-start;gap:4px">
+        <span class="entity-name">${safe(c.name||'?')} — Lv${c.level||1} ${safe(c.race||'')} ${safe(c.profession||'')}</span>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="ghost" style="font-size:9px;padding:3px 7px" onclick="v6LoadChar(${c.id})">📋 Load</button>
+          <button class="ghost" style="font-size:9px;padding:3px 7px" onclick="v6ExportChar(${c.id})">📤 Export</button>
+          <button class="ghost" style="font-size:9px;padding:3px 7px" onclick="v6GenCharPhoto(${c.id})">🎨 Photo</button>
+          <button class="ghost" style="font-size:9px;padding:3px 7px;color:#c44" onclick="v6DelChar(${c.id})">🗑️ Delete</button>
+        </div>
+      </div>`).join('');
+  }catch{div.innerHTML='<div class="empty-state">Error loading characters.</div>';}
+}
+const _v6refSaved=$('#v6refreshSaved');
+if(_v6refSaved)_v6refSaved.onclick=v6LoadSavedChars;
+// Load when panel first opens
+const _extDet=$('#extCharDetails');
+if(_extDet)_extDet.addEventListener('toggle',()=>{if(_extDet.open)v6LoadSavedChars();});
+
+window.v6LoadChar=async(id)=>{
+  try{
+    const chars=await api('/api/characters');
+    const ch=chars.find(c=>c.id===id);if(!ch){toast('Character not found');return;}
+    ['weapon_training','magic_type','power_system','traits','quirks','skills','emotion_styles','tags','languages','abilities'].forEach(k=>{
+      if(typeof ch[k]==='string')try{ch[k]=JSON.parse(ch[k]);}catch{ch[k]=[ch[k]];}
+    });
+    if(ch.measurements&&typeof ch.measurements==='string'){try{const m=JSON.parse(ch.measurements);Object.assign(ch,m);}catch{}}
+    if(ch.personality&&typeof ch.personality==='string'&&!ch.tags){try{ch.tags=JSON.parse(ch.personality);}catch{}}
+    v6FillForm(ch);toast(`${ch.name||'Character'} loaded`);
+    const form=$('#characterFormV6');if(form)form.scrollIntoView({behavior:'smooth',block:'start'});
+  }catch{toast('Load failed');}
+};
+
+window.v6ExportChar=async(id)=>{
+  try{
+    const chars=await api('/api/characters');
+    const ch=chars.find(c=>c.id===id);if(!ch)return;
+    const name=(ch.name||'character').replace(/\s+/g,'_');
+    const blob=new Blob([JSON.stringify(ch,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${name}.json`;a.click();
+  }catch{toast('Export failed');}
+};
+
+window.v6DelChar=async(id)=>{
+  if(!confirm('Delete this character?'))return;
+  try{
+    await api(`/api/characters/${id}`,{method:'DELETE'});
+    toast('Character deleted');v6LoadSavedChars();await loadCharacterStudio();
+  }catch{toast('Delete failed');}
+};
+
+window.v6GenCharPhoto=async(id)=>{
+  try{
+    const chars=await api('/api/characters');
+    const ch=chars.find(c=>c.id===id);if(!ch)return;
+    const style=($('#v6photoStyle')||{}).value||'Fantasy Art';
+    const prompt=`${style} character portrait, ${ch.gender||''} ${ch.race||''} ${ch.profession||''}, ${ch.hair||''} hair, ${ch.eyes||''} eyes, detailed, high quality`;
+    const url=`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=768&nologo=true&nofeed=true`;
+    const row=$(`#v6sc_${id}`);
+    if(row){const img=document.createElement('img');img.src=url;img.style.cssText='max-width:180px;border-radius:4px;border:1px solid var(--line);margin-top:6px';row.appendChild(img);}
+    toast('Generating photo…');
+  }catch{toast('Photo generation failed');}
 };
