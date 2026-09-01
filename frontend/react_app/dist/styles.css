@@ -72,8 +72,10 @@ input[type=range]{width:100%;accent-color:var(--gold);height:4px;cursor:pointer;
 .v6-multi-card h4{font-family:Georgia;margin:0 0 8px;color:#f4e2b0;font-size:13px}
 
 /* ═══ Game layout redesign: party panel top row, wide chat ═══ */
-.game-grid{grid-template-columns:minmax(360px,1fr) 540px 260px!important;grid-template-rows:80px 1fr!important}
+.game-grid{grid-template-columns:minmax(220px,0.5fr) 640px 310px!important;grid-template-rows:80px 1fr!important}
+.game-grid.party-collapsed{grid-template-rows:0px 1fr!important}
 .party-panel{grid-row:1!important;grid-column:1/-1!important;display:flex!important;flex-direction:row!important;align-items:stretch!important;overflow-x:auto!important;overflow-y:hidden!important;padding:0!important}
+.party-panel.party-hidden{display:none!important}
 .party-panel .panel-title{flex-direction:column;justify-content:center;align-items:flex-start;border-bottom:none;border-right:1px solid var(--line);padding:6px 12px;flex-shrink:0;width:68px}
 #partyList{display:flex!important;flex-direction:row!important;align-items:stretch}
 .party-card{min-width:155px;max-width:195px;flex-shrink:0;border-bottom:none!important;border-right:1px solid #222b34!important;padding:7px 9px!important}
@@ -87,5 +89,5 @@ input[type=range]{width:100%;accent-color:var(--gold);height:4px;cursor:pointer;
 #chatPanel{grid-row:2!important;grid-column:2!important}
 .detail-panel{grid-row:2!important;grid-column:3!important}
 #gameArea{transition:opacity .4s ease}
-@media(max-width:1360px){.game-grid{grid-template-columns:minmax(300px,1fr) 480px!important;grid-template-rows:80px 1fr!important}.detail-panel{display:none!important}.brand{min-width:auto}.world-readout{display:none}}
+@media(max-width:1360px){.game-grid{grid-template-columns:minmax(200px,0.5fr) 580px!important;grid-template-rows:80px 1fr!important}.game-grid.party-collapsed{grid-template-rows:0px 1fr!important}.detail-panel{display:none!important}.brand{min-width:auto}.world-readout{display:none}}
 @media(max-width:760px){.game-grid{grid-template-columns:1fr!important;grid-template-rows:auto auto auto!important;height:auto!important;display:grid!important}.party-panel{display:flex!important;min-height:65px;flex-wrap:nowrap;grid-row:1!important;grid-column:1!important}.map-column{grid-row:2!important;grid-column:1!important}.detail-panel{display:none!important}}

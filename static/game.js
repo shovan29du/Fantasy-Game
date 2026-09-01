@@ -70,7 +70,8 @@ function renderParty(){
  const filled=state.characterId?1:0;
  const el=$('#partyCount');if(el)el.textContent=`${filled} / 6`;
  const pt=$('#playerToken');if(pt){const sp=pt.querySelector('span');if(sp)sp.textContent=state.sheet?(state.sheet.name||'??').slice(0,2).toUpperCase():'?'}
- if(!state.characterId){$('#partyList').innerHTML='<div style="padding:18px 8px;text-align:center"><p style="color:var(--muted);font-size:11px;margin:0 0 12px">No party members yet.</p><button id="goCreateCharBtn" class="add-member">+ Create Adventurer</button></div>';const b=$('#goCreateCharBtn');if(b)b.onclick=goCreateCharacter;return}
+ if(!state.characterId){$('#partyList').innerHTML='';return}
+ {const _pp=$('.party-panel'),_gg=$('.game-grid');if(_pp)_pp.classList.remove('party-hidden');if(_gg)_gg.classList.remove('party-collapsed');}
  $('#partyList').innerHTML=party.map((pt,i)=>`<div class="party-card ${i===state.selected?'active':''}" data-party="${i}"><div class="portrait">${safe(pt.initials)}</div><div><strong>${safe(pt.name)}</strong><small>${pt.role}</small><div class="hp"><i style="width:${pt.hp}%"></i></div></div><span class="level">LV ${safe(pt.lv)}</span></div>`).join('');
  $$('[data-party]').forEach(el=>el.onclick=()=>{const i=+el.dataset.party;if(i===0&&!state.characterId){goCreateCharacter();return}state.selected=i;renderParty();toast(`${party[state.selected].name} selected`)})
 }
@@ -541,6 +542,7 @@ async function beginGame(payload){
   saveSessionToStorage();
   hidePlayHub();
   {const _ga=$('#gameArea');_ga.style.opacity='0';requestAnimationFrame(()=>requestAnimationFrame(()=>{_ga.style.opacity='1';}));}
+  {const _pp=$('.party-panel'),_gg=$('.game-grid');if(_pp)_pp.classList.add('party-hidden');if(_gg)_gg.classList.add('party-collapsed');}
   // Full custom_text is stored as lorebook context on the server; show only the final hook line here
   let opening;
   if(payload.custom_text){
