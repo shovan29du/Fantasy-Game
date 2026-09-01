@@ -27,7 +27,7 @@ const actions=[
  {name:'Loot',icon:'⚗',kind:'utility',cost:'Free'},
 ];
 
-let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:{},pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true'};
+let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:{},pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],activeSpeaker:null,_savedCharCache:[]};
 const SESSION_KEY='worldweaver-session';
 const TERRAIN_ICONS={Forest:'♣',Desert:'▲',Mountain:'⛰',Ocean:'≈',Swamp:'♨',Volcano:'▲',Plains:'❦',City:'⌂',Ruins:'⌂',Space:'✦',Underground:'▼',Tundra:'❄',Jungle:'♣',Savanna:'❦',Canyon:'▲'};
 
@@ -64,16 +64,92 @@ function derivedResources(sheet){
  const maxMana=10+lv*4+Math.max(statMod(int),statMod(wis))*lv;
  return {maxHp,maxMana};
 }
+// ─── Party helpers ───
+function _partyAvatarHtml(ch){
+  if(ch.photo_path)return`<img src="${safe(ch.photo_path)}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0">`;
+  return`<div class="portrait" style="flex-shrink:0">${safe((ch.initials||ch.name||'?').slice(0,2).toUpperCase())}</div>`;
+}
+function savePartyToStorage(){try{localStorage.setItem('party-'+state.sessionId,JSON.stringify(state.partyChars));}catch{}}
+function loadPartyFromStorage(){try{const d=localStorage.getItem('party-'+state.sessionId);if(d)state.partyChars=JSON.parse(d);}catch{}}
+function addCharToParty(ch){
+  if(state.partyChars.find(p=>p.id===ch.id)){toast(`${ch.name} is already in the party`);return;}
+  if(state.partyChars.length>=6){toast('Party is full (max 6)');return;}
+  state.partyChars.push({id:ch.id,name:ch.name,race:ch.race||'Unknown',profession:ch.profession||'Adventurer',gender:ch.gender||'',photo_path:ch.photo_path||'',initials:(ch.name||'??').slice(0,2).toUpperCase(),level:ch.level||1,backstory:ch.backstory||''});
+  savePartyToStorage();renderParty();toast(`${ch.name} joined the party!`);
+}
+window._addStoryChar=async(id)=>{
+  try{const chars=await api('/api/characters');const ch=chars.find(c=>c.id===id);if(ch)addCharToParty(ch);}catch{}
+};
+function updateSpeakerUI(){
+  const sp=state.activeSpeaker;
+  const hn=$('#chatHeadName'),ai=$('#aiStatus'),ci=$('#chatInput'),eb=$('#exitSpeakerBtn');
+  if(sp){
+    if(hn)hn.textContent=sp.name;
+    if(ai)ai.textContent=`${sp.race||''} ${sp.profession||''}`.trim();
+    if(ci)ci.placeholder=`What does ${sp.name} do or say…`;
+    if(eb)eb.hidden=false;
+  } else {
+    if(hn)hn.textContent='WORLDWEAVER AI';
+    if(ai)ai.textContent='LM Studio link';
+    if(ci)ci.placeholder='Speak, investigate, or describe an action…';
+    if(eb)eb.hidden=true;
+  }
+}
+function detectStoryChars(reply){
+  const low=reply.toLowerCase();
+  for(const ch of (state._savedCharCache||[])){
+    if(state.partyChars.find(p=>p.id===ch.id))continue;
+    if(ch.name&&ch.name.length>2&&low.includes(ch.name.toLowerCase())){
+      toast(`📖 ${ch.name} appears in the story — <button onclick="window._addStoryChar(${ch.id})" style="text-decoration:underline;background:none;border:none;color:var(--gold);cursor:pointer;font-size:inherit">Add to party?</button>`);
+    }
+  }
+}
 function renderParty(){
- const p=party[0];
- if(state.sheet){p.name=state.sheet.name||p.name;p.lv=state.sheet.calc_lv||state.sheet.level||1;p.role=`${safe(state.sheet.race||'Unknown')} · ${safe(state.sheet.profession||'Adventurer')}`;p.hp=100;p.initials=(state.sheet.name||'??').slice(0,2).toUpperCase()}
- const filled=state.characterId?1:0;
- const el=$('#partyCount');if(el)el.textContent=`${filled} / 6`;
- const pt=$('#playerToken');if(pt){const sp=pt.querySelector('span');if(sp)sp.textContent=state.sheet?(state.sheet.name||'??').slice(0,2).toUpperCase():'?'}
- if(!state.characterId){$('#partyList').innerHTML='';return}
- {const _pp=$('.party-panel'),_gg=$('.game-grid');if(_pp)_pp.classList.remove('party-hidden');if(_gg)_gg.classList.remove('party-collapsed');}
- $('#partyList').innerHTML=party.map((pt,i)=>`<div class="party-card ${i===state.selected?'active':''}" data-party="${i}"><div class="portrait">${safe(pt.initials)}</div><div><strong>${safe(pt.name)}</strong><small>${pt.role}</small><div class="hp"><i style="width:${pt.hp}%"></i></div></div><span class="level">LV ${safe(pt.lv)}</span></div>`).join('');
- $$('[data-party]').forEach(el=>el.onclick=()=>{const i=+el.dataset.party;if(i===0&&!state.characterId){goCreateCharacter();return}state.selected=i;renderParty();toast(`${party[state.selected].name} selected`)})
+  // Sync main character into partyChars[0]
+  if(state.sheet&&state.characterId){
+    const mainCh={id:state.characterId,name:state.sheet.name,race:state.sheet.race||'Unknown',profession:state.sheet.profession||'Adventurer',gender:state.sheet.gender||'',photo_path:state.sheet.photo_path||'',initials:(state.sheet.name||'??').slice(0,2).toUpperCase(),level:state.sheet.calc_lv||state.sheet.level||1,backstory:state.sheet.backstory||''};
+    const idx=state.partyChars.findIndex(c=>c.id===state.characterId);
+    if(idx<0)state.partyChars.unshift(mainCh);
+    else state.partyChars[idx]=mainCh;
+    // Update player token
+    const pt=$('#playerToken');if(pt){const sp=pt.querySelector('span');if(sp)sp.textContent=(state.sheet.name||'??').slice(0,2).toUpperCase();}
+  }
+  const count=state.partyChars.length;
+  const el=$('#partyCount');if(el)el.textContent=`${count} / 6`;
+  if(!count){$('#partyList').innerHTML='';return;}
+  {const _pp=$('.party-panel'),_gg=$('.game-grid');if(_pp)_pp.classList.remove('party-hidden');if(_gg)_gg.classList.remove('party-collapsed');}
+  $('#partyList').innerHTML=state.partyChars.map((ch,i)=>{
+    const isSpk=state.activeSpeaker?.id===ch.id;
+    const isMain=ch.id===state.characterId;
+    return`<div class="party-card${isSpk?' active':''}" data-party="${i}" style="cursor:pointer;position:relative" title="${isSpk?'Exit '+safe(ch.name)+'\'s view':'Speak as '+safe(ch.name)}">
+      ${_partyAvatarHtml(ch)}
+      <div style="flex:1;min-width:0">
+        <strong style="font-size:11px">${safe(ch.name)}</strong>
+        <small style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${safe(ch.race)} · ${safe(ch.profession)}</small>
+        ${isSpk?'<span style="font-size:9px;color:var(--gold)">● Perspective active</span>':''}
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0">
+        <span class="level" style="font-size:9px">LV ${ch.level||1}</span>
+        ${!isMain?`<button data-remove-party="${i}" style="font-size:10px;background:none;border:none;color:var(--muted);cursor:pointer;padding:0;line-height:1" title="Remove from party">✕</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  $$('[data-party]').forEach(card=>card.onclick=e=>{
+    if(e.target.closest('[data-remove-party]'))return;
+    const i=+card.dataset.party,ch=state.partyChars[i];if(!ch)return;
+    if(state.activeSpeaker?.id===ch.id){state.activeSpeaker=null;}
+    else{state.activeSpeaker=ch;}
+    updateSpeakerUI();renderParty();
+    toast(state.activeSpeaker?`Now speaking as ${ch.name} — click again to return to narrator`:'Returned to narrator mode');
+  });
+  $$('[data-remove-party]').forEach(btn=>btn.onclick=e=>{
+    e.stopPropagation();
+    const i=+btn.dataset.removeParty,ch=state.partyChars[i];
+    if(!ch)return;
+    if(state.activeSpeaker?.id===ch.id){state.activeSpeaker=null;updateSpeakerUI();}
+    state.partyChars.splice(i,1);savePartyToStorage();renderParty();
+    toast(`${ch.name} left the party`);
+  });
 }
 function renderQuests(){
  if(!state.quests.length){$('#questList').innerHTML=`<div class="quest"><p>No active quests.</p><div class="quest-progress"><span>Generate one from the current reality</span><button id="genQuestBtn" class="ghost">✦ Generate</button></div></div>`;const b=$('#genQuestBtn');if(b)b.onclick=generateQuest;return}
@@ -503,9 +579,12 @@ async function bindSession({sessionId,worldId,characterId}){
  state.worlds=world?[world,...state.flavorWorlds.filter(f=>f.id!==world.id)]:state.flavorWorlds;
  state.worldIndex=0;
  if(characterId){state.characterId=characterId;await refreshCharacterState()}
+ loadPartyFromStorage();
  await loadChatHistory();
  saveSessionToStorage();
  updateWorld();if(world){move(world.startX??50,world.startY??50)}renderParty();renderQuests();
+ // Cache saved characters for story detection
+ try{state._savedCharCache=await api('/api/characters');}catch{}
  try{const active=await api(`/api/combat/active?session_id=${encodeURIComponent(state.sessionId)}`);openCombat(active)}catch{/* no combat in progress for this session */}
  updateClock();
 }
@@ -706,7 +785,7 @@ function playerContextLine(){
   if(s.reality_signature?.universe_tag)bits.push(`Reality signature: ${s.reality_signature.universe_tag} (${s.reality_signature.reality_type})`);
  }
  if(state.quests.length)bits.push(`Active quests: ${state.quests.map(q=>q.title).join('; ')}`);
- bits.push(`Party: ${party.map(p=>p.name).join(', ')}`);
+ if(state.partyChars.length)bits.push(`Party: ${state.partyChars.map(c=>`${c.name} (${c.race||''} ${c.profession||''})`).join(', ')}`);
  return `[${bits.join(' | ')}]`;
 }
 let chatAudio=null;
@@ -733,6 +812,56 @@ $('#voiceToggleBtn').onclick=()=>{
 $('#voiceToggleBtn').classList.toggle('active',state.voiceEnabled);
 $('#voiceToggleBtn').innerHTML=state.voiceEnabled?'🔊 Voice on':'🔈 Voice off';
 
+// ── Exit speaker (narrator mode) ──
+const _exitSpBtn=$('#exitSpeakerBtn');
+if(_exitSpBtn)_exitSpBtn.onclick=()=>{state.activeSpeaker=null;updateSpeakerUI();renderParty();toast('Returned to narrator mode');};
+
+// ── Recruit companion modal ──
+async function openRecruitModal(){
+  const modal=$('#recruitModal');if(!modal)return;
+  modal.hidden=false;
+  const list=$('#recruitCharList');if(!list)return;
+  list.innerHTML='<div style="color:var(--muted);font-size:11px">Loading characters…</div>';
+  try{
+    const chars=await api('/api/characters');
+    state._savedCharCache=chars;
+    const world=state.worlds[state.worldIndex];
+    // Sort: characters from current world first
+    const sorted=[...chars].sort((a,b)=>{
+      const aw=a.origin_world||a.origin||'';const bw=b.origin_world||b.origin||'';
+      const wn=world?.name||'';
+      return (bw.includes(wn)?1:0)-(aw.includes(wn)?1:0);
+    });
+    if(!sorted.length){list.innerHTML='<div style="color:var(--muted);font-size:11px">No saved characters yet. Create one in the Characters tab.</div>';return;}
+    list.innerHTML=sorted.map(ch=>{
+      const inParty=!!state.partyChars.find(p=>p.id===ch.id);
+      const av=ch.photo_path?`<img src="${safe(ch.photo_path)}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0">`:`<div style="width:36px;height:36px;border-radius:50%;background:var(--line);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">${safe((ch.name||'?').slice(0,2).toUpperCase())}</div>`;
+      return`<div style="display:flex;align-items:center;gap:10px;padding:8px;background:#141c24;border-radius:6px;border:1px solid var(--line)">
+        ${av}
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:bold;font-size:12px">${safe(ch.name)}</div>
+          <div style="font-size:10px;color:var(--muted)">${safe(ch.race||'')} ${safe(ch.profession||'')} · LV ${safe(ch.level||1)}</div>
+          <div style="font-size:10px;color:var(--muted)">${safe((ch.origin_world||ch.origin||'Unknown world')).slice(0,40)}</div>
+        </div>
+        <button data-recruit-id="${ch.id}" class="${inParty?'ghost':'gold'}" style="font-size:10px;padding:4px 10px;flex-shrink:0" ${inParty?'disabled':''}>
+          ${inParty?'In party':'+ Add'}
+        </button>
+      </div>`;
+    }).join('');
+    $$('[data-recruit-id]').forEach(btn=>btn.onclick=async()=>{
+      const cid=+btn.dataset.recruitId;
+      const ch=chars.find(c=>c.id===cid);if(!ch)return;
+      addCharToParty(ch);
+      btn.textContent='In party';btn.disabled=true;btn.className='ghost';
+    });
+  }catch(err){list.innerHTML=`<div style="color:var(--muted);font-size:11px">${safe(err.message)}</div>`;}
+}
+const _addMemberBtn=$('.add-member');
+if(_addMemberBtn)_addMemberBtn.onclick=openRecruitModal;
+const _closeRecruit=$('#closeRecruitModal');
+if(_closeRecruit)_closeRecruit.onclick=()=>{const m=$('#recruitModal');if(m)m.hidden=true;};
+const _recruitModal=$('#recruitModal');
+if(_recruitModal)_recruitModal.onclick=e=>{if(e.target===_recruitModal)_recruitModal.hidden=true;};
 
 // ── Attach file / zip to chat ──
 $('#attachBtn').onclick=()=>$('#chatFileInput').click();
@@ -792,7 +921,37 @@ if(SpeechRecognitionApi){
   try{speechRecognizer.start()}catch{isListening=false;$('#micBtn').classList.remove('listening')}
  };
 }
-$('#chatForm').onsubmit=async e=>{e.preventDefault();const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',fmtChat(msg)));input.value='';$('#aiStatus').textContent='Thinking...';try{const world=state.worlds[state.worldIndex];const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:playerContextLine(),session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:'Worldweaver',participants:['Worldweaver'],temperature:.75})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',fmtChat(data.reply),data.id));$('#aiStatus').textContent='LM Studio connected';speakReply(data.reply);const _ds=detectScaleFromChat(data.reply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(data.reply)}catch(error){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(error.message||'The local storyteller cannot be reached.')));$('#aiStatus').textContent='Start LM Studio on port 1234'}$('#chatLog').scrollTop=$('#chatLog').scrollHeight};
+$('#chatForm').onsubmit=async e=>{
+  e.preventDefault();
+  const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;
+  const sp=state.activeSpeaker;
+  const playerLabel=sp?`<b style="color:var(--gold)">${safe(sp.name)}:</b> `:'';
+  $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',playerLabel+fmtChat(msg)));
+  input.value='';$('#aiStatus').textContent='Thinking…';
+  try{
+    const world=state.worlds[state.worldIndex];
+    let charName,extraCtx;
+    if(sp){
+      charName=sp.name;
+      const partyList=state.partyChars.map(c=>c.name).join(', ');
+      extraCtx=`${playerContextLine()} | ACTIVE SPEAKER: You are now roleplaying exclusively as ${sp.name}, a ${sp.race||''} ${sp.profession||''}. Respond in first person from ${sp.name}'s perspective — their personality, emotions, knowledge and worldview. Do NOT break character. Party: ${partyList}.${sp.backstory?` Backstory: ${sp.backstory.slice(0,200)}`:''}`;
+    } else {
+      charName='Worldweaver';extraCtx=playerContextLine();
+    }
+    const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:extraCtx,session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:charName,participants:sp?[sp.name]:['Worldweaver'],temperature:.75})});
+    const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');
+    const replyLabel=sp?`<b style="color:var(--gold)">${safe(sp.name)}</b> `:'<b>WORLDWEAVER</b> ';
+    $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',replyLabel+fmtChat(data.reply),data.id));
+    $('#aiStatus').textContent=sp?`${sp.name} · ${sp.race||sp.profession||''}`.trim():'LM Studio connected';
+    speakReply(data.reply);
+    detectStoryChars(data.reply);
+    const _ds=detectScaleFromChat(data.reply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(data.reply);
+  }catch(error){
+    $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(error.message||'The local storyteller cannot be reached.')));
+    $('#aiStatus').textContent='Start LM Studio on port 1234';
+  }
+  $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
+};
 
 // ═══ AI Companion-style workspace navigation and studios ═══
 function openView(name){$$('.app-view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.side-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='play'){$('#playHub').hidden=state.hasActiveGame;$('#gameArea').hidden=!state.hasActiveGame}if(name==='characters')loadCharacterStudio();if(name==='explore')loadExplore();if(name==='worlds')loadWorlds();if(name==='knowledge'){loadLore();loadKnowledgeDocs()}if(name==='media')loadMediaTab();if(name==='settings'){checkModelStatus();loadSettingsExtras()}}

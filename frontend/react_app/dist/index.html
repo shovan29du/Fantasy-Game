@@ -152,7 +152,7 @@
     </section>
 
     <aside id="chatPanel" class="chat-column">
-      <div class="chat-head"><div><span class="orb" id="chatAvatar"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div><div style="display:flex;gap:4px;align-items:center"><button id="downloadZipBtn" class="ghost" type="button" title="Download chat as zip">⬇ Zip</button><button id="voiceToggleBtn" class="ghost" type="button" title="Speak the AI's replies aloud">🔈 Voice off</button></div></div>
+      <div class="chat-head"><div><span class="orb" id="chatAvatar"></span><strong id="chatHeadName">WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div><div style="display:flex;gap:4px;align-items:center"><button id="exitSpeakerBtn" class="ghost" type="button" hidden title="Exit character perspective" style="font-size:10px;color:var(--gold)">✕ Narrator</button><button id="downloadZipBtn" class="ghost" type="button" title="Download chat as zip">⬇ Zip</button><button id="voiceToggleBtn" class="ghost" type="button" title="Speak the AI's replies aloud">🔈 Voice off</button></div></div>
       <div id="chatLog" class="chat-log"><p class="gm"><b>WORLDWEAVER</b>The portal hums beyond the ridge. Its runes point to a reality where steel towers touch a violet sky. What do you do?</p></div>
       <div id="chatOptionsPanel" class="chat-options-panel" hidden></div>
       <form id="chatForm"><button id="micBtn" type="button" title="Speak your message" hidden>🎤</button><button id="attachBtn" type="button" title="Attach a file or zip">📎</button><input id="chatFileInput" type="file" accept=".zip,.json,.txt,.md,.csv,.py,.js,.ts" hidden><input id="chatInput" placeholder="Speak, investigate, or describe an action…" autocomplete="off"><button type="button" id="chatOptionsBtn" class="ghost" title="Get 5 story options">✦ Options</button><button>Send</button></form>
@@ -165,6 +165,21 @@
       <div id="detailContent"></div>
     </aside>
   </main>
+
+  <!-- Recruit companion modal -->
+  <div id="recruitModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:900;display:flex;align-items:center;justify-content:center">
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;width:min(520px,95vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)">
+        <b style="color:var(--gold)">Recruit Companion</b>
+        <button id="closeRecruitModal" style="background:none;border:none;color:#e9ecf1;font-size:18px;cursor:pointer;line-height:1">✕</button>
+      </div>
+      <div style="padding:10px 16px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted)">
+        Select a saved character to add to the active party. Characters from the current world are shown first.
+      </div>
+      <div id="recruitCharList" style="overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+  </div>
+
   </div><!-- #gameArea -->
 
   </div><!-- #view-play -->
