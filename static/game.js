@@ -103,6 +103,17 @@ function detectStoryChars(reply){
       toast(`📖 ${ch.name} appears in the story — <button onclick="window._addStoryChar(${ch.id})" style="text-decoration:underline;background:none;border:none;color:var(--gold);cursor:pointer;font-size:inherit">Add to party?</button>`);
     }
   }
+  const nameLineRe=/^([A-Z][a-zA-Z]+(?:\s+[A-Z][a-z]+)?)\s*:/gm;
+  const knownNames=new Set([...(state._savedCharCache||[]).map(c=>c.name.toLowerCase()),...state.partyChars.map(p=>p.name.toLowerCase())]);
+  const SKIP=new Set(['worldweaver','narrator','gm','player','system','note','warning','location','time','scene','act','chapter']);
+  let nm;
+  while((nm=nameLineRe.exec(reply))!==null){
+    const name=nm[1].trim();if(name.length<2||name.length>30)continue;if(SKIP.has(name.toLowerCase()))continue;if(knownNames.has(name.toLowerCase()))continue;
+    knownNames.add(name.toLowerCase());
+    const world=state.worlds[state.worldIndex];
+    api('/api/knowledge/lorebook',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:`NPC: ${name}`,content:`${name} appeared in the story in "${world?.name||'this world'}".`,keywords:[name],world_id:world?.id||0,always_active:false})}).catch(()=>{});
+    toast(`📖 ${name} logged as NPC`);
+  }
 }
 function renderParty(){
   // Sync main character into partyChars[0]
@@ -153,7 +164,26 @@ function renderParty(){
 }
 function renderQuests(){
  if(!state.quests.length){$('#questList').innerHTML=`<div class="quest"><p>No active quests.</p><div class="quest-progress"><span>Generate one from the current reality</span><button id="genQuestBtn" class="ghost">✦ Generate</button></div></div>`;const b=$('#genQuestBtn');if(b)b.onclick=generateQuest;return}
- $('#questList').innerHTML=state.quests.map((q,i)=>`<div class="quest"><b>${i===0?'✦ ':''}${safe(q.title||'Quest')}</b><p>${safe(q.description||'')}</p><div class="quest-progress"><span>Progress ${safe(q.progress ?? 0)} · Reward: ${safe(q.reward||'—')}</span><span>›</span></div></div>`).join('')
+ $('#questList').innerHTML=state.quests.map((q,i)=>`<div class="quest"><b>${i===0?'✦ ':''}${safe(q.title||'Quest')}</b><p>${safe(q.description||'')}</p><div class="quest-progress"><span>Progress ${safe(q.progress??0)} · Reward: ${safe(q.reward||'—')}</span><span style="display:flex;gap:4px"><button class="ghost quest-complete-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:var(--green,#4caf50);border-color:var(--green,#4caf50)">✓ Complete</button><button class="ghost quest-abandon-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:var(--muted)">✕</button></span></div></div>`).join('');
+ $$('.quest-complete-btn').forEach(btn=>btn.onclick=()=>completeQuest(+btn.dataset.qidx));
+ $$('.quest-abandon-btn').forEach(btn=>btn.onclick=()=>abandonQuest(+btn.dataset.qidx));
+}
+async function completeQuest(idx){
+ const q=state.quests[idx];if(!q)return;
+ const xpReward=q.xp_reward||50;
+ const chatLog=$('#chatLog');
+ chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">✦ Quest Complete: "${safe(q.title)}"</em>${q.reward?` <span style="color:var(--gold)">Reward: ${safe(q.reward)}</span>`:''}${xpReward?` <span style="color:var(--green,#4caf50)">+${xpReward} XP</span>`:''}</div>`));
+ chatLog.scrollTop=chatLog.scrollHeight;
+ if(state.characterId&&xpReward){
+  try{const result=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:xpReward,reason:`Quest: ${q.title}`})});state.sheet=result.sheet;renderParty();toast(result.leveled_up?`Quest complete! Level up — now level ${result.sheet?.calc_lv}`:`Quest complete! +${xpReward} XP`);}catch{toast('Quest complete!');}
+ }else toast('Quest complete!');
+ if(q.id){try{await api(`/api/quests/${q.id}/complete`,{method:'POST'});}catch{}}
+ state.quests.splice(idx,1);renderQuests();
+}
+async function abandonQuest(idx){
+ const q=state.quests[idx];if(!q)return;
+ if(q.id){try{await api(`/api/quests/${q.id}/abandon`,{method:'POST'});}catch{}}
+ state.quests.splice(idx,1);renderQuests();toast(`Quest abandoned: ${q.title}`);
 }
 async function generateQuest(){
  if(!state.characterId){goCreateCharacter();return}
@@ -598,10 +628,15 @@ $('#advanceTimeBtn').onclick=async()=>{
 };
 async function triggerRandomEvent(){
  try{
-  const {event}=await api(`/api/world/events/random?session_id=${encodeURIComponent(state.sessionId||'default')}`,{method:'POST'});
-  if(event){
+  const data=await api(`/api/world/events/random?session_id=${encodeURIComponent(state.sessionId||'default')}`,{method:'POST'});
+  const event=data.event||data;const effect=data.effect||null;
+  if(event&&typeof event==='string'){
    $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm','🎲 <i>Random Event:</i> '+safe(event)));
    $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
+  }
+  if(effect&&state.characterId&&state.sheet){
+   if(effect.hp_change&&effect.hp_change!==0){toast(`${effect.hp_change>0?'+':''}${effect.hp_change} HP from event`);try{await api(`/api/characters/${state.characterId}/hp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:effect.hp_change,reason:(event||'event').toString().slice(0,50)})});await refreshCharacterState();renderParty();}catch{}}
+   if(effect.xp_change&&effect.xp_change>0){try{const r=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:effect.xp_change,reason:`Random event: ${(event||'').toString().slice(0,40)}`})});if(r.sheet){state.sheet=r.sheet;renderParty();}toast(`+${effect.xp_change} XP from event`);}catch{}}
   }
  }catch{}
 }
@@ -861,9 +896,11 @@ $('#saveBtn').onclick=async()=>{
 $('#journalBtn').onclick=()=>toast('Quest journal opened');
 function playerContextLine(){
  const world=state.worlds[state.worldIndex]; const s=state.sheet;
- const bits=[`World: ${world?.name}`,`Reality: ${world?.reality_type}`,`Location: ${world?.place}`];
+ const bits=[`World: ${world?.name}`,`Reality: ${world?.reality_type}`,`Location: ${world?.place||'Unknown'}`,`Map scale: ${state.scale}`];
  if(s){
   bits.push(`Player character: ${s.name}, Level ${s.calc_lv||s.level||1} ${s.race||''} ${s.profession||''}`.trim());
+  const {maxHp,maxMana}=derivedResources(s);const curHp=s.current_hp??maxHp;const curMp=s.current_mp??maxMana;
+  bits.push(`HP: ${curHp}/${maxHp}, MP: ${curMp}/${maxMana}`);
   const equipped=(state.inventory.items||[]).filter(i=>i.equip_slot).map(i=>i.item_name);
   if(equipped.length)bits.push(`Equipped: ${equipped.join(', ')}`);
   if(s.reality_signature?.universe_tag)bits.push(`Reality signature: ${s.reality_signature.universe_tag} (${s.reality_signature.reality_type})`);
@@ -1162,10 +1199,10 @@ $('#generatePortraitBtn').onclick=async()=>{
 };
 $('#refreshCharacters').onclick=loadCharacterStudio;$('#newCharacterBtn').onclick=()=>{$('#characterForm').scrollIntoView({behavior:'smooth'});$('#characterForm').elements.name.focus()};
 
-async function loadWorlds(){try{const items=await api('/api/worlds');$('#worldLibrary').innerHTML=items.length?items.map(w=>`<article class="entity-card"><span class="entity-avatar">◎</span><div><b>${safe(w.name)}</b><small>${safe(w.space_alignment||'multiverse')} · ${safe(w.reality_type||'Prime Reality')} · Magic ${safe(w.ratings?.magic ?? w.magic_level)}</small></div><em>${safe(w.time_of_day||'Active')}</em></article>`).join(''):'<div class="empty-state">No database worlds yet. The four play-map realities remain available.</div>'}catch(error){$('#worldLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
+async function loadWorlds(){try{const items=await api('/api/worlds');$('#worldLibrary').innerHTML=items.length?items.map(w=>`<article class="entity-card"><span class="entity-avatar">◎</span><div><b>${safe(w.name)}</b><small>${safe(w.space_alignment||'multiverse')} · ${safe(w.reality_type||'Prime Reality')} · Magic ${safe(w.ratings?.magic ?? w.magic_level)}</small></div><em>${safe(w.time_of_day||'Active')}</em><span style="display:flex;gap:4px;margin-left:auto"><button class="ghost" data-travel-world="${w.id}" style="font-size:9px;padding:2px 8px">Travel</button><button class="ghost" data-del-world="${w.id}" style="font-size:9px;padding:2px 6px;color:var(--muted)">✕</button></span></article>`).join(''):'<div class="empty-state">No database worlds yet. The four play-map realities remain available.</div>';$$('[data-travel-world]').forEach(btn=>btn.onclick=async()=>{const wid=+btn.dataset.travelWorld;try{const w=await api(`/api/worlds/${wid}`);if(!state.worlds.find(x=>x.id===wid)){const entry=typeof toWorldEntry==='function'?toWorldEntry(w):w;state.worlds.unshift(entry);state.worldIndex=0;}else{state.worldIndex=state.worlds.findIndex(x=>x.id===wid);}updateWorld();setScale('local');toast(`Traveling to ${safe(w.name)}`)}catch(e){toast(e.message)}});$$('[data-del-world]').forEach(btn=>btn.onclick=async()=>{const wid=+btn.dataset.delWorld;if(!confirm('Delete this world?'))return;try{await api(`/api/worlds/${wid}`,{method:'DELETE'});toast('World deleted');loadWorlds();}catch(e){toast(e.message)}});}catch(error){$('#worldLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
 $('#worldForm').onsubmit=async event=>{event.preventDefault();const formEl=event.currentTarget;const raw=Object.fromEntries(new FormData(formEl).entries());const payload={name:raw.name,magic:raw.magic,tech:raw.tech,space:raw.space,reality_type:raw.reality_type||'Prime Reality',num_locs:Number(raw.num_locs||8),ratings:{science:Number(raw.ratings_science||5),technology:Number(raw.ratings_technology||4),magic:Number(raw.ratings_magic||5),weapon:Number(raw.ratings_weapon||3),power:Number(raw.ratings_power||5),civilization:Number(raw.ratings_civilization||4),danger:Number(raw.ratings_danger||4),horror:Number(raw.ratings_horror||2)}};try{await api('/api/worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});toast(`${payload.name} created`);formEl.reset();loadWorlds()}catch(error){toast(error.message)}};$('#refreshWorlds').onclick=loadWorlds;
 
-async function loadLore(){try{const items=await api('/api/knowledge/lorebook');$('#loreLibrary').innerHTML=items.length?items.map(item=>`<article class="entity-card"><span class="entity-avatar">◇</span><div><b>${safe(item.title)}</b><small>${safe((item.content||'').slice(0,90))}</small></div><em>${item.enabled===0?'Off':'Active'}</em></article>`).join(''):'<div class="empty-state">No lorebook entries. Add rules, locations, and secrets here.</div>'}catch(error){$('#loreLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
+async function loadLore(){try{const items=await api('/api/knowledge/lorebook');$('#loreLibrary').innerHTML=items.length?items.map(item=>`<article class="entity-card"><span class="entity-avatar">◇</span><div><b>${safe(item.title)}</b><small>${safe((item.content||'').slice(0,90))}</small></div><span style="display:flex;gap:4px;align-items:center"><em data-lore-toggle="${item.id}" style="cursor:pointer;user-select:none" title="Toggle">${item.enabled===0?'Off':'Active'}</em><button class="ghost" data-lore-del="${item.id}" style="font-size:9px;padding:2px 6px;color:var(--muted)">✕</button></span></article>`).join(''):'<div class="empty-state">No lorebook entries. Add rules, locations, and secrets here.</div>';$$('[data-lore-del]').forEach(btn=>btn.onclick=async()=>{try{await api(`/api/knowledge/lorebook/${btn.dataset.loreDel}`,{method:'DELETE'});loadLore();}catch(e){toast(e.message)}});$$('[data-lore-toggle]').forEach(em=>em.onclick=async()=>{const id=em.dataset.loreToggle;const isActive=em.textContent==='Active';try{await api(`/api/knowledge/lorebook/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:isActive?0:1})});em.textContent=isActive?'Off':'Active';}catch(e){toast(e.message)}});}catch(error){$('#loreLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
 $('#loreForm').onsubmit=async event=>{event.preventDefault();const formEl=event.currentTarget;const raw=Object.fromEntries(new FormData(formEl).entries());const payload={title:raw.title,content:raw.content,keywords:raw.keywords.split(',').map(x=>x.trim()).filter(Boolean),world_id:0,always_active:true};try{await api('/api/knowledge/lorebook',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});toast('Lore saved');formEl.reset();loadLore()}catch(error){toast(error.message)}};$('#refreshLore').onclick=loadLore;
 
 async function checkModelStatus(){const badge=$('#modelBadge');badge.textContent='Checking';badge.classList.remove('good');try{const result=await api('/api/settings/model');badge.textContent='Configured';badge.classList.add('good');$('#activeModel').textContent=result.active_model||'LM Studio model'}catch{badge.textContent='Offline';$('#activeModel').textContent='Start LM Studio on port 1234'}}
@@ -1303,11 +1340,17 @@ $('#importJsonBtn').onclick=async()=>{
 };
 
 async function importFromMessages(messages,sourceLabel){
+ const progressEl=$('#importResult');
+ const step=label=>{if(progressEl)progressEl.innerHTML=`<div class="empty-state" style="color:var(--gold)">${safe(label)}</div>`;};
+ step('Identifying characters…');
  const inferred=await inferAndImportCharacters(messages);
+ step('Importing session history…');
  const {sessionId,count}=await loadMessagesIntoNewSession(messages);
  const characterName=inferred[0]?.name||'';
+ step('Saving memory facts…');
  let memoryCount=0;
  if(messages.length)memoryCount=await importMemoryFacts([{fact:`Imported ${messages.length} messages from ${sourceLabel}.`}],characterName);
+ step('Done!');
  renderImportSummary({characterName,messageCount:count,memoryCount,achievementCount:0,sessionId});
  if(characterName){toast(`${characterName} imported`);loadCharacterStudio()}else toast(`${messages.length} messages imported`);
 }
@@ -1407,7 +1450,7 @@ async function loadSettingsExtras(){
 }
 $('#modelForm').onsubmit=async e=>{e.preventDefault();const payload=Object.fromEntries(new FormData(e.currentTarget).entries());try{await api('/api/settings/model',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:'active_llm_model',value:payload.value})});toast('Model id saved');checkModelStatus()}catch(error){toast(error.message)}};
 $('#preambleForm').onsubmit=async e=>{e.preventDefault();const payload=Object.fromEntries(new FormData(e.currentTarget).entries());try{await api('/api/settings/system-preamble',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:'system_preamble',value:payload.value})});toast('System preamble saved')}catch(error){toast(error.message)}};
-async function loadBackups(){try{const items=await api('/api/settings/backups');$('#backupList').innerHTML=items.length?items.map(b=>`<article class="entity-card"><span class="entity-avatar">⛁</span><div><b>${safe(b.name||b.path||'Backup')}</b><small>${safe(b.created_at||'')}</small></div></article>`).join(''):'<div class="empty-state">No backups yet.</div>'}catch(error){$('#backupList').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
+async function loadBackups(){try{const items=await api('/api/settings/backups');$('#backupList').innerHTML=items.length?items.map(b=>`<article class="entity-card"><span class="entity-avatar">⛁</span><div><b>${safe(b.name||b.path||'Backup')}</b><small>${safe(b.created_at||'')}</small></div><button class="ghost" data-restore-backup="${safe(b.path||b.name||'')}" style="font-size:9px;padding:2px 8px">Restore</button></article>`).join(''):'<div class="empty-state">No backups yet.</div>';$$('[data-restore-backup]').forEach(btn=>btn.onclick=async()=>{const p=btn.dataset.restoreBackup;if(!confirm(`Restore backup "${p}"? This will overwrite current data.`))return;try{await api('/api/settings/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p})});toast('Restore complete — reload to apply changes');}catch(e){toast(e.message)}});}catch(error){$('#backupList').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
 $('#createBackup').onclick=async()=>{try{const result=await api('/api/settings/backup',{method:'POST'});$('#backupStatus').textContent=`Saved: ${result.path}`;toast('Backup created');loadBackups()}catch(error){toast(error.message)}};
 $('#checkIntegrity').onclick=async()=>{try{const result=await api('/api/settings/db-integrity');const ok=result.result?.length===1&&result.result[0]==='ok';$('#integrityStatus').textContent=ok?'OK':(result.result||[]).join(', ');toast(ok?'Database OK':'Integrity issues found')}catch(error){toast(error.message)}};
 $('#runImportTest').onclick=async()=>{try{const result=await api('/api/settings/import-test',{method:'POST'});$('#importTestStatus').textContent=result.ok?`${result.passed.length} modules OK`:`${result.failures.length} failures`;toast(result.ok?'All modules import cleanly':'Some modules failed to import')}catch(error){toast(error.message)}};
@@ -1432,6 +1475,9 @@ function weaponRangeFor(weaponName,tier){
   if((weapon.properties||[]).includes('reach'))return 2;
   return 1;
  }
+ const wn=(weaponName||'').toLowerCase();
+ if(/bow|crossbow|gun|rifle|pistol|sniper|cannon|musket|blaster|phaser|laser|sling|dart|javelin|thrown|ranged/.test(wn))return 5;
+ if(/spear|halberd|lance|pike|glaive|polearm|trident|reach/.test(wn))return 2;
  const t=tier??2;
  return t<=3?1:(t<=6?3:5);
 }
@@ -1467,6 +1513,7 @@ function showCombatResult(){
   const logLines=(combatState.log||[]).map(l=>`<div>${safe(l)}</div>`).join('');
   $('#combatResultBody').innerHTML=`<div class="result-outcome ${won?'won':'lost'}">${won?'🏆 Victory!':'💀 Defeat'}</div><div class="result-stats"><div class="result-stat"><span>Enemies slain</span><strong>${killed}&thinsp;/&thinsp;${enemies.length}</strong></div><div class="result-stat"><span>Allies standing</span><strong>${survived}&thinsp;/&thinsp;${players.length}</strong></div><div class="result-stat"><span>Rounds fought</span><strong>${combatState.round_number}</strong></div>${reward.xp_awarded?`<div class="result-stat"><span>XP earned</span><strong>+${reward.xp_awarded}</strong></div>`:''}${reward.loot?`<div class="result-stat"><span>Loot found</span><strong>${safe(reward.loot)}</strong></div>`:''}${reward.leveled_up?`<div class="result-level">⬆ Level up!</div>`:''}</div><div class="result-log">${logLines}</div>`;
   $('#combatResultModal').hidden=false;
+  if(state.characterId){refreshCharacterState().then(()=>renderParty()).catch(()=>{});}
 }
 function closeCombat(){stopCombatPlay();$('#combatOverlay').classList.remove('open');combatState=null}
 function computeCombatAffordances(){
@@ -1789,11 +1836,18 @@ async function loadUniverseNodes(){
       const icon={fantasy:'⚔',sci_fi:'🚀',cyberpunk:'⚡',supernatural:'👁',apocalyptic:'☢',zombie:'🧟',mystery:'🔍',drama:'💔',alien_space:'🛸'}[w.space_alignment]||'🌍';
       return `<button class="map-node" style="--x:${x}%;--y:${y}%;border-color:var(--purple);background:#1a103a;font-size:16px;width:42px;height:42px" data-uni-world="${w.id}" data-label="${safe(w.name)}" title="${safe(w.name)} — ${safe(w.space_alignment||'unknown')} · ${safe(w.reality_type||'Prime')}">${icon}</button>`;
     }).join('');
-    $$('#mapNodes [data-uni-world]').forEach(el=>el.onclick=()=>{
+    $$('#mapNodes [data-uni-world]').forEach(el=>el.onclick=async()=>{
       const wid=parseInt(el.dataset.uniWorld);
       const found=state.worlds.find(w=>w.id===wid);
-      if(found){state.worldIndex=state.worlds.indexOf(found);updateWorld();}
-      else toast('Traveling to '+el.getAttribute('data-label')+'…');
+      if(found){state.worldIndex=state.worlds.indexOf(found);updateWorld();setScale('local');return;}
+      try{
+        el.style.opacity='0.5';
+        const w=await api(`/api/worlds/${wid}`);
+        const entry=typeof toWorldEntry==='function'?toWorldEntry(w):w;
+        state.worlds.unshift(entry);state.worldIndex=0;
+        updateWorld();setScale('local');
+        toast(`Traveled to ${safe(w.name)}`);
+      }catch(e){toast(e.message);}finally{el.style.opacity='';}
     });
     $('#locationName').textContent=`Universe — ${worlds.length} realm${worlds.length!==1?'s':''}`;
   }catch(err){$('#mapNodes').innerHTML='';}
@@ -1824,7 +1878,7 @@ async function addLocationsFromChat(text){
   const deduped=toAdd.slice(0,4);
   if(!deduped.length)return;
   for(const entry of deduped){
-    const t=entry.loc_type==='local'?(/forest|grove|jungle/i.test(entry.name)?'Forest':/castle|fortress|keep|tower|ruins?|citadel/i.test(entry.name)?'Ruins':/cave|dungeon|underground/i.test(entry.name)?'Underground':/port|sea|ocean|bay/i.test(entry.name)?'Ocean':/town|city|market|tavern|village|inn/i.test(entry.name)?'City':'Plains'):'Plains';
+    const t=entry.loc_type==='local'?(/forest|grove|jungle/i.test(entry.name)?'Forest':/castle|fortress|keep|tower|ruins?|citadel/i.test(entry.name)?'Ruins':/cave|dungeon|underground/i.test(entry.name)?'Underground':/port|sea|ocean|bay/i.test(entry.name)?'Ocean':/town|city|market|tavern|village|inn/i.test(entry.name)?'City':'Plains'):entry.loc_type==='province'?(/forest|grove|woodland/i.test(entry.name)?'Forest':/mountain|highland|peak|range/i.test(entry.name)?'Mountains':/coast|bay|sea|lake/i.test(entry.name)?'Ocean':/desert|arid|sand/i.test(entry.name)?'Desert':/marsh|swamp|fen/i.test(entry.name)?'Wetlands':'Plains'):'Plains';
     const x=15+Math.random()*70,y=15+Math.random()*70;
     try{
       const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:entry.name,terrain:t,x,y,description:`Mentioned in story`,loc_type:entry.loc_type})});
