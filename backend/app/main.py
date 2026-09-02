@@ -1868,6 +1868,29 @@ def equip_dnd_weapon(character_id: int, payload: WeaponEquipIn) -> dict:
         conn.close()
 
 
+@app.delete("/api/characters/{character_id}/inventory/{item_id}")
+def drop_inventory_item(character_id: int, item_id: int) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM inventory WHERE id=? AND character_id=?", (item_id, character_id))
+        conn.commit()
+        return {"dropped": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/characters/{character_id}/unequip")
+def unequip_slot(character_id: int, slot: str = "weapon") -> dict:
+    conn = get_conn()
+    try:
+        conn.execute("UPDATE inventory SET equip_slot=NULL WHERE character_id=? AND equip_slot=?",
+                     (character_id, slot))
+        conn.commit()
+        return {"unequipped": True}
+    finally:
+        conn.close()
+
+
 def _item_with_weapon_tier(row: dict) -> dict:
     item = dict(row)
     try:

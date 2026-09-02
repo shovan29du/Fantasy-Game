@@ -164,8 +164,9 @@ function renderParty(){
 }
 function renderQuests(){
  if(!state.quests.length){$('#questList').innerHTML=`<div class="quest"><p>No active quests.</p><div class="quest-progress"><span>Generate one from the current reality</span><button id="genQuestBtn" class="ghost">✦ Generate</button></div></div>`;const b=$('#genQuestBtn');if(b)b.onclick=generateQuest;return}
- $('#questList').innerHTML=state.quests.map((q,i)=>`<div class="quest"><b>${i===0?'✦ ':''}${safe(q.title||'Quest')}</b><p>${safe(q.description||'')}</p><div class="quest-progress"><span>Progress ${safe(q.progress??0)} · Reward: ${safe(q.reward||'—')}</span><span style="display:flex;gap:4px"><button class="ghost quest-complete-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:var(--green,#4caf50);border-color:var(--green,#4caf50)">✓ Complete</button><button class="ghost quest-abandon-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:var(--muted)">✕</button></span></div></div>`).join('');
+ $('#questList').innerHTML=state.quests.map((q,i)=>`<div class="quest"><b>${i===0?'✦ ':''}${safe(q.title||'Quest')}</b><p>${safe(q.description||'')}</p><div class="quest-progress"><span>Progress ${safe(q.progress??0)} · Reward: ${safe(q.reward||'—')}</span><span style="display:flex;gap:4px"><button class="ghost quest-complete-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:var(--green,#4caf50);border-color:var(--green,#4caf50)">✓ Done</button><button class="ghost quest-fail-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:#c0392b;border-color:#c0392b" title="Mark as failed">✗ Fail</button><button class="ghost quest-abandon-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:var(--muted)" title="Abandon silently">—</button></span></div></div>`).join('');
  $$('.quest-complete-btn').forEach(btn=>btn.onclick=()=>completeQuest(+btn.dataset.qidx));
+ $$('.quest-fail-btn').forEach(btn=>btn.onclick=()=>failQuest(+btn.dataset.qidx));
  $$('.quest-abandon-btn').forEach(btn=>btn.onclick=()=>abandonQuest(+btn.dataset.qidx));
 }
 async function completeQuest(idx){
@@ -222,7 +223,7 @@ async function lootItem(){
   await api(`/api/characters/${state.characterId}/inventory`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_name:itemName,item_type:'weapon',weapon_tier:tier})});
   await refreshCharacterState();
   toast(`Found: ${itemName} (Weapon tier ${tier} · ${found.era})`);
-  if($('#detailContent').innerHTML.includes('INVENTORY'))showPanel('inventory');
+  renderInventory();
  }catch(error){toast(error.message)}
 }
 const panels={
@@ -237,16 +238,21 @@ const panels={
  inventory:()=>{
   if(!state.characterId) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
   const items=state.inventory.items||[];
-  const invHtml=items.length?`<div class="panel-title"><span>INVENTORY</span><small>${items.length} items</small></div><div class="inventory-grid">${items.map(it=>`<button class="item" data-item-id="${it.id}">${it.equip_slot?'⚔':'◇'}${it.quantity>1?`<small>${it.quantity}</small>`:''}</button>`).join('')}</div><div class="item-info"><h3 id="itemName">Select an item</h3><p id="itemDesc">Click an item to inspect it.</p></div>`
-   :`<div class="panel-title"><span>INVENTORY</span><small>0 items</small></div><div class="empty-state">Nothing carried yet — try the <b>Loot</b> utility action.</div>`;
-  const equippedName=(items.find(it=>it.equip_slot==='weapon')||{}).item_name;
+  const eco=state.inventory.economy||{};
+  const equipped=items.filter(it=>it.equip_slot);
+  const bag=items.filter(it=>!it.equip_slot);
+  const weaponSlot=equipped.find(it=>it.equip_slot==='weapon');
+  const ecoHtml=(eco.gold||eco.credits||eco.tokens)?`<div style="display:flex;gap:10px;padding:4px 0 8px;font-size:11px">${eco.gold?`<span>💰 ${eco.gold} gp</span>`:''}${eco.credits?`<span>⚡ ${eco.credits} cr</span>`:''}${eco.tokens?`<span>✦ ${eco.tokens} tk</span>`:''}</div>`:'';
+  const slotsHtml=`<div class="panel-title"><span>EQUIPPED</span></div><div style="display:flex;gap:6px;padding:4px 0 8px"><div style="flex:1;border:1px solid ${weaponSlot?'var(--gold)':'var(--border,#333)'};border-radius:4px;padding:6px;font-size:11px;position:relative"><small style="color:var(--muted);display:block;margin-bottom:3px">Weapon</small>${weaponSlot?`<b>${safe(weaponSlot.item_name)}</b><button class="ghost" data-unequip-id="${weaponSlot.id}" style="font-size:9px;padding:1px 5px;position:absolute;top:4px;right:4px" title="Unequip">✕</button>`:'<span style="color:var(--muted)">Empty</span>'}</div></div>`;
+  const bagHtml=bag.length?`<div class="panel-title"><span>BAG</span><small>${bag.length} items</small></div><div class="inventory-grid">${bag.map(it=>`<button class="item" data-item-id="${it.id}" title="${safe(it.item_name)}">◇${it.quantity>1?`<small>${it.quantity}</small>`:''}</button>`).join('')}</div><div class="item-info"><h3 id="itemName">Select an item</h3><p id="itemDesc">Click to inspect.</p><div id="itemActions" style="margin-top:6px;display:flex;gap:4px"></div></div>`:`<div class="panel-title"><span>BAG</span><small>0 items</small></div><div class="empty-state">Nothing carried yet — try the <b>Loot</b> utility action.</div>`;
+  const equippedName=weaponSlot?.item_name;
   const cats=state.dndWeaponCategories.length?state.dndWeaponCategories:[...new Set(Object.values(state.dndWeapons).map(w=>w.category))].sort();
   const armory=cats.map(cat=>{
    const catWeapons=Object.entries(state.dndWeapons).filter(([,w])=>w.category===cat);
    if(!catWeapons.length)return '';
    return `<div class="armory-cat"><small>${safe(cat)}</small>${catWeapons.map(([name,w])=>`<button class="armory-item${name===equippedName?' equipped':''}" data-equip-weapon="${safe(name)}"><b>${safe(name)}</b><small>${safe(w.damage)} ${safe(w.damage_type)}${w.properties.length?` · ${w.properties.join(', ')}`:''}</small>${name===equippedName?'<em>Equipped</em>':''}</button>`).join('')}</div>`;
   }).join('');
-  return `${invHtml}<div class="panel-title"><span>ARMORY</span><small>D&amp;D weapons</small></div><div class="armory-grid">${armory}</div>`;
+  return `${ecoHtml}${slotsHtml}${bagHtml}<div class="panel-title"><span>ARMORY</span><small>D&amp;D weapons</small></div><div class="armory-grid">${armory}</div>`;
  },
  spells:()=>{
   const known=state.sheet?.spells||[];
@@ -274,11 +280,63 @@ function showPanel(name){
  $('#detailContent').innerHTML=panels[name]();
  const createBtn=$('#goCreateCharacterBtn'); if(createBtn)createBtn.onclick=goCreateCharacter;
  if(name==='inventory'){
-  $$('[data-item-id]').forEach(el=>el.onclick=()=>{const item=(state.inventory.items||[]).find(i=>String(i.id)===el.dataset.itemId);if(!item)return;$('#itemName').textContent=item.item_name;const tierInfo=item.weapon_tier_info||{};$('#itemDesc').textContent=item.equip_slot?`Weapon tier ${item.weapon_tier} · ${tierInfo.era||''} — ${(tierInfo.properties||[]).join(', ')||'No special properties.'}`:(item.description||'A piece of multiverse adventuring gear.')});
-  $$('[data-equip-weapon]').forEach(el=>el.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/equip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({weapon_name:el.dataset.equipWeapon})});await refreshCharacterState();toast(`${el.dataset.equipWeapon} equipped`);showPanel('inventory')}catch(error){toast(error.message)}});
+  $$('[data-item-id]').forEach(el=>el.onclick=()=>{
+   const item=(state.inventory.items||[]).find(i=>String(i.id)===el.dataset.itemId);if(!item)return;
+   $('#itemName').textContent=item.item_name;
+   const tierInfo=item.weapon_tier_info||{};
+   $('#itemDesc').textContent=item.equip_slot?`Weapon tier ${item.weapon_tier} · ${tierInfo.era||''} — ${(tierInfo.properties||[]).join(', ')||'No special properties.'}`:(item.description||'A piece of multiverse adventuring gear.');
+   const acts=$('#itemActions');if(acts){acts.innerHTML=`<button class="ghost" data-drop-item="${item.id}" style="font-size:9px;padding:2px 7px;color:var(--muted)">Drop</button>`;}
+   $$('[data-drop-item]').forEach(b=>b.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/inventory/${b.dataset.dropItem}`,{method:'DELETE'});await refreshCharacterState();renderInventory();toast('Item dropped');}catch(e){toast(e.message)}});
+  });
+  $$('[data-unequip-id]').forEach(el=>el.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/unequip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot:'weapon'})});await refreshCharacterState();renderInventory();toast('Weapon unequipped');}catch(e){toast(e.message)}});
+  $$('[data-equip-weapon]').forEach(el=>el.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/equip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({weapon_name:el.dataset.equipWeapon})});await refreshCharacterState();toast(`${el.dataset.equipWeapon} equipped`);renderInventory();}catch(error){toast(error.message)}});
  }
  if(name==='skills')$$('[data-feat]').forEach(el=>el.onclick=async()=>{try{const result=await api(`/api/characters/${state.characterId}/feats`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feat:el.dataset.feat})});state.sheet=result.sheet;toast(`${el.dataset.feat} learned`);showPanel('skills')}catch(error){toast(error.message)}});
  if(name==='spells')$$('[data-learn-spell]').forEach(el=>el.onclick=async()=>{try{const result=await api(`/api/characters/${state.characterId}/spells`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spell:el.dataset.learnSpell})});state.sheet=result.sheet;toast(`${el.dataset.learnSpell} learned`);showPanel('spells')}catch(error){toast(error.message)}});
+}
+function renderInventory(){
+ const dc=$('#detailContent');
+ if(dc&&(dc.querySelector('.inventory-grid')||dc.querySelector('.armory-grid')))showPanel('inventory');
+}
+async function awardXP(amount,reason=''){
+ if(!state.characterId||!amount)return;
+ const prevLv=state.sheet?.calc_lv||1;
+ try{
+  const result=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount,reason})});
+  state.sheet=result.sheet;renderParty();
+  const newLv=result.sheet?.calc_lv||prevLv;
+  if(result.leveled_up||newLv>prevLv)levelUp(newLv);
+  else toast(`+${amount} XP`);
+ }catch{}
+}
+function levelUp(newLevel){
+ const s=state.sheet;
+ const {maxHp,maxMana}=derivedResources(s||{});
+ const chatLog=$('#chatLog');
+ chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<div style="border:1px solid var(--gold);border-radius:6px;padding:10px;margin:4px 0;text-align:center"><div style="font-size:16px;color:var(--gold);font-weight:bold;letter-spacing:1px">⬆ LEVEL UP! ⬆</div><div style="margin:4px 0"><b>${safe(s?.name||'Adventurer')}</b> reached <b>Level ${newLevel}</b></div><div style="font-size:10px;color:var(--muted)">${safe(s?.race||'')} ${safe(s?.profession||'')} · HP ${maxHp} · MP ${maxMana}</div></div>`));
+ chatLog.scrollTop=chatLog.scrollHeight;
+ toast(`Level up! Now level ${newLevel}`);
+ if($('#detailContent').innerHTML.includes('EXPERIENCE'))showPanel('character');
+}
+async function failQuest(idx){
+ const q=state.quests[idx];if(!q)return;
+ const chatLog=$('#chatLog');
+ chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action" style="color:var(--muted)">✗ Quest Failed: "${safe(q.title)}"</em></div>`));
+ chatLog.scrollTop=chatLog.scrollHeight;
+ if(q.id){try{await api(`/api/quests/${q.id}`,{method:'DELETE'});}catch{}}
+ state.quests.splice(idx,1);renderQuests();toast(`Quest failed: ${q.title}`);
+}
+async function travelToWorld(worldId){
+ if(!worldId)return;
+ const already=state.worlds.findIndex(w=>w.id===worldId);
+ if(already>=0){state.worldIndex=already;updateWorld();setScale('local');toast(`Entered ${safe(state.worlds[already].name)}`);return;}
+ try{
+  const w=await api(`/api/worlds/${worldId}`);
+  const entry=typeof toWorldEntry==='function'?toWorldEntry(w):w;
+  state.worlds.unshift(entry);state.worldIndex=0;
+  updateWorld();setScale('local');
+  toast(`Traveled to ${safe(w.name)}`);
+ }catch(e){toast(e.message);}
 }
 function worldTagsText(world){
  const r=world.ratings||{};
