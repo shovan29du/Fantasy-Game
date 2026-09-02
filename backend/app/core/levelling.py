@@ -6,6 +6,7 @@ from __future__ import annotations
 import json, math, random
 from core.storage import get_conn, now_iso
 from core.logging_setup import get_logger
+from backend.app.domain import multiverse as _multiverse
 
 log = get_logger(__name__)
 
@@ -160,6 +161,20 @@ def add_skill_to_character(cid, skill):
     conn.execute("UPDATE characters SET skills=? WHERE id=?",(json.dumps(skills),cid))
     conn.commit(); conn.close(); return True
 
+def add_spell_to_character(cid, spell_name):
+    from backend.app.domain import spells as _spells
+    if spell_name not in _spells.SPELLS: return False
+    conn=get_conn()
+    row=conn.execute("SELECT spells FROM characters WHERE id=?",(cid,)).fetchone()
+    if not row: conn.close(); return False
+    try: known=json.loads(row["spells"] or "[]")
+    except Exception:
+        log.debug("suppressed error", exc_info=True)
+        known=[]
+    if spell_name not in known: known.append(spell_name)
+    conn.execute("UPDATE characters SET spells=? WHERE id=?",(json.dumps(known),cid))
+    conn.commit(); conn.close(); return True
+
 def add_feat_to_character(cid, feat_name):
     feat = DND_FEATS.get(feat_name)
     if not feat: return False
@@ -270,6 +285,11 @@ def get_full_sheet(cid):
     except Exception:
         log.debug("suppressed error", exc_info=True)
         ch["meas"]={}
+    try: ch["reality_signature"]=json.loads(ch.get("reality_signature","{}") or "{}")
+    except Exception:
+        log.debug("suppressed error", exc_info=True)
+        ch["reality_signature"]={}
+    ch["power_tier_info"]=_multiverse.describe_power_tier(ch.get("power_tier",2) or 2)
     xp=ch.get("xp",0) or 0
     lv,into,need,frac=xp_progress(xp)
     ch.update({"calc_lv":lv,"xp_into":into,"xp_need":need,"xp_frac":frac})
