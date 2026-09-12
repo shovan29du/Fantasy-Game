@@ -183,8 +183,16 @@ async function completeQuest(idx){
 }
 async function abandonQuest(idx){
  const q=state.quests[idx];if(!q)return;
- if(q.id){try{await api(`/api/quests/${q.id}/abandon`,{method:'POST'});}catch{}}
+ if(q.id){try{await api(`/api/quests/${q.id}`,{method:'DELETE'});}catch{}}
  state.quests.splice(idx,1);renderQuests();toast(`Quest abandoned: ${q.title}`);
+}
+async function failQuest(idx){
+ const q=state.quests[idx];if(!q)return;
+ const chatLog=$('#chatLog');
+ chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action" style="color:var(--muted)">✗ Quest Failed: "${safe(q.title)}"</em></div>`));
+ chatLog.scrollTop=chatLog.scrollHeight;
+ if(q.id){try{await api(`/api/quests/${q.id}`,{method:'DELETE'});}catch{}}
+ state.quests.splice(idx,1);renderQuests();toast(`Quest failed: ${q.title}`);
 }
 async function generateQuest(){
  if(!state.characterId){goCreateCharacter();return}
@@ -243,8 +251,8 @@ const panels={
   const bag=items.filter(it=>!it.equip_slot);
   const weaponSlot=equipped.find(it=>it.equip_slot==='weapon');
   const ecoHtml=(eco.gold||eco.credits||eco.tokens)?`<div style="display:flex;gap:10px;padding:4px 0 8px;font-size:11px">${eco.gold?`<span>💰 ${eco.gold} gp</span>`:''}${eco.credits?`<span>⚡ ${eco.credits} cr</span>`:''}${eco.tokens?`<span>✦ ${eco.tokens} tk</span>`:''}</div>`:'';
-  const slotsHtml=`<div class="panel-title"><span>EQUIPPED</span></div><div style="display:flex;gap:6px;padding:4px 0 8px"><div style="flex:1;border:1px solid ${weaponSlot?'var(--gold)':'var(--border,#333)'};border-radius:4px;padding:6px;font-size:11px;position:relative"><small style="color:var(--muted);display:block;margin-bottom:3px">Weapon</small>${weaponSlot?`<b>${safe(weaponSlot.item_name)}</b><button class="ghost" data-unequip-id="${weaponSlot.id}" style="font-size:9px;padding:1px 5px;position:absolute;top:4px;right:4px" title="Unequip">✕</button>`:'<span style="color:var(--muted)">Empty</span>'}</div></div>`;
-  const bagHtml=bag.length?`<div class="panel-title"><span>BAG</span><small>${bag.length} items</small></div><div class="inventory-grid">${bag.map(it=>`<button class="item" data-item-id="${it.id}" title="${safe(it.item_name)}">◇${it.quantity>1?`<small>${it.quantity}</small>`:''}</button>`).join('')}</div><div class="item-info"><h3 id="itemName">Select an item</h3><p id="itemDesc">Click to inspect.</p><div id="itemActions" style="margin-top:6px;display:flex;gap:4px"></div></div>`:`<div class="panel-title"><span>BAG</span><small>0 items</small></div><div class="empty-state">Nothing carried yet — try the <b>Loot</b> utility action.</div>`;
+  const slotsHtml=`<div class="panel-title"><span>EQUIPPED</span></div><div style="padding:4px 0 8px">${weaponSlot?`<div style="display:flex;align-items:center;gap:8px;background:#141c24;border:1px solid var(--line);border-radius:4px;padding:6px 8px"><span style="font-size:13px">⚔</span><span style="flex:1;font-size:11px"><b>${safe(weaponSlot.item_name)}</b><br><small>Tier ${weaponSlot.weapon_tier||'?'} · ${safe((weaponSlot.weapon_tier_info||{}).era||'')}</small></span><button class="ghost" data-unequip-id="${weaponSlot.id}" style="font-size:9px;padding:2px 6px;color:var(--muted)">✕</button></div>`:'<div style="color:var(--muted);font-size:11px;padding:4px">No weapon equipped — select one from Armory below</div>'}</div>`;
+  const bagHtml=bag.length?`<div class="panel-title"><span>BAG</span><small>${bag.length} items</small></div><div class="inventory-grid">${bag.map(it=>`<button class="item" data-item-id="${it.id}" title="${safe(it.item_name)}">${it.item_type==='weapon'?'⚔':'◇'}<small style="font-size:8px;display:block;max-width:44px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safe(it.item_name)}</small>${it.quantity>1?`<span style="font-size:8px;color:var(--gold)">${it.quantity}</span>`:''}</button>`).join('')}</div><div id="itemActions" style="min-height:28px;padding:4px 0"></div><div class="item-info"><h3 id="itemName" style="font-size:12px;margin:4px 0">Select an item</h3><p id="itemDesc" style="font-size:11px;color:var(--muted)">Click an item to inspect it.</p></div>`:`<div class="panel-title"><span>BAG</span><small>0 items</small></div><div class="empty-state">Nothing carried yet — try the <b>Loot</b> utility action.</div>`;
   const equippedName=weaponSlot?.item_name;
   const cats=state.dndWeaponCategories.length?state.dndWeaponCategories:[...new Set(Object.values(state.dndWeapons).map(w=>w.category))].sort();
   const armory=cats.map(cat=>{
@@ -282,13 +290,11 @@ function showPanel(name){
  if(name==='inventory'){
   $$('[data-item-id]').forEach(el=>el.onclick=()=>{
    const item=(state.inventory.items||[]).find(i=>String(i.id)===el.dataset.itemId);if(!item)return;
-   $('#itemName').textContent=item.item_name;
-   const tierInfo=item.weapon_tier_info||{};
-   $('#itemDesc').textContent=item.equip_slot?`Weapon tier ${item.weapon_tier} · ${tierInfo.era||''} — ${(tierInfo.properties||[]).join(', ')||'No special properties.'}`:(item.description||'A piece of multiverse adventuring gear.');
-   const acts=$('#itemActions');if(acts){acts.innerHTML=`<button class="ghost" data-drop-item="${item.id}" style="font-size:9px;padding:2px 7px;color:var(--muted)">Drop</button>`;}
-   $$('[data-drop-item]').forEach(b=>b.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/inventory/${b.dataset.dropItem}`,{method:'DELETE'});await refreshCharacterState();renderInventory();toast('Item dropped');}catch(e){toast(e.message)}});
+   const iname=$('#itemName');if(iname)iname.textContent=item.item_name;
+   const idesc=$('#itemDesc');const tierInfo=item.weapon_tier_info||{};if(idesc)idesc.textContent=item.equip_slot?`Weapon tier ${item.weapon_tier} · ${tierInfo.era||''} — ${(tierInfo.properties||[]).join(', ')||'No special properties.'}`:(item.description||'A piece of multiverse adventuring gear.');
+   const acts=$('#itemActions');if(acts){acts.innerHTML=`<button class="ghost" data-drop-item="${item.id}" style="font-size:9px;padding:2px 8px;color:var(--muted)">🗑 Drop</button>`;const db=acts.querySelector('[data-drop-item]');if(db)db.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/inventory/${item.id}`,{method:'DELETE'});await refreshCharacterState();renderInventory();toast(`Dropped: ${item.item_name}`);}catch(e){toast(e.message);}};}
   });
-  $$('[data-unequip-id]').forEach(el=>el.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/unequip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot:'weapon'})});await refreshCharacterState();renderInventory();toast('Weapon unequipped');}catch(e){toast(e.message)}});
+  $$('[data-unequip-id]').forEach(el=>el.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/unequip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot:'weapon'})});await refreshCharacterState();renderInventory();toast('Weapon unequipped');}catch(e){toast(e.message);}});
   $$('[data-equip-weapon]').forEach(el=>el.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/equip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({weapon_name:el.dataset.equipWeapon})});await refreshCharacterState();toast(`${el.dataset.equipWeapon} equipped`);renderInventory();}catch(error){toast(error.message)}});
  }
  if(name==='skills')$$('[data-feat]').forEach(el=>el.onclick=async()=>{try{const result=await api(`/api/characters/${state.characterId}/feats`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feat:el.dataset.feat})});state.sheet=result.sheet;toast(`${el.dataset.feat} learned`);showPanel('skills')}catch(error){toast(error.message)}});
@@ -911,20 +917,6 @@ $('#randomScenarioBtn').onclick=async()=>{await rollRandomScenario();showStartSt
 async function rollRandomScenario(){try{const result=await api('/api/random/prompts');state.randomScenarioText=result.scenario;$('#randomScenarioText').textContent=result.scenario}catch(error){$('#randomScenarioText').textContent=error.message}}
 $('#rerollScenarioBtn').onclick=rollRandomScenario;
 $('#useRandomScenarioBtn').onclick=()=>beginGame({category:_activeCatKey(),scenario_name:'Random Scenario',scenario_type:'custom',custom_text:state.randomScenarioText});
-$('#autoGenScenarioBtn').onclick=async()=>{
- const worldName=state.worlds?.[state.worldIndex]?.name||'';
- const catKey=_activeCatKey();
- const genre=categoriesCache?.find(c=>c.key===catKey)?.label||'Fantasy';
- const btn=$('#autoGenScenarioBtn');
- btn.textContent='✦ Generating…';
- try{
-  const {scenario}=await api('/api/scenario/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:worldName,genre,story_preset:genre,session_id:state.sessionId||'default'})});
-  const ta=$('#customScenarioForm')?.elements?.text;
-  if(ta)ta.value=scenario;
-  toast('Scenario generated!');
- }catch(err){toast('Auto-generate failed')}
- finally{btn.textContent='✦ Auto-generate from world & preset'}
-};
 
 async function loadSavedGame(save){try{await bindSession({sessionId:save.session_id,worldId:save.world_id,characterId:save.character_id});hidePlayHub();toast(`Loaded: ${save.save_name}`)}catch(error){toast(error.message)}}
 $('#startLoadGameBtn').onclick=async()=>{
@@ -966,6 +958,42 @@ function playerContextLine(){
  if(state.quests.length)bits.push(`Active quests: ${state.quests.map(q=>q.title).join('; ')}`);
  if(state.partyChars.length)bits.push(`Party: ${state.partyChars.map(c=>`${c.name} (${c.race||''} ${c.profession||''})`).join(', ')}`);
  return `[${bits.join(' | ')}]`;
+}
+async function awardXP(amount,reason=''){
+ if(!state.characterId||!amount)return;
+ const prevLv=state.sheet?.calc_lv||1;
+ try{
+  const result=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount,reason})});
+  state.sheet=result.sheet;renderParty();
+  const newLv=result.sheet?.calc_lv||prevLv;
+  if(result.leveled_up||newLv>prevLv)levelUp(newLv);
+  else toast(`+${amount} XP`);
+ }catch{}
+}
+function levelUp(newLevel){
+ const s=state.sheet;
+ const {maxHp,maxMana}=derivedResources(s||{});
+ const chatLog=$('#chatLog');
+ chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<div style="border:1px solid var(--gold);border-radius:6px;padding:10px;margin:4px 0;text-align:center"><div style="font-size:16px;color:var(--gold);font-weight:bold;letter-spacing:1px">⬆ LEVEL UP! ⬆</div><div style="margin:4px 0"><b>${safe(s?.name||'Adventurer')}</b> reached <b>Level ${newLevel}</b></div><div style="font-size:10px;color:var(--muted)">${safe(s?.race||'')} ${safe(s?.profession||'')} · HP ${maxHp} · MP ${maxMana}</div></div>`));
+ chatLog.scrollTop=chatLog.scrollHeight;
+ toast(`Level up! Now level ${newLevel}`);
+ if($('#detailContent').innerHTML.includes('EXPERIENCE'))showPanel('character');
+}
+function renderInventory(){
+ const dc=$('#detailContent');
+ if(dc&&(dc.querySelector('.inventory-grid')||dc.querySelector('.armory-grid')))showPanel('inventory');
+}
+async function travelToWorld(worldId){
+ if(!worldId)return;
+ const already=state.worlds.findIndex(w=>w.id===worldId);
+ if(already>=0){state.worldIndex=already;updateWorld();setScale('local');toast(`Entered ${safe(state.worlds[already].name)}`);return;}
+ try{
+  const w=await api(`/api/worlds/${worldId}`);
+  const entry=typeof toWorldEntry==='function'?toWorldEntry(w):w;
+  state.worlds.unshift(entry);state.worldIndex=0;
+  updateWorld();setScale('local');
+  toast(`Traveled to ${safe(w.name)}`);
+ }catch(e){toast(e.message);}
 }
 let chatAudio=null;
 function stopChatAudio(){if(chatAudio){chatAudio.pause();chatAudio=null}$('#chatAvatar').classList.remove('speaking')}
@@ -1299,15 +1327,6 @@ async function searchLibrary(){
 $('#libraryFilterForm').onsubmit=e=>{e.preventDefault();searchLibrary()};
 $('#refreshImportedChars').onclick=loadImportedCharacters;
 $('#importAllBtn').onclick=async()=>{if(!lastLibraryResults.length){toast('Nothing to import');return}try{const result=await api('/api/explore/library/import-all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({characters:lastLibraryResults})});toast(`${result.imported} characters imported`)}catch(error){toast(error.message)}};
-$('#randomLibraryBtn').onclick=async()=>{
- try{
-  const result=await api('/api/explore/library?query=&race=All&limit=400');
-  const all=result.characters||[];
-  const shuffled=all.sort(()=>Math.random()-.5).slice(0,12);
-  renderExploreCards(shuffled,$('#libraryResults'),async(character,btn)=>{btn.disabled=true;try{await api('/api/explore/library/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character})});btn.textContent='Imported';toast(`${character.name} imported`)}catch(error){toast(error.message);btn.disabled=false}});
-  $('#libraryCount').textContent=`Random 12 / ${all.length}`;
- }catch(error){toast(error.message)}
-};
 $('#webSearchForm').onsubmit=async e=>{
  e.preventDefault();const formEl=e.currentTarget;const payload=Object.fromEntries(new FormData(formEl).entries());
  const container=$('#webSearchResults');container.innerHTML='<div class="empty-state">Searching…</div>';
@@ -1572,6 +1591,7 @@ function showCombatResult(){
   $('#combatResultBody').innerHTML=`<div class="result-outcome ${won?'won':'lost'}">${won?'🏆 Victory!':'💀 Defeat'}</div><div class="result-stats"><div class="result-stat"><span>Enemies slain</span><strong>${killed}&thinsp;/&thinsp;${enemies.length}</strong></div><div class="result-stat"><span>Allies standing</span><strong>${survived}&thinsp;/&thinsp;${players.length}</strong></div><div class="result-stat"><span>Rounds fought</span><strong>${combatState.round_number}</strong></div>${reward.xp_awarded?`<div class="result-stat"><span>XP earned</span><strong>+${reward.xp_awarded}</strong></div>`:''}${reward.loot?`<div class="result-stat"><span>Loot found</span><strong>${safe(reward.loot)}</strong></div>`:''}${reward.leveled_up?`<div class="result-level">⬆ Level up!</div>`:''}</div><div class="result-log">${logLines}</div>`;
   $('#combatResultModal').hidden=false;
   if(state.characterId){refreshCharacterState().then(()=>renderParty()).catch(()=>{});}
+  if(won&&reward.xp_awarded){awardXP(reward.xp_awarded,`Combat — Round ${combatState.round_number}`);}
 }
 function closeCombat(){stopCombatPlay();$('#combatOverlay').classList.remove('open');combatState=null}
 function computeCombatAffordances(){
@@ -1926,10 +1946,10 @@ async function addLocationsFromChat(text){
   const toAdd=[];let m;
   // Country/Kingdom level: "Kingdom of X", "X Empire", "X Islands" etc.
   const cRe=/\b(?:Kingdom|Empire|Republic|Duchy|Federation|Nation|Realm|Dominion|Commonwealth|Sultanate|Territory|Confederation)\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})|([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Kingdom|Empire|Republic|Duchy|Federation|Islands?|Nation|Realm|Territory|Lands)\b/g;
-  while((m=cRe.exec(text))!==null){const n=(m[1]||m[2]||'').trim();if(n.length>=3&&n.length<=40&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'country',terrain:'Plains'});existing.add(n.toLowerCase());}}
+  while((m=cRe.exec(text))!==null){const n=(m[1]||m[2]||'').trim();if(n.length>=3&&n.length<=40&&!existing.has(n.toLowerCase())){const ct=/island|isle/i.test(n)?'Ocean':/mount|peak|highland|ridge/i.test(n)?'Mountains':/forest|wood|grove/i.test(n)?'Forest':'Plains';toAdd.push({name:n,loc_type:'country',terrain:ct});existing.add(n.toLowerCase());}}
   // Province level: "X Province", "X District", "X County" etc.
   const pRe=/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Province|District|County|Shire|Region|March|Canton|Prefecture)\b/g;
-  while((m=pRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'province',terrain:'Plains'});existing.add(n.toLowerCase());}}
+  while((m=pRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){const pt=/mountain|highland|peak|vale|hill|ridge/i.test(n)?'Mountains':/forest|wood|grove|thicket/i.test(n)?'Forest':/swamp|marsh|bog|fen/i.test(n)?'Swamp':/coast|bay|shore|sea|port/i.test(n)?'Ocean':'Plains';toAdd.push({name:n,loc_type:'province',terrain:pt});existing.add(n.toLowerCase());}}
   // Local level: "X tavern", "X castle", "X forest" etc.
   const lRe=/\b(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:district|village|town|city|temple|forest|castle|ruins|cave|dungeon|tavern|market|inn|port|keep|tower|manor|shrine|gate|bridge|outpost|citadel|settlement|encampment|camp|hall|arena|palace|sanctuary|spire|grove|crossing|waypoint|fortress|barracks|library|academy|peak)\b/g;
   while((m=lRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'local',terrain:'Plains'});existing.add(n.toLowerCase());}}

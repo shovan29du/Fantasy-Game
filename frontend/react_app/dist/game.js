@@ -904,20 +904,6 @@ $('#randomScenarioBtn').onclick=async()=>{await rollRandomScenario();showStartSt
 async function rollRandomScenario(){try{const result=await api('/api/random/prompts');state.randomScenarioText=result.scenario;$('#randomScenarioText').textContent=result.scenario}catch(error){$('#randomScenarioText').textContent=error.message}}
 $('#rerollScenarioBtn').onclick=rollRandomScenario;
 $('#useRandomScenarioBtn').onclick=()=>beginGame({category:_activeCatKey(),scenario_name:'Random Scenario',scenario_type:'custom',custom_text:state.randomScenarioText});
-$('#autoGenScenarioBtn').onclick=async()=>{
- const worldName=state.worlds?.[state.worldIndex]?.name||'';
- const catKey=_activeCatKey();
- const genre=categoriesCache?.find(c=>c.key===catKey)?.label||'Fantasy';
- const btn=$('#autoGenScenarioBtn');
- btn.textContent='✦ Generating…';
- try{
-  const {scenario}=await api('/api/scenario/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:worldName,genre,story_preset:genre,session_id:state.sessionId||'default'})});
-  const ta=$('#customScenarioForm')?.elements?.text;
-  if(ta)ta.value=scenario;
-  toast('Scenario generated!');
- }catch(err){toast('Auto-generate failed')}
- finally{btn.textContent='✦ Auto-generate from world & preset'}
-};
 
 async function loadSavedGame(save){try{await bindSession({sessionId:save.session_id,worldId:save.world_id,characterId:save.character_id});hidePlayHub();toast(`Loaded: ${save.save_name}`)}catch(error){toast(error.message)}}
 $('#startLoadGameBtn').onclick=async()=>{
@@ -1292,15 +1278,6 @@ async function searchLibrary(){
 $('#libraryFilterForm').onsubmit=e=>{e.preventDefault();searchLibrary()};
 $('#refreshImportedChars').onclick=loadImportedCharacters;
 $('#importAllBtn').onclick=async()=>{if(!lastLibraryResults.length){toast('Nothing to import');return}try{const result=await api('/api/explore/library/import-all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({characters:lastLibraryResults})});toast(`${result.imported} characters imported`)}catch(error){toast(error.message)}};
-$('#randomLibraryBtn').onclick=async()=>{
- try{
-  const result=await api('/api/explore/library?query=&race=All&limit=400');
-  const all=result.characters||[];
-  const shuffled=all.sort(()=>Math.random()-.5).slice(0,12);
-  renderExploreCards(shuffled,$('#libraryResults'),async(character,btn)=>{btn.disabled=true;try{await api('/api/explore/library/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character})});btn.textContent='Imported';toast(`${character.name} imported`)}catch(error){toast(error.message);btn.disabled=false}});
-  $('#libraryCount').textContent=`Random 12 / ${all.length}`;
- }catch(error){toast(error.message)}
-};
 $('#webSearchForm').onsubmit=async e=>{
  e.preventDefault();const formEl=e.currentTarget;const payload=Object.fromEntries(new FormData(formEl).entries());
  const container=$('#webSearchResults');container.innerHTML='<div class="empty-state">Searching…</div>';
@@ -1565,6 +1542,8 @@ function showCombatResult(){
   $('#combatResultBody').innerHTML=`<div class="result-outcome ${won?'won':'lost'}">${won?'🏆 Victory!':'💀 Defeat'}</div><div class="result-stats"><div class="result-stat"><span>Enemies slain</span><strong>${killed}&thinsp;/&thinsp;${enemies.length}</strong></div><div class="result-stat"><span>Allies standing</span><strong>${survived}&thinsp;/&thinsp;${players.length}</strong></div><div class="result-stat"><span>Rounds fought</span><strong>${combatState.round_number}</strong></div>${reward.xp_awarded?`<div class="result-stat"><span>XP earned</span><strong>+${reward.xp_awarded}</strong></div>`:''}${reward.loot?`<div class="result-stat"><span>Loot found</span><strong>${safe(reward.loot)}</strong></div>`:''}${reward.leveled_up?`<div class="result-level">⬆ Level up!</div>`:''}</div><div class="result-log">${logLines}</div>`;
   $('#combatResultModal').hidden=false;
   if(state.characterId){refreshCharacterState().then(()=>renderParty()).catch(()=>{});}
+  if(won&&reward.xp_awarded){awardXP(reward.xp_awarded,`Combat — Round ${combatState.round_number}`);}
+
 }
 function closeCombat(){stopCombatPlay();$('#combatOverlay').classList.remove('open');combatState=null}
 function computeCombatAffordances(){
@@ -1919,10 +1898,10 @@ async function addLocationsFromChat(text){
   const toAdd=[];let m;
   // Country/Kingdom level: "Kingdom of X", "X Empire", "X Islands" etc.
   const cRe=/\b(?:Kingdom|Empire|Republic|Duchy|Federation|Nation|Realm|Dominion|Commonwealth|Sultanate|Territory|Confederation)\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})|([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Kingdom|Empire|Republic|Duchy|Federation|Islands?|Nation|Realm|Territory|Lands)\b/g;
-  while((m=cRe.exec(text))!==null){const n=(m[1]||m[2]||'').trim();if(n.length>=3&&n.length<=40&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'country',terrain:'Plains'});existing.add(n.toLowerCase());}}
+  while((m=cRe.exec(text))!==null){const n=(m[1]||m[2]||'').trim();if(n.length>=3&&n.length<=40&&!existing.has(n.toLowerCase())){const ct=/island|isle/i.test(n)?'Ocean':/mount|peak|highland|ridge/i.test(n)?'Mountains':/forest|wood|grove/i.test(n)?'Forest':'Plains';toAdd.push({name:n,loc_type:'country',terrain:ct});existing.add(n.toLowerCase());}}
   // Province level: "X Province", "X District", "X County" etc.
   const pRe=/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Province|District|County|Shire|Region|March|Canton|Prefecture)\b/g;
-  while((m=pRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'province',terrain:'Plains'});existing.add(n.toLowerCase());}}
+  while((m=pRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){const pt=/mountain|highland|peak|vale|hill|ridge/i.test(n)?'Mountains':/forest|wood|grove|thicket/i.test(n)?'Forest':/swamp|marsh|bog|fen/i.test(n)?'Swamp':/coast|bay|shore|sea|port/i.test(n)?'Ocean':'Plains';toAdd.push({name:n,loc_type:'province',terrain:pt});existing.add(n.toLowerCase());}}
   // Local level: "X tavern", "X castle", "X forest" etc.
   const lRe=/\b(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:district|village|town|city|temple|forest|castle|ruins|cave|dungeon|tavern|market|inn|port|keep|tower|manor|shrine|gate|bridge|outpost|citadel|settlement|encampment|camp|hall|arena|palace|sanctuary|spire|grove|crossing|waypoint|fortress|barracks|library|academy|peak)\b/g;
   while((m=lRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'local',terrain:'Plains'});existing.add(n.toLowerCase());}}
