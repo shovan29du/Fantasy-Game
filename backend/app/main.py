@@ -1606,6 +1606,48 @@ def remove_world(world_id: int) -> dict:
     return {"deleted": delete_world(world_id)}
 
 
+class WorldVisitIn(BaseModel):
+    character_id: int | None = None
+    location_name: str = ""
+
+@app.post("/api/worlds/{world_id}/visit")
+def record_world_visit(world_id: int, payload: WorldVisitIn) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO world_visits (world_id, character_id, location_name, visited_at) VALUES (?,?,?,?)",
+            (world_id, payload.character_id, payload.location_name, now_iso())
+        )
+        conn.commit()
+        return {"visited": True}
+    except Exception:
+        return {"visited": False}
+    finally:
+        conn.close()
+
+
+class EconomyAddIn(BaseModel):
+    gold: int = 0
+    credits: int = 0
+    tokens: int = 0
+
+@app.post("/api/characters/{character_id}/economy/add")
+def add_economy(character_id: int, payload: EconomyAddIn) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO economy (character_id, gold, credits, tokens) VALUES (?,?,?,?) "
+            "ON CONFLICT(character_id) DO UPDATE SET "
+            "gold=gold+excluded.gold, credits=credits+excluded.credits, tokens=tokens+excluded.tokens",
+            (character_id, max(0, payload.gold), max(0, payload.credits), max(0, payload.tokens))
+        )
+        conn.commit()
+        row = conn.execute("SELECT gold, credits, tokens FROM economy WHERE character_id=?", (character_id,)).fetchone()
+        return dict(row) if row else {"gold": 0, "credits": 0, "tokens": 0}
+    finally:
+        conn.close()
+
+
 @app.get("/api/media/providers")
 def media_providers() -> list[dict]:
     return get_provider_options()

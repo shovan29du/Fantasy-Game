@@ -377,3 +377,11 @@ _TABLES.append("""CREATE TABLE IF NOT EXISTS lorebook (
     enabled INTEGER DEFAULT 1,
     created_at TEXT NOT NULL
 )""")
+
+_TABLES.append("""CREATE TABLE IF NOT EXISTS world_visits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    world_id INTEGER NOT NULL,
+    character_id INTEGER,
+    location_name TEXT DEFAULT '',
+    visited_at TEXT NOT NULL
+)""")

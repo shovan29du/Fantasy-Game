@@ -27,7 +27,7 @@ const actions=[
  {name:'Loot',icon:'⚗',kind:'utility',cost:'Free'},
 ];
 
-let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:{},pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],activeSpeaker:null,_savedCharCache:[]};
+let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:{},pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[]};
 const SESSION_KEY='worldweaver-session';
 const TERRAIN_ICONS={Forest:'♣',Desert:'▲',Mountain:'⛰',Ocean:'≈',Swamp:'♨',Volcano:'▲',Plains:'❦',City:'⌂',Ruins:'⌂',Space:'✦',Underground:'▼',Tundra:'❄',Jungle:'♣',Savanna:'❦',Canyon:'▲'};
 
@@ -75,6 +75,7 @@ function addCharToParty(ch){
   if(state.partyChars.find(p=>p.id===ch.id)){toast(`${ch.name} is already in the party`);return;}
   if(state.partyChars.length>=6){toast('Party is full (max 6)');return;}
   state.partyChars.push({id:ch.id,name:ch.name,race:ch.race||'Unknown',profession:ch.profession||'Adventurer',gender:ch.gender||'',photo_path:ch.photo_path||'',initials:(ch.name||'??').slice(0,2).toUpperCase(),level:ch.level||1,backstory:ch.backstory||''});
+  api(`/api/characters/${ch.id}`).then(s=>{state.partySheets[ch.id]=s;}).catch(()=>{});
   savePartyToStorage();renderParty();toast(`${ch.name} joined the party!`);
 }
 window._addStoryChar=async(id)=>{
@@ -178,6 +179,15 @@ async function completeQuest(idx){
  if(state.characterId&&xpReward){
   try{const result=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:xpReward,reason:`Quest: ${q.title}`})});state.sheet=result.sheet;renderParty();toast(result.leveled_up?`Quest complete! Level up — now level ${result.sheet?.calc_lv}`:`Quest complete! +${xpReward} XP`);}catch{toast('Quest complete!');}
  }else toast('Quest complete!');
+ if(state.characterId&&q.reward){
+  const goldMatch=/(\d+)\s*(?:gold|gp|g\.p\.|coins?|pieces?)/i.exec(q.reward);
+  if(goldMatch){
+   const amount=parseInt(goldMatch[1],10);
+   try{await api(`/api/characters/${state.characterId}/economy/add`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gold:amount})});await refreshCharacterState();toast(`+${amount} gold`);}catch{}
+  }
+  const hasLoot=/\b(?:weapon|item|potion|ring|sword|staff|scroll|artifact|armor|armour|shield|dagger|bow|relic|gem)\b/i.test(q.reward);
+  if(hasLoot)lootItem().catch(()=>{});
+ }
  if(q.id){try{await api(`/api/quests/${q.id}/complete`,{method:'POST'});}catch{}}
  state.quests.splice(idx,1);renderQuests();
 }
@@ -329,14 +339,26 @@ async function failQuest(idx){
 async function travelToWorld(worldId){
  if(!worldId)return;
  const already=state.worlds.findIndex(w=>w.id===worldId);
- if(already>=0){state.worldIndex=already;updateWorld();setScale('local');toast(`Entered ${safe(state.worlds[already].name)}`);return;}
+ if(already>=0){
+  state.worldIndex=already;updateWorld();setScale('local');
+  saveSessionToStorage();
+  _recordWorldVisit(worldId);
+  toast(`Entered ${safe(state.worlds[already].name)}`);return;
+ }
  try{
   const w=await api(`/api/worlds/${worldId}`);
   const entry=typeof toWorldEntry==='function'?toWorldEntry(w):w;
   state.worlds.unshift(entry);state.worldIndex=0;
   updateWorld();setScale('local');
+  saveSessionToStorage();
+  _recordWorldVisit(worldId);
   toast(`Traveled to ${safe(w.name)}`);
  }catch(e){toast(e.message);}
+}
+function _recordWorldVisit(worldId){
+ if(!worldId)return;
+ const loc=state.worlds.find(w=>w.id===worldId);
+ api(`/api/worlds/${worldId}/visit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character_id:state.characterId||null,location_name:loc?.place||''})}).catch(()=>{});
 }
 function worldTagsText(world){
  const r=world.ratings||{};
@@ -943,7 +965,14 @@ function playerContextLine(){
   if(s.reality_signature?.universe_tag)bits.push(`Reality signature: ${s.reality_signature.universe_tag} (${s.reality_signature.reality_type})`);
  }
  if(state.quests.length)bits.push(`Active quests: ${state.quests.map(q=>q.title).join('; ')}`);
- if(state.partyChars.length)bits.push(`Party: ${state.partyChars.map(c=>`${c.name} (${c.race||''} ${c.profession||''})`).join(', ')}`);
+ if(state.partyChars.length){
+  const partyDetail=state.partyChars.map(c=>{
+   const sh=state.partySheets[c.id];
+   if(sh){const {maxHp,maxMana}=derivedResources(sh);const curHp=sh.current_hp??maxHp;return `${c.name} (Lv${sh.calc_lv||sh.level||c.level} ${c.race||''} ${c.profession||''}, HP ${curHp}/${maxHp})`;}
+   return `${c.name} (Lv${c.level||1} ${c.race||''} ${c.profession||''})`;
+  });
+  bits.push(`Party: ${partyDetail.join(', ')}`);
+ }
  return `[${bits.join(' | ')}]`;
 }
 let chatAudio=null;
