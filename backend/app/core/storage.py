@@ -385,3 +385,22 @@ _TABLES.append("""CREATE TABLE IF NOT EXISTS world_visits (
     location_name TEXT DEFAULT '',
     visited_at TEXT NOT NULL
 )""")
+
+_TABLES.append("""CREATE TABLE IF NOT EXISTS npc_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id INTEGER NOT NULL,
+    npc_name TEXT NOT NULL,
+    fact TEXT NOT NULL,
+    session_id TEXT DEFAULT 'default',
+    created_at TEXT NOT NULL
+)""")
+
+_TABLES.append("""CREATE TABLE IF NOT EXISTS game_saves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_name TEXT NOT NULL,
+    character_id INTEGER,
+    session_id TEXT DEFAULT 'default',
+    world_id INTEGER,
+    notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+)""")

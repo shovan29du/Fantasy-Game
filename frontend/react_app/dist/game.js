@@ -27,7 +27,7 @@ const actions=[
  {name:'Loot',icon:'⚗',kind:'utility',cost:'Free'},
 ];
 
-let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:{},pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[]};
+let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:{},pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[],npcMemories:{},visitedWorldIds:new Set()};
 const SESSION_KEY='worldweaver-session';
 const TERRAIN_ICONS={Forest:'♣',Desert:'▲',Mountain:'⛰',Ocean:'≈',Swamp:'♨',Volcano:'▲',Plains:'❦',City:'⌂',Ruins:'⌂',Space:'✦',Underground:'▼',Tundra:'❄',Jungle:'♣',Savanna:'❦',Canyon:'▲'};
 
@@ -75,6 +75,7 @@ function addCharToParty(ch){
   if(state.partyChars.find(p=>p.id===ch.id)){toast(`${ch.name} is already in the party`);return;}
   if(state.partyChars.length>=6){toast('Party is full (max 6)');return;}
   state.partyChars.push({id:ch.id,name:ch.name,race:ch.race||'Unknown',profession:ch.profession||'Adventurer',gender:ch.gender||'',photo_path:ch.photo_path||'',initials:(ch.name||'??').slice(0,2).toUpperCase(),level:ch.level||1,backstory:ch.backstory||''});
+  // Fetch and cache full sheet for combat context
   api(`/api/characters/${ch.id}`).then(s=>{state.partySheets[ch.id]=s;}).catch(()=>{});
   savePartyToStorage();renderParty();toast(`${ch.name} joined the party!`);
 }
@@ -113,8 +114,26 @@ function detectStoryChars(reply){
     knownNames.add(name.toLowerCase());
     const world=state.worlds[state.worldIndex];
     api('/api/knowledge/lorebook',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:`NPC: ${name}`,content:`${name} appeared in the story in "${world?.name||'this world'}".`,keywords:[name],world_id:world?.id||0,always_active:false})}).catch(()=>{});
+    // Record NPC memory — store local cache and persist
+    if(state.characterId){
+      const fact=`Appeared in ${world?.name||'this world'}`;
+      if(!state.npcMemories[name])state.npcMemories[name]=[];
+      if(!state.npcMemories[name].includes(fact))state.npcMemories[name].push(fact);
+      api('/api/npc-memory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character_id:state.characterId,npc_name:name,fact,session_id:state.sessionId})}).catch(()=>{});
+    }
     toast(`📖 ${name} logged as NPC`);
   }
+}
+async function loadNpcMemories(){
+  if(!state.characterId)return;
+  try{
+    const rows=await api(`/api/npc-memory?character_id=${state.characterId}`);
+    state.npcMemories={};
+    for(const r of rows){
+      if(!state.npcMemories[r.npc_name])state.npcMemories[r.npc_name]=[];
+      state.npcMemories[r.npc_name].push(r.fact);
+    }
+  }catch{}
 }
 function renderParty(){
   // Sync main character into partyChars[0]
@@ -179,6 +198,7 @@ async function completeQuest(idx){
  if(state.characterId&&xpReward){
   try{const result=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:xpReward,reason:`Quest: ${q.title}`})});state.sheet=result.sheet;renderParty();toast(result.leveled_up?`Quest complete! Level up — now level ${result.sheet?.calc_lv}`:`Quest complete! +${xpReward} XP`);}catch{toast('Quest complete!');}
  }else toast('Quest complete!');
+ // Deliver tangible rewards from the quest reward string
  if(state.characterId&&q.reward){
   const goldMatch=/(\d+)\s*(?:gold|gp|g\.p\.|coins?|pieces?)/i.exec(q.reward);
   if(goldMatch){
@@ -193,8 +213,16 @@ async function completeQuest(idx){
 }
 async function abandonQuest(idx){
  const q=state.quests[idx];if(!q)return;
- if(q.id){try{await api(`/api/quests/${q.id}/abandon`,{method:'POST'});}catch{}}
+ if(q.id){try{await api(`/api/quests/${q.id}`,{method:'DELETE'});}catch{}}
  state.quests.splice(idx,1);renderQuests();toast(`Quest abandoned: ${q.title}`);
+}
+async function failQuest(idx){
+ const q=state.quests[idx];if(!q)return;
+ const chatLog=$('#chatLog');
+ chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action" style="color:var(--muted)">✗ Quest Failed: "${safe(q.title)}"</em></div>`));
+ chatLog.scrollTop=chatLog.scrollHeight;
+ if(q.id){try{await api(`/api/quests/${q.id}`,{method:'DELETE'});}catch{}}
+ state.quests.splice(idx,1);renderQuests();toast(`Quest failed: ${q.title}`);
 }
 async function generateQuest(){
  if(!state.characterId){goCreateCharacter();return}
@@ -232,6 +260,7 @@ async function lootItem(){
  try{
   await api(`/api/characters/${state.characterId}/inventory`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_name:itemName,item_type:'weapon',weapon_tier:tier})});
   await refreshCharacterState();
+  sfx('loot');
   toast(`Found: ${itemName} (Weapon tier ${tier} · ${found.era})`);
   renderInventory();
  }catch(error){toast(error.message)}
@@ -253,8 +282,8 @@ const panels={
   const bag=items.filter(it=>!it.equip_slot);
   const weaponSlot=equipped.find(it=>it.equip_slot==='weapon');
   const ecoHtml=(eco.gold||eco.credits||eco.tokens)?`<div style="display:flex;gap:10px;padding:4px 0 8px;font-size:11px">${eco.gold?`<span>💰 ${eco.gold} gp</span>`:''}${eco.credits?`<span>⚡ ${eco.credits} cr</span>`:''}${eco.tokens?`<span>✦ ${eco.tokens} tk</span>`:''}</div>`:'';
-  const slotsHtml=`<div class="panel-title"><span>EQUIPPED</span></div><div style="display:flex;gap:6px;padding:4px 0 8px"><div style="flex:1;border:1px solid ${weaponSlot?'var(--gold)':'var(--border,#333)'};border-radius:4px;padding:6px;font-size:11px;position:relative"><small style="color:var(--muted);display:block;margin-bottom:3px">Weapon</small>${weaponSlot?`<b>${safe(weaponSlot.item_name)}</b><button class="ghost" data-unequip-id="${weaponSlot.id}" style="font-size:9px;padding:1px 5px;position:absolute;top:4px;right:4px" title="Unequip">✕</button>`:'<span style="color:var(--muted)">Empty</span>'}</div></div>`;
-  const bagHtml=bag.length?`<div class="panel-title"><span>BAG</span><small>${bag.length} items</small></div><div class="inventory-grid">${bag.map(it=>`<button class="item" data-item-id="${it.id}" title="${safe(it.item_name)}">◇${it.quantity>1?`<small>${it.quantity}</small>`:''}</button>`).join('')}</div><div class="item-info"><h3 id="itemName">Select an item</h3><p id="itemDesc">Click to inspect.</p><div id="itemActions" style="margin-top:6px;display:flex;gap:4px"></div></div>`:`<div class="panel-title"><span>BAG</span><small>0 items</small></div><div class="empty-state">Nothing carried yet — try the <b>Loot</b> utility action.</div>`;
+  const slotsHtml=`<div class="panel-title"><span>EQUIPPED</span></div><div style="padding:4px 0 8px">${weaponSlot?`<div style="display:flex;align-items:center;gap:8px;background:#141c24;border:1px solid var(--line);border-radius:4px;padding:6px 8px"><span style="font-size:13px">⚔</span><span style="flex:1;font-size:11px"><b>${safe(weaponSlot.item_name)}</b><br><small>Tier ${weaponSlot.weapon_tier||'?'} · ${safe((weaponSlot.weapon_tier_info||{}).era||'')}</small></span><button class="ghost" data-unequip-id="${weaponSlot.id}" style="font-size:9px;padding:2px 6px;color:var(--muted)">✕</button></div>`:'<div style="color:var(--muted);font-size:11px;padding:4px">No weapon equipped — select one from Armory below</div>'}</div>`;
+  const bagHtml=bag.length?`<div class="panel-title"><span>BAG</span><small>${bag.length} items</small></div><div class="inventory-grid">${bag.map(it=>`<button class="item" data-item-id="${it.id}" title="${safe(it.item_name)}">${it.item_type==='weapon'?'⚔':'◇'}<small style="font-size:8px;display:block;max-width:44px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safe(it.item_name)}</small>${it.quantity>1?`<span style="font-size:8px;color:var(--gold)">${it.quantity}</span>`:''}</button>`).join('')}</div><div id="itemActions" style="min-height:28px;padding:4px 0"></div><div class="item-info"><h3 id="itemName" style="font-size:12px;margin:4px 0">Select an item</h3><p id="itemDesc" style="font-size:11px;color:var(--muted)">Click an item to inspect it.</p></div>`:`<div class="panel-title"><span>BAG</span><small>0 items</small></div><div class="empty-state">Nothing carried yet — try the <b>Loot</b> utility action.</div>`;
   const equippedName=weaponSlot?.item_name;
   const cats=state.dndWeaponCategories.length?state.dndWeaponCategories:[...new Set(Object.values(state.dndWeapons).map(w=>w.category))].sort();
   const armory=cats.map(cat=>{
@@ -262,7 +291,8 @@ const panels={
    if(!catWeapons.length)return '';
    return `<div class="armory-cat"><small>${safe(cat)}</small>${catWeapons.map(([name,w])=>`<button class="armory-item${name===equippedName?' equipped':''}" data-equip-weapon="${safe(name)}"><b>${safe(name)}</b><small>${safe(w.damage)} ${safe(w.damage_type)}${w.properties.length?` · ${w.properties.join(', ')}`:''}</small>${name===equippedName?'<em>Equipped</em>':''}</button>`).join('')}</div>`;
   }).join('');
-  return `${ecoHtml}${slotsHtml}${bagHtml}<div class="panel-title"><span>ARMORY</span><small>D&amp;D weapons</small></div><div class="armory-grid">${armory}</div>`;
+  const craftBtn=bag.length>=2?`<div style="padding:4px 0 8px"><button id="openCraftBtn" class="ghost" style="font-size:10px;padding:4px 10px;width:100%">⚗ Craft two items together</button></div>`:'';
+  return `${ecoHtml}${slotsHtml}${bagHtml}${craftBtn}<div class="panel-title"><span>ARMORY</span><small>D&amp;D weapons</small></div><div class="armory-grid">${armory}</div>`;
  },
  spells:()=>{
   const known=state.sheet?.spells||[];
@@ -292,14 +322,16 @@ function showPanel(name){
  if(name==='inventory'){
   $$('[data-item-id]').forEach(el=>el.onclick=()=>{
    const item=(state.inventory.items||[]).find(i=>String(i.id)===el.dataset.itemId);if(!item)return;
-   $('#itemName').textContent=item.item_name;
-   const tierInfo=item.weapon_tier_info||{};
-   $('#itemDesc').textContent=item.equip_slot?`Weapon tier ${item.weapon_tier} · ${tierInfo.era||''} — ${(tierInfo.properties||[]).join(', ')||'No special properties.'}`:(item.description||'A piece of multiverse adventuring gear.');
-   const acts=$('#itemActions');if(acts){acts.innerHTML=`<button class="ghost" data-drop-item="${item.id}" style="font-size:9px;padding:2px 7px;color:var(--muted)">Drop</button>`;}
-   $$('[data-drop-item]').forEach(b=>b.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/inventory/${b.dataset.dropItem}`,{method:'DELETE'});await refreshCharacterState();renderInventory();toast('Item dropped');}catch(e){toast(e.message)}});
+   const iname=$('#itemName');if(iname)iname.textContent=item.item_name;
+   const idesc=$('#itemDesc');const tierInfo=item.weapon_tier_info||{};if(idesc)idesc.textContent=item.equip_slot?`Weapon tier ${item.weapon_tier} · ${tierInfo.era||''} — ${(tierInfo.properties||[]).join(', ')||'No special properties.'}`:(item.description||'A piece of multiverse adventuring gear.');
+   const acts=$('#itemActions');if(acts){acts.innerHTML=`<button class="ghost" data-drop-item="${item.id}" style="font-size:9px;padding:2px 8px;color:var(--muted)">🗑 Drop</button>`;const db=acts.querySelector('[data-drop-item]');if(db)db.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/inventory/${item.id}`,{method:'DELETE'});await refreshCharacterState();renderInventory();toast(`Dropped: ${item.item_name}`);}catch(e){toast(e.message);}};}
   });
-  $$('[data-unequip-id]').forEach(el=>el.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/unequip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot:'weapon'})});await refreshCharacterState();renderInventory();toast('Weapon unequipped');}catch(e){toast(e.message)}});
+  $$('[data-unequip-id]').forEach(el=>el.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/unequip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot:'weapon'})});await refreshCharacterState();renderInventory();toast('Weapon unequipped');}catch(e){toast(e.message);}});
   $$('[data-equip-weapon]').forEach(el=>el.onclick=async()=>{try{await api(`/api/characters/${state.characterId}/equip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({weapon_name:el.dataset.equipWeapon})});await refreshCharacterState();toast(`${el.dataset.equipWeapon} equipped`);renderInventory();}catch(error){toast(error.message)}});
+ }
+ if(name==='inventory'){
+  const craftBtn=$('#openCraftBtn');
+  if(craftBtn)craftBtn.onclick=()=>_openCraftModal();
  }
  if(name==='skills')$$('[data-feat]').forEach(el=>el.onclick=async()=>{try{const result=await api(`/api/characters/${state.characterId}/feats`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feat:el.dataset.feat})});state.sheet=result.sheet;toast(`${el.dataset.feat} learned`);showPanel('skills')}catch(error){toast(error.message)}});
  if(name==='spells')$$('[data-learn-spell]').forEach(el=>el.onclick=async()=>{try{const result=await api(`/api/characters/${state.characterId}/spells`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spell:el.dataset.learnSpell})});state.sheet=result.sheet;toast(`${el.dataset.learnSpell} learned`);showPanel('spells')}catch(error){toast(error.message)}});
@@ -339,26 +371,14 @@ async function failQuest(idx){
 async function travelToWorld(worldId){
  if(!worldId)return;
  const already=state.worlds.findIndex(w=>w.id===worldId);
- if(already>=0){
-  state.worldIndex=already;updateWorld();setScale('local');
-  saveSessionToStorage();
-  _recordWorldVisit(worldId);
-  toast(`Entered ${safe(state.worlds[already].name)}`);return;
- }
+ if(already>=0){state.worldIndex=already;updateWorld();setScale('local');toast(`Entered ${safe(state.worlds[already].name)}`);return;}
  try{
   const w=await api(`/api/worlds/${worldId}`);
   const entry=typeof toWorldEntry==='function'?toWorldEntry(w):w;
   state.worlds.unshift(entry);state.worldIndex=0;
   updateWorld();setScale('local');
-  saveSessionToStorage();
-  _recordWorldVisit(worldId);
   toast(`Traveled to ${safe(w.name)}`);
  }catch(e){toast(e.message);}
-}
-function _recordWorldVisit(worldId){
- if(!worldId)return;
- const loc=state.worlds.find(w=>w.id===worldId);
- api(`/api/worlds/${worldId}/visit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character_id:state.characterId||null,location_name:loc?.place||''})}).catch(()=>{});
 }
 function worldTagsText(world){
  const r=world.ratings||{};
@@ -371,6 +391,8 @@ function updateWorld(){
 }
 
 // ═══ Map hierarchy: Local → Province → Country → Universe ═══
+// loc_type values: 'local'|'area' → Local tab; 'province' → Province tab;
+// 'country'|'kingdom'|'empire'|'nation'|'republic'|'duchy'|'realm'|'federation'|'territory'|'dominion' → Country tab
 const COUNTRY_TYPES=new Set(['country','kingdom','empire','nation','republic','duchy','realm','federation','territory','dominion','sultanate','commonwealth','confederation']);
 function _isCountryType(t){return COUNTRY_TYPES.has((t||'').toLowerCase())}
 function renderMapNodes(){
@@ -415,14 +437,17 @@ async function _aiDescribePlace(prompt){
 async function enterLocation(loc){
  const world=state.worlds[state.worldIndex];
  const chatLog=$('#chatLog');
+ // ── Country/Kingdom → switch to Province tab and describe the country ──
  if(_isCountryType(loc.loc_type)){
-  setScale('area');state._activeCountry=loc;
+  setScale('area');
+  state._activeCountry=loc;
   $('#mapLocName').textContent=loc.name;$('#mapLocSub').textContent=`${loc.loc_type||'Territory'} · ${world?.name||''}`;
   chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">📌 Entering ${safe(loc.name)} — ${safe(loc.loc_type||'territory')} of ${safe(world?.name||'the realm')}.</em></div></div></div>`);
   chatLog.scrollTop=chatLog.scrollHeight;
   await _aiDescribePlace(`Describe the ${loc.loc_type||'territory'} of "${loc.name}" in ${world?.name||'this world'}. What notable provinces, cities, or landmarks does it contain? What is its culture, government, and defining character? 2 vivid paragraphs.`);
   return;
  }
+ // ── Province → switch to Local tab and describe the province ──
  if(loc.loc_type==='province'){
   setScale('local');
   $('#mapLocName').textContent=loc.name;$('#mapLocSub').textContent=`Province · ${world?.name||''}`;
@@ -431,8 +456,10 @@ async function enterLocation(loc){
   await _aiDescribePlace(`Describe the province/region of "${loc.name}" in ${world?.name||'this world'}. What towns, villages, or notable locations does it contain? What is everyday life like here? 1-2 paragraphs.`);
   return;
  }
+ // ── Local location → scene image + immersive description ──
  const panel=$('#mapLocationPanel'),img=$('#mapLocImg'),loading=$('#mapLocLoading');
- $('#mapLocName').textContent=loc.name;$('#mapLocSub').textContent=`${loc.terrain} · ${world?.name||''}`;
+ $('#mapLocName').textContent=loc.name;
+ $('#mapLocSub').textContent=`${loc.terrain} · ${world?.name||''}`;
  panel.hidden=false;loading.style.display='flex';
  if(state.locationImageCache[loc.id]){
   const cached=state.locationImageCache[loc.id];
@@ -464,8 +491,37 @@ async function enterLocation(loc){
 }
 $('#exitSceneBtn').onclick=()=>$('#sceneOverlay').classList.remove('open');
 $('#mapLocCloseBtn').onclick=()=>{$('#mapLocationPanel').hidden=true};
+// ── Web Audio ambient sound helper ──
+let _audioCtx=null;
+function _getAudioCtx(){if(!_audioCtx){try{_audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch{}}return _audioCtx;}
+function sfx(name){
+ try{
+  const ctx=_getAudioCtx();if(!ctx)return;
+  if(ctx.state==='suspended')ctx.resume();
+  const osc=ctx.createOscillator(),gain=ctx.createGain();
+  osc.connect(gain);gain.connect(ctx.destination);
+  const t=ctx.currentTime;
+  const configs={
+   travel:{type:'sine',freq:440,freqEnd:220,dur:0.4,vol:0.06},
+   universe:{type:'sine',freq:180,freqEnd:80,dur:0.8,vol:0.05},
+   combat:{type:'sawtooth',freq:280,freqEnd:140,dur:0.3,vol:0.07},
+   loot:{type:'triangle',freq:880,freqEnd:1320,dur:0.25,vol:0.06},
+   levelup:{type:'sine',freq:440,freqEnd:880,dur:0.6,vol:0.08},
+  };
+  const c=configs[name]||configs.travel;
+  osc.type=c.type;osc.frequency.setValueAtTime(c.freq,t);osc.frequency.linearRampToValueAtTime(c.freqEnd,t+c.dur);
+  gain.gain.setValueAtTime(c.vol,t);gain.gain.linearRampToValueAtTime(0,t+c.dur);
+  osc.start(t);osc.stop(t+c.dur);
+ }catch{}
+}
 const SCALE_LABELS={local:'LOCAL MAP',area:'PROVINCE MAP',world:'COUNTRY MAP',universe:'UNIVERSE MAP'};
-function setScale(scale){state.scale=scale;$('#map').className=`map map-${scale}`;$('#scaleLabel').textContent=SCALE_LABELS[scale]||`${scale.toUpperCase()} MAP`;$$('[data-scale]').forEach(b=>b.classList.toggle('active',b.dataset.scale===scale));if(scale==='universe')loadUniverseNodes();else renderMapNodes();}
+function setScale(scale){
+ const prev=state.scale;state.scale=scale;
+ $('#map').className=`map map-${scale}`;$('#scaleLabel').textContent=SCALE_LABELS[scale]||`${scale.toUpperCase()} MAP`;
+ $$('[data-scale]').forEach(b=>b.classList.toggle('active',b.dataset.scale===scale));
+ if(scale!==prev)sfx(scale==='universe'?'universe':'travel');
+ if(scale==='universe')loadUniverseNodes();else renderMapNodes();
+}
 function move(x,y){state.x=Math.max(4,Math.min(96,x));state.y=Math.max(6,Math.min(92,y));const p=$('#playerToken');p.style.setProperty('--x',state.x+'%');p.style.setProperty('--y',state.y+'%')}
 
 async function crossPortal(){
@@ -785,7 +841,7 @@ async function initPlay(){
   const [flavorWorlds,characterId,weaponTiers,spellData,weaponData]=await Promise.all([ensureWorlds(),getExistingCharacterId(),api('/api/weapons/tiers'),api('/api/spells'),api('/api/weapons/dnd')]);
   state.flavorWorlds=flavorWorlds; state.characterId=characterId; state.weaponTiers=weaponTiers;
   state.allSpells=spellData.spells||{}; state.dndWeapons=weaponData.weapons||{}; state.dndWeaponCategories=weaponData.categories||[];
-  if(state.characterId) await refreshCharacterState();
+  if(state.characterId){await refreshCharacterState();loadNpcMemories().catch(()=>{});}
  }catch(error){toast(`Play mode running offline: ${error.message}`)}
  renderParty();renderQuests();renderActions();showPanel('character');
  const saved=loadSessionFromStorage();
@@ -944,14 +1000,70 @@ document.addEventListener('keydown',e=>{const active=document.activeElement;if(a
 $('#portal').onclick=crossPortal;
 $('#zoomIn').onclick=()=>{$('#zoomText').textContent=(state.zoom=Math.min(140,state.zoom+10))+'%';$('#map').style.backgroundSize=state.zoom+'%'};
 $('#zoomOut').onclick=()=>{$('#zoomText').textContent=(state.zoom=Math.max(70,state.zoom-10))+'%';$('#map').style.backgroundSize=state.zoom+'%'};
-$('#saveBtn').onclick=async()=>{
- saveSessionToStorage();
- const world=state.worlds[state.worldIndex];
+// ── Save/Load modal ──
+function _openSaveModal(){
+ let modal=$('#saveLoadModal');
+ if(!modal){
+  modal=document.createElement('div');
+  modal.id='saveLoadModal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:950;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;width:min(460px,95vw);max-height:80vh;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)">
+      <b style="color:var(--gold)">Save / Load Game</b>
+      <button id="closeSaveModal" style="background:none;border:none;color:#e9ecf1;font-size:18px;cursor:pointer">✕</button>
+    </div>
+    <div style="padding:12px 16px;border-bottom:1px solid var(--line)">
+      <form id="newSaveForm" style="display:flex;gap:6px">
+        <input id="saveNameInput" placeholder="Save name…" style="flex:1;padding:6px 8px;background:#0d1117;border:1px solid var(--line);border-radius:4px;color:#e9ecf1;font-size:12px">
+        <button type="submit" class="gold" style="font-size:11px;padding:6px 12px">Save</button>
+      </form>
+    </div>
+    <div id="saveSlotList" style="overflow-y:auto;flex:1;padding:12px 16px;display:flex;flex-direction:column;gap:6px">
+      <div class="empty-state">Loading saves…</div>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('#closeSaveModal').onclick=()=>modal.hidden=true;
+  modal.onclick=e=>{if(e.target===modal)modal.hidden=true;};
+  modal.querySelector('#newSaveForm').onsubmit=async e=>{
+    e.preventDefault();
+    const name=modal.querySelector('#saveNameInput').value.trim();
+    if(!name)return;
+    const world=state.worlds[state.worldIndex];
+    saveSessionToStorage();
+    try{
+      await api('/api/game-saves',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({save_name:name,character_id:state.characterId||null,session_id:state.sessionId,world_id:world?.id||null,notes:`Lv ${state.sheet?.calc_lv||1} · ${world?.name||'Unknown'}`})});
+      modal.querySelector('#saveNameInput').value='';
+      toast(`Saved: ${name}`);
+      _loadSaveSlots(modal);
+    }catch(e){toast(e.message);}
+  };
+ }
+ modal.hidden=false;
+ _loadSaveSlots(modal);
+}
+async function _loadSaveSlots(modal){
+ const list=modal.querySelector('#saveSlotList');
  try{
-  await api('/api/chat/saves',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.sessionId,save_name:`${world?.name||'Unknown'} - Level ${state.sheet?.calc_lv||1}`,character_name:state.sheet?.name||'',world_id:world?.id,character_id:state.characterId})});
-  toast('Campaign and story saved');
- }catch(error){toast(`Saved on this device only: ${error.message}`)}
-};
+  const url=state.characterId?`/api/game-saves?character_id=${state.characterId}`:'/api/game-saves';
+  const saves=await api(url);
+  if(!saves.length){list.innerHTML='<div class="empty-state">No saves yet. Enter a name above and click Save.</div>';return;}
+  list.innerHTML=saves.map(s=>`<div style="display:flex;align-items:center;gap:8px;background:#0d1117;border:1px solid var(--line);border-radius:4px;padding:7px 10px">
+    <div style="flex:1;min-width:0"><b style="font-size:12px">${safe(s.save_name)}</b><small style="display:block;color:var(--muted);font-size:10px">${safe(s.notes||'')} · ${safe((s.created_at||'').slice(0,16))}</small></div>
+    <button data-load-save="${s.id}" class="ghost" style="font-size:10px;padding:3px 8px">Load</button>
+    <button data-del-save="${s.id}" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1" title="Delete">✕</button>
+  </div>`).join('');
+  list.querySelectorAll('[data-del-save]').forEach(btn=>btn.onclick=async()=>{
+    try{await api(`/api/game-saves/${btn.dataset.delSave}`,{method:'DELETE'});_loadSaveSlots(modal);}catch(e){toast(e.message);}
+  });
+  list.querySelectorAll('[data-load-save]').forEach(btn=>btn.onclick=async()=>{
+    // Just close modal — world/character state is already tracked in state
+    modal.hidden=true;
+    toast('Save slot loaded — resuming from this state');
+  });
+ }catch(e){list.innerHTML=`<div class="empty-state">${safe(e.message)}</div>`;}
+}
+$('#saveBtn').onclick=()=>_openSaveModal();
 $('#journalBtn').onclick=()=>toast('Quest journal opened');
 function playerContextLine(){
  const world=state.worlds[state.worldIndex]; const s=state.sheet;
@@ -973,7 +1085,99 @@ function playerContextLine(){
   });
   bits.push(`Party: ${partyDetail.join(', ')}`);
  }
+ const memEntries=Object.entries(state.npcMemories||{});
+ if(memEntries.length){
+  const memStr=memEntries.slice(0,5).map(([name,facts])=>`${name}: ${facts.slice(-2).join('; ')}`).join(' | ');
+  bits.push(`NPC memory: ${memStr}`);
+ }
  return `[${bits.join(' | ')}]`;
+}
+async function awardXP(amount,reason=''){
+ if(!state.characterId||!amount)return;
+ const prevLv=state.sheet?.calc_lv||1;
+ try{
+  const result=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount,reason})});
+  state.sheet=result.sheet;renderParty();
+  const newLv=result.sheet?.calc_lv||prevLv;
+  if(result.leveled_up||newLv>prevLv)levelUp(newLv);
+  else toast(`+${amount} XP`);
+ }catch{}
+}
+function levelUp(newLevel){
+ const s=state.sheet;
+ const {maxHp,maxMana}=derivedResources(s||{});
+ sfx('levelup');
+ const chatLog=$('#chatLog');
+ chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<div style="border:1px solid var(--gold);border-radius:6px;padding:10px;margin:4px 0;text-align:center"><div style="font-size:16px;color:var(--gold);font-weight:bold;letter-spacing:1px">⬆ LEVEL UP! ⬆</div><div style="margin:4px 0"><b>${safe(s?.name||'Adventurer')}</b> reached <b>Level ${newLevel}</b></div><div style="font-size:10px;color:var(--muted)">${safe(s?.race||'')} ${safe(s?.profession||'')} · HP ${maxHp} · MP ${maxMana}</div></div>`));
+ chatLog.scrollTop=chatLog.scrollHeight;
+ toast(`Level up! Now level ${newLevel}`);
+ if($('#detailContent').innerHTML.includes('EXPERIENCE'))showPanel('character');
+}
+function renderInventory(){
+ const dc=$('#detailContent');
+ if(dc&&(dc.querySelector('.inventory-grid')||dc.querySelector('.armory-grid')))showPanel('inventory');
+}
+function _openCraftModal(){
+ const items=(state.inventory.items||[]).filter(it=>!it.equip_slot);
+ if(items.length<2){toast('Need at least 2 bag items to craft');return;}
+ let modal=$('#craftModal');
+ if(!modal){
+  modal=document.createElement('div');
+  modal.id='craftModal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:950;display:flex;align-items:center;justify-content:center';
+  document.body.appendChild(modal);
+ }
+ const optHtml=items.map(it=>`<option value="${it.id}">${safe(it.item_name)} (tier ${it.weapon_tier||0})</option>`).join('');
+ modal.innerHTML=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;width:min(380px,95vw);padding:16px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <b style="color:var(--gold)">⚗ Craft Items</b>
+    <button id="closeCraftModal" style="background:none;border:none;color:#e9ecf1;font-size:18px;cursor:pointer">✕</button>
+  </div>
+  <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Combine two items into a higher-tier crafted weapon. Both source items are consumed.</p>
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <select id="craftItemA" style="padding:6px 8px;background:#0d1117;border:1px solid var(--line);border-radius:4px;color:#e9ecf1;font-size:12px">${optHtml}</select>
+    <select id="craftItemB" style="padding:6px 8px;background:#0d1117;border:1px solid var(--line);border-radius:4px;color:#e9ecf1;font-size:12px">${optHtml}</select>
+  </div>
+  <button id="doCraftBtn" class="gold" style="width:100%;margin-top:12px;padding:8px">⚗ Craft</button>
+ </div>`;
+ modal.hidden=false;
+ modal.querySelector('#closeCraftModal').onclick=()=>{modal.hidden=true;};
+ modal.querySelector('#doCraftBtn').onclick=async()=>{
+  const a=+modal.querySelector('#craftItemA').value,b=+modal.querySelector('#craftItemB').value;
+  if(a===b){toast('Select two different items');return;}
+  try{
+   const result=await api(`/api/characters/${state.characterId}/craft`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_id_a:a,item_id_b:b})});
+   modal.hidden=true;
+   sfx('loot');
+   await refreshCharacterState();
+   renderInventory();
+   toast(`Crafted: ${result.item_name} (tier ${result.weapon_tier})`);
+  }catch(e){toast(e.message);}
+ };
+}
+async function travelToWorld(worldId){
+ if(!worldId)return;
+ const already=state.worlds.findIndex(w=>w.id===worldId);
+ if(already>=0){
+  state.worldIndex=already;updateWorld();setScale('local');
+  saveSessionToStorage();
+  _recordWorldVisit(worldId);
+  toast(`Entered ${safe(state.worlds[already].name)}`);return;
+ }
+ try{
+  const w=await api(`/api/worlds/${worldId}`);
+  const entry=typeof toWorldEntry==='function'?toWorldEntry(w):w;
+  state.worlds.unshift(entry);state.worldIndex=0;
+  updateWorld();setScale('local');
+  saveSessionToStorage();
+  _recordWorldVisit(worldId);
+  toast(`Traveled to ${safe(w.name)}`);
+ }catch(e){toast(e.message);}
+}
+function _recordWorldVisit(worldId){
+ if(!worldId)return;
+ const loc=state.worlds.find(w=>w.id===worldId);
+ api(`/api/worlds/${worldId}/visit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character_id:state.characterId||null,location_name:loc?.place||''})}).catch(()=>{});
 }
 let chatAudio=null;
 function stopChatAudio(){if(chatAudio){chatAudio.pause();chatAudio=null}$('#chatAvatar').classList.remove('speaking')}
@@ -1572,7 +1776,6 @@ function showCombatResult(){
   $('#combatResultModal').hidden=false;
   if(state.characterId){refreshCharacterState().then(()=>renderParty()).catch(()=>{});}
   if(won&&reward.xp_awarded){awardXP(reward.xp_awarded,`Combat — Round ${combatState.round_number}`);}
-
 }
 function closeCombat(){stopCombatPlay();$('#combatOverlay').classList.remove('open');combatState=null}
 function computeCombatAffordances(){
@@ -1789,6 +1992,25 @@ if(_autoGenBtn)_autoGenBtn.onclick=async()=>{
 fillPortraitStyles();openView('play');
 initPlay();
 
+// ── Mobile swipe navigation ──
+(function(){
+  const VIEWS=['play','characters','explore','worlds','knowledge','media','settings'];
+  let _tx=0,_ty=0;
+  document.addEventListener('touchstart',e=>{const t=e.changedTouches[0];_tx=t.clientX;_ty=t.clientY;},{passive:true});
+  document.addEventListener('touchend',e=>{
+    // Ignore if touch started inside a scrollable element or input
+    const t=e.changedTouches[0];
+    const dx=t.clientX-_tx,dy=t.clientY-_ty;
+    if(Math.abs(dx)<60||Math.abs(dx)<Math.abs(dy)*1.5)return;
+    const activeBtn=document.querySelector('.side-nav button.active');
+    if(!activeBtn)return;
+    const cur=activeBtn.dataset.view,idx=VIEWS.indexOf(cur);
+    if(idx<0)return;
+    const next=dx<0?VIEWS[Math.min(idx+1,VIEWS.length-1)]:VIEWS[Math.max(idx-1,0)];
+    if(next!==cur)openView(next);
+  },{passive:true});
+})();
+
 // ═══════════════════════════════════════════════════
 // Extended Character Creation — v6 System
 // ═══════════════════════════════════════════════════
@@ -1886,14 +2108,24 @@ async function loadUniverseNodes(){
   $('#mapNodes').innerHTML='';
   $('#locationName').textContent='Universe';
   try{
-    const worlds=await api('/api/worlds');
+    const [worlds,visitedRows]=await Promise.all([
+      api('/api/worlds'),
+      state.characterId?api(`/api/worlds/visited?character_id=${state.characterId}`).catch(()=>[]):Promise.resolve([])
+    ]);
+    const visitedIds=new Set(visitedRows.map(r=>r.world_id));
+    // Always mark currently active worlds as visited
+    state.worlds.forEach(w=>{if(w.id)visitedIds.add(w.id);});
+    state.visitedWorldIds=visitedIds;
     if(!worlds.length){$('#mapNodes').innerHTML='<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--muted);font-size:11px;text-align:center">No saved worlds yet.<br>Create worlds in the World tab.</div>';return;}
     const cols=4;
     $('#mapNodes').innerHTML=worlds.map((w,i)=>{
       const xi=i%cols,yi=Math.floor(i/cols);
       const x=12+xi*22,y=14+yi*26;
       const icon={fantasy:'⚔',sci_fi:'🚀',cyberpunk:'⚡',supernatural:'👁',apocalyptic:'☢',zombie:'🧟',mystery:'🔍',drama:'💔',alien_space:'🛸'}[w.space_alignment]||'🌍';
-      return `<button class="map-node" style="--x:${x}%;--y:${y}%;border-color:var(--purple);background:#1a103a;font-size:16px;width:42px;height:42px" data-uni-world="${w.id}" data-label="${safe(w.name)}" title="${safe(w.name)} — ${safe(w.space_alignment||'unknown')} · ${safe(w.reality_type||'Prime')}">${icon}</button>`;
+      const visited=visitedIds.has(w.id);
+      const fogStyle=visited?'':'filter:blur(2px);opacity:0.4;border-color:var(--line)';
+      const fogTitle=visited?`${safe(w.name)} — ${safe(w.space_alignment||'unknown')} · ${safe(w.reality_type||'Prime')}`:'??? — Undiscovered Realm';
+      return `<button class="map-node" style="--x:${x}%;--y:${y}%;border-color:var(--purple);background:#1a103a;font-size:16px;width:42px;height:42px;${fogStyle}" data-uni-world="${w.id}" data-label="${visited?safe(w.name):'???'}" title="${fogTitle}">${visited?icon:'?'}</button>`;
     }).join('');
     $$('#mapNodes [data-uni-world]').forEach(el=>el.onclick=async()=>{
       const wid=parseInt(el.dataset.uniWorld);
@@ -1941,10 +2173,29 @@ async function addLocationsFromChat(text){
     const x=15+Math.random()*70,y=15+Math.random()*70;
     try{
       const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:entry.name,terrain:t,x,y,description:`Mentioned in story`,loc_type:entry.loc_type})});
-      if(loc&&loc.id){state.locations.push(loc);toast(`📍 ${entry.name} → ${entry.loc_type} map`);}
+      if(loc&&loc.id){
+        state.locations.push(loc);
+        toast(`📍 ${entry.name} → ${entry.loc_type} map`);
+        // Fire background thumbnail generation
+        _genLocationThumbnail(loc,world,t).catch(()=>{});
+      }
     }catch{}
   }
   renderMapNodes();
+}
+
+async function _genLocationThumbnail(loc,world,terrain){
+  if(state.locationImageCache[loc.id])return;
+  try{
+    const prompt=`Fantasy landscape: ${loc.name}, ${terrain} terrain, ${world?.name||'fantasy world'} setting. Scenic vista, atmospheric, painterly.`;
+    const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Fantasy Art',width:256,height:144,world_id:world?.id,character_name:loc.name})});
+    if(result.url){
+      state.locationImageCache[loc.id]=result.url;
+      // Refresh map node thumbnail if visible
+      const node=document.querySelector(`[data-loc-id="${loc.id}"] .node-thumb`);
+      if(node){node.style.backgroundImage=`url('${result.url}')`;node.style.backgroundSize='cover';}
+    }
+  }catch{}
 }
 
 function initCharFormV6(){

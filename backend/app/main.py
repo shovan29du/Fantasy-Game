@@ -1648,6 +1648,146 @@ def add_economy(character_id: int, payload: EconomyAddIn) -> dict:
         conn.close()
 
 
+# ── Game Saves ──────────────────────────────────────────────────────────────
+
+class GameSaveIn(BaseModel):
+    save_name: str
+    character_id: int | None = None
+    session_id: str = "default"
+    world_id: int | None = None
+    notes: str = ""
+
+@app.get("/api/game-saves")
+def list_game_saves(character_id: int | None = None) -> list[dict]:
+    conn = get_conn()
+    try:
+        if character_id:
+            rows = conn.execute(
+                "SELECT * FROM game_saves WHERE character_id=? ORDER BY created_at DESC",
+                (character_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM game_saves ORDER BY created_at DESC LIMIT 50"
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+@app.post("/api/game-saves")
+def create_game_save(payload: GameSaveIn) -> dict:
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO game_saves (save_name, character_id, session_id, world_id, notes, created_at) VALUES (?,?,?,?,?,?)",
+            (payload.save_name, payload.character_id, payload.session_id, payload.world_id, payload.notes, now_iso())
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "save_name": payload.save_name, "created": True}
+    finally:
+        conn.close()
+
+@app.delete("/api/game-saves/{save_id}")
+def delete_game_save(save_id: int) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM game_saves WHERE id=?", (save_id,))
+        conn.commit()
+        return {"deleted": True}
+    finally:
+        conn.close()
+
+
+# ── NPC Memory ───────────────────────────────────────────────────────────────
+
+class NpcMemoryIn(BaseModel):
+    character_id: int
+    npc_name: str
+    fact: str
+    session_id: str = "default"
+
+@app.get("/api/npc-memory")
+def get_npc_memory(character_id: int, npc_name: str = "") -> list[dict]:
+    conn = get_conn()
+    try:
+        if npc_name:
+            rows = conn.execute(
+                "SELECT * FROM npc_memory WHERE character_id=? AND npc_name=? ORDER BY created_at DESC LIMIT 10",
+                (character_id, npc_name)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM npc_memory WHERE character_id=? ORDER BY created_at DESC LIMIT 50",
+                (character_id,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+@app.post("/api/npc-memory")
+def add_npc_memory(payload: NpcMemoryIn) -> dict:
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO npc_memory (character_id, npc_name, fact, session_id, created_at) VALUES (?,?,?,?,?)",
+            (payload.character_id, payload.npc_name, payload.fact, payload.session_id, now_iso())
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "stored": True}
+    finally:
+        conn.close()
+
+
+# ── Crafting ─────────────────────────────────────────────────────────────────
+
+class CraftIn(BaseModel):
+    item_id_a: int
+    item_id_b: int
+
+@app.post("/api/characters/{character_id}/craft")
+def craft_items(character_id: int, payload: CraftIn) -> dict:
+    conn = get_conn()
+    try:
+        row_a = conn.execute(
+            "SELECT * FROM inventory WHERE id=? AND character_id=?", (payload.item_id_a, character_id)
+        ).fetchone()
+        row_b = conn.execute(
+            "SELECT * FROM inventory WHERE id=? AND character_id=?", (payload.item_id_b, character_id)
+        ).fetchone()
+        if not row_a or not row_b:
+            raise HTTPException(status_code=404, detail="One or both items not found")
+        tier_a = row_a["weapon_tier"] or 0
+        tier_b = row_b["weapon_tier"] or 0
+        new_tier = min(10, max(tier_a, tier_b) + 1)
+        new_name = f"Crafted {row_a['item_name']} + {row_b['item_name']}"
+        conn.execute("DELETE FROM inventory WHERE id IN (?,?)", (payload.item_id_a, payload.item_id_b))
+        cur = conn.execute(
+            "INSERT INTO inventory (character_id, item_name, item_type, weapon_tier, quantity, created_at) VALUES (?,?,?,?,?,?)",
+            (character_id, new_name, "weapon", new_tier, 1, now_iso())
+        )
+        conn.commit()
+        return {"crafted": True, "item_id": cur.lastrowid, "item_name": new_name, "weapon_tier": new_tier}
+    finally:
+        conn.close()
+
+
+# ── Visited Worlds ────────────────────────────────────────────────────────────
+
+@app.get("/api/worlds/visited")
+def visited_worlds(character_id: int | None = None) -> list[dict]:
+    conn = get_conn()
+    try:
+        if character_id:
+            rows = conn.execute(
+                "SELECT DISTINCT world_id FROM world_visits WHERE character_id=?", (character_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT DISTINCT world_id FROM world_visits").fetchall()
+        return [{"world_id": r["world_id"]} for r in rows]
+    finally:
+        conn.close()
+
+
 @app.get("/api/media/providers")
 def media_providers() -> list[dict]:
     return get_provider_options()
