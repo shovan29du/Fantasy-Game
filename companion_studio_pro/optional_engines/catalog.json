@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "packs": [
+    {"id":"cogvideo","archive":"CogVideo-main.zip","name":"CogVideoX","license":"Apache-2.0","capabilities":["text-to-video","image-to-video","video enhancement"],"min_vram_gb":8,"recommended_vram_gb":12,"adapter":"comfyui","installable":true},
+    {"id":"text2video-zero","archive":"Text2Video-Zero-main.zip","name":"Text2Video-Zero","license":"Apache-2.0","capabilities":["zero-shot video","pose control","edge control","instruction video editing"],"min_vram_gb":7,"recommended_vram_gb":12,"adapter":"comfyui","installable":true},
+    {"id":"tune-a-video","archive":"Tune-A-Video-main.zip","name":"Tune-A-Video","license":"Apache-2.0","capabilities":["one-shot video tuning","subject adaptation"],"min_vram_gb":12,"recommended_vram_gb":16,"adapter":"research","installable":true},
+    {"id":"video-caption","archive":"Video2Description-VideoCaption.zip","name":"Video Captioning","license":"Apache-2.0","capabilities":["video description","caption generation"],"min_vram_gb":4,"recommended_vram_gb":8,"adapter":"legacy","installable":true},
+    {"id":"aphantasia","archive":"aphantasia-master.zip","name":"Aphantasia","license":"MIT","capabilities":["CLIP-guided images","visual ideation"],"min_vram_gb":4,"recommended_vram_gb":8,"adapter":"research","installable":true},
+    {"id":"make-a-video","archive":"make-a-video-pytorch-main.zip","name":"Make-A-Video PyTorch","license":"MIT","capabilities":["research architecture","temporal attention"],"min_vram_gb":12,"recommended_vram_gb":24,"adapter":"research","installable":true},
+    {"id":"t2v-finetuning","archive":"Text-To-Video-Finetuning-main.zip","name":"Text-to-Video Finetuning","license":"MIT","capabilities":["LoRA training","text-to-video finetuning"],"min_vram_gb":12,"recommended_vram_gb":24,"adapter":"research","installable":true},
+    {"id":"t2v-ai","archive":"Text-To-Video-AI-main.zip","name":"Text-to-Video AI Workflow","license":"MIT","capabilities":["Edge TTS","Whisper captions","Remotion concepts"],"min_vram_gb":0,"recommended_vram_gb":4,"adapter":"reference","installable":true},
+    {"id":"scratch-t2v","archive":"AI-text-to-video-model-from-scratch-main.zip","name":"Small Text-to-Video Trainer","license":"MIT","capabilities":["educational training","small-scale generation"],"min_vram_gb":4,"recommended_vram_gb":8,"adapter":"research","installable":true},
+    {"id":"video-ascii","archive":"Video-to-Text-main.zip","name":"Video ASCII","license":"MIT","capabilities":["ASCII video","terminal art export"],"min_vram_gb":0,"recommended_vram_gb":0,"adapter":"utility","installable":true},
+    {"id":"magic-touch","archive":"Magic-Touch-main.zip","name":"Magic Touch","license":"GPL-3.0","capabilities":["document to scenes","image motion","voice assembly"],"min_vram_gb":0,"recommended_vram_gb":4,"adapter":"reference","installable":false,"reason":"GPL source is not merged into the core; equivalent animation features are implemented independently."},
+    {"id":"waver","archive":"Waver-main.zip","name":"Waver 1.0","license":"Unspecified in archive","capabilities":["text-to-video","image-to-video","text-to-image"],"min_vram_gb":24,"recommended_vram_gb":48,"adapter":"reference","installable":false,"reason":"The supplied archive contains a report/assets but no runnable code or redistribution licence."},
+    {"id":"awesome-survey","archive":"Awesome-Text-to-Video-Generation-main.zip","name":"Text-to-Video Survey List","license":"Unspecified","capabilities":["research catalog"],"min_vram_gb":0,"recommended_vram_gb":0,"adapter":"reference","installable":false,"reason":"Curated links, not a runnable model."},
+    {"id":"awesome-list","archive":"awesome-text-to-video-main.zip","name":"Awesome Text-to-Video List","license":"Apache-2.0","capabilities":["model directory"],"min_vram_gb":0,"recommended_vram_gb":0,"adapter":"reference","installable":false,"reason":"Curated links, not a runnable model."},
+    {"id":"texts-to-video","archive":"textsToVideo-main.zip","name":"textsToVideo","license":"Missing","capabilities":["text assembly"],"min_vram_gb":0,"recommended_vram_gb":0,"adapter":"legacy","installable":false,"reason":"No licence was supplied."},
+    {"id":"text-to-video-legacy","archive":"text-to-video-master.zip","name":"Legacy article-to-video","license":"Missing","capabilities":["article to video"],"min_vram_gb":0,"recommended_vram_gb":0,"adapter":"legacy","installable":false,"reason":"No licence was supplied."}
+  ]
+}
+

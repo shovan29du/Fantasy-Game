@@ -14,7 +14,7 @@ try:
     from sentence_transformers import SentenceTransformer
     import json as _json
     _EMBED_OK = True
-except ImportError:
+except Exception:
     _EMBED_OK = False
 
 _embedder = None

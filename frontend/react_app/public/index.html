@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Worldweaver — Multiverse Tabletop</title>
+  <link rel="icon" type="image/png" href="/worldweaver-icon.png">
+  <meta name="description" content="A 2D multiverse tabletop RPG command board.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <aside class="app-sidebar">
+    <div class="side-logo"><img src="/worldweaver-icon.png" alt=""><div><b>Worldweaver</b><small>AI COMPANION RPG</small></div></div>
+    <nav class="side-nav" aria-label="Main sections">
+      <button data-view="characters"><span>♙</span>Characters</button>
+      <button data-view="worlds"><span>◎</span>World</button>
+      <button data-view="play"><span>▶</span>Play</button>
+      <button data-view="knowledge"><span>◇</span>Knowledge</button>
+      <button data-view="settings"><span>⚙</span>Settings</button>
+      <button data-view="media"><span>▣</span>Media</button>
+      <button data-view="explore"><span>⌕</span>Explore</button>
+    </nav>
+    <div class="side-status"><i></i><div><b>Local systems</b><small>Database ready</small></div></div>
+  </aside>
+  <div class="app-content">
+  <div id="view-play" class="app-view">
+  <section id="playHub" class="play-hub">
+    <button id="hubCloseBtn" class="ghost" style="position:absolute;top:20px;right:24px" hidden>✕ Back to game</button>
+    <div class="start-panel">
+      <div id="startStep-choice" class="start-step">
+        <h2>Begin your adventure</h2>
+        <p>Start a new campaign, or return to one already in progress.</p>
+        <div class="start-actions">
+          <button id="startNewGameBtn" class="gold">▶ New Game</button>
+          <button id="startLoadGameBtn" class="ghost">📂 Load Saved Game</button>
+        </div>
+      </div>
+
+      <div id="startStep-category" class="start-step" hidden>
+        <button class="ghost back-btn" data-back="choice">‹ Back</button>
+        <h2>Choose a scenario</h2>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <select id="worldCategorySelect" style="background:#141c24;border:1px solid var(--line);color:#e9ecf1;padding:8px 12px;border-radius:4px;font-size:13px;cursor:pointer">
+            <option value="all">🌐 All Worlds</option>
+          </select>
+          <span id="scenarioCount" style="font-size:11px;color:var(--muted)"></span>
+        </div>
+        <div id="scenarioCardsGrid" class="scenario-cards-grid"></div>
+        <div class="start-divider">or write your own</div>
+        <form id="customScenarioForm" class="studio-form">
+          <label class="wide">Opening scenario<textarea name="text" rows="3" placeholder="You wake up in..."></textarea></label>
+          <div class="form-actions wide"><button type="button" id="autoGenScenarioBtn" class="ghost" style="margin-bottom:8px">✦ Auto-generate from world &amp; preset</button><button class="gold">Start with this</button></div>
+        </form>
+        <div class="start-divider">or</div>
+        <div class="start-actions">
+          <button id="showTemplatesBtn" class="ghost">✎ Scenario templates</button>
+          <button id="randomScenarioBtn" class="ghost">🎲 Random scenario</button>
+        </div>
+      </div>
+
+      <div id="startStep-scenario" class="start-step" hidden>
+        <button class="ghost back-btn" data-back="category">‹ Back</button>
+        <h2 id="scenarioStepTitle">Choose a scenario</h2>
+        <div id="scenarioGrid" class="start-grid"></div>
+      </div>
+
+      <div id="startStep-templates" class="start-step" hidden>
+        <button class="ghost back-btn" data-back="category">‹ Back</button>
+        <h2>Scenario templates</h2>
+        <div id="templateList" class="start-grid"></div>
+        <form id="newTemplateForm" class="studio-form">
+          <label class="wide">Template name<input name="name" required placeholder="Haunted heist"></label>
+          <label class="wide">Scenario (use {character} / {user} as placeholders)<textarea name="scenario" required rows="3" placeholder="{character} infiltrates a haunted manor while {user} watches the perimeter..."></textarea></label>
+          <div class="form-actions wide"><button class="gold">Save template</button></div>
+        </form>
+      </div>
+
+      <div id="startStep-random" class="start-step" hidden>
+        <button class="ghost back-btn" data-back="category">‹ Back</button>
+        <h2>Random scenario</h2>
+        <p id="randomScenarioText" class="empty-state"></p>
+        <div class="form-actions"><button id="rerollScenarioBtn" class="ghost">🎲 Reroll</button><button id="useRandomScenarioBtn" class="gold">Start with this</button></div>
+      </div>
+
+      <div id="startStep-load" class="start-step" hidden>
+        <button class="ghost back-btn" data-back="choice">‹ Back</button>
+        <h2>Saved games</h2>
+        <div id="savedGameList" class="start-grid"></div>
+      </div>
+    </div>
+  </section>
+  <div id="gameArea" hidden>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">W</span><div><strong>WORLDWEAVER</strong><small>MULTIVERSE TABLETOP</small></div></div>
+    <div class="world-readout"><span class="eyebrow">CURRENT REALITY</span><b id="worldName">Aethoria Prime</b><span id="worldTags">Fantasy · Magic 8 · Tech 2</span></div>
+    <div class="top-actions">
+      <button id="switchGameBtn" class="ghost" title="Start new game or load a saved one">⇄ New / Load Game</button>
+      <button id="journalBtn" class="ghost">◫ Journal</button>
+      <button id="saveBtn" class="gold">Save game</button>
+      <span class="online"><i></i> LOCAL</span>
+    </div>
+  </header>
+
+  <main class="game-grid">
+    <aside class="panel party-panel">
+      <div class="panel-title"><span>PARTY</span><small id="partyCount">0 / 6</small></div>
+      <div id="partyList"></div>
+      <button class="add-member">＋ Recruit companion</button>
+
+      <div class="section-head"><span>ACTIVE QUESTS</span><b>3</b></div>
+      <div id="questList"></div>
+    </aside>
+
+    <section class="map-column">
+      <nav class="map-tabs" aria-label="Map scale">
+        <button data-scale="local" class="active">Local <kbd>1</kbd></button>
+        <button data-scale="area">Area <kbd>2</kbd></button>
+        <button data-scale="world">World <kbd>3</kbd></button>
+        <button data-scale="universe">Universe <kbd>4</kbd></button>
+      </nav>
+      <div class="map-frame">
+        <div class="map-toolbar">
+          <div><span class="eyebrow" id="scaleLabel">LOCAL MAP</span><strong id="locationName">Thornwatch Crossing</strong></div>
+          <div class="map-controls"><button id="zoomOut" aria-label="Zoom out">−</button><span id="zoomText">100%</span><button id="zoomIn" aria-label="Zoom in">＋</button></div>
+        </div>
+        <div id="map" class="map map-local" tabindex="0" aria-label="Game map. Use WASD or arrow keys to move.">
+          <div class="fog fog-one"></div><div class="fog fog-two"></div>
+          <div class="road road-a"></div><div class="road road-b"></div>
+          <div id="mapNodes"></div>
+          <button id="portal" class="portal" style="--x:84%;--y:50%" title="Reality portal"><span></span></button>
+          <div id="playerToken" class="player-token" style="--x:42%;--y:52%"><span>AS</span><i></i></div>
+          <div class="map-hint">WASD / ARROWS TO MOVE · CLICK A LOCATION TO ENTER</div>
+          <div id="mapLocationPanel" class="map-location-panel" hidden>
+            <div class="map-loc-img-wrap">
+              <div id="mapLocLoading" class="map-loc-loading">Generating scene…</div>
+              <img id="mapLocImg" src="" alt="" style="width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .4s">
+            </div>
+            <div class="map-loc-info">
+              <strong id="mapLocName"></strong>
+              <small id="mapLocSub"></small>
+              <button id="mapLocCloseBtn" style="margin-left:auto;background:none;border:none;color:#e9ecf1;font-size:18px;cursor:pointer;line-height:1">✕</button>
+            </div>
+          </div>
+        </div>
+        <div class="map-footer"><span id="mapTime">☀ Dawn · Day 1</span><span id="mapWeather">☁ Clear · 18°C</span><span>⚔ Threat: <b id="mapThreat">Low</b></span><button id="advanceTimeBtn" class="ghost" style="font-size:9px;padding:2px 6px" title="Advance time 30 min">⏩ +30m</button></div>
+      </div>
+
+      <section class="action-dock">
+        <div class="dock-head"><span>ACTION BAR</span><div><button class="active" data-filter="all">All</button><button data-filter="attack">Attack</button><button data-filter="defence">Defence</button><button data-filter="utility">Utility</button></div></div>
+        <div id="actionBar" class="actions"></div>
+      </section>
+    </section>
+
+    <aside id="chatPanel" class="chat-column">
+      <div class="chat-head"><div><span class="orb" id="chatAvatar"></span><strong>WORLDWEAVER AI</strong><small id="aiStatus">LM Studio link</small></div><div style="display:flex;gap:4px;align-items:center"><button id="downloadZipBtn" class="ghost" type="button" title="Download chat as zip">⬇ Zip</button><button id="voiceToggleBtn" class="ghost" type="button" title="Speak the AI's replies aloud">🔈 Voice off</button></div></div>
+      <div id="chatLog" class="chat-log"><p class="gm"><b>WORLDWEAVER</b>The portal hums beyond the ridge. Its runes point to a reality where steel towers touch a violet sky. What do you do?</p></div>
+      <div id="chatOptionsPanel" class="chat-options-panel" hidden></div>
+      <form id="chatForm"><button id="micBtn" type="button" title="Speak your message" hidden>🎤</button><button id="attachBtn" type="button" title="Attach a file or zip">📎</button><input id="chatFileInput" type="file" accept=".zip,.json,.txt,.md,.csv,.py,.js,.ts" hidden><input id="chatInput" placeholder="Speak, investigate, or describe an action…" autocomplete="off"><button type="button" id="chatOptionsBtn" class="ghost" title="Get 5 story options">✦ Options</button><button>Send</button></form>
+    </aside>
+
+    <aside class="panel detail-panel">
+      <nav class="detail-tabs">
+        <button class="active" data-panel="character">Character</button><button data-panel="inventory">Inventory</button><button data-panel="spells">Spellbook</button><button data-panel="skills">Skills</button>
+      </nav>
+      <div id="detailContent"></div>
+    </aside>
+  </main>
+  </div><!-- #gameArea -->
+
+  </div><!-- #view-play -->
+
+  <section id="view-characters" class="app-view workspace-view active">
+    <header class="workspace-head"><div><span class="eyebrow">COMPANION STUDIO</span><h1>Characters</h1><p>Create heroes, rivals, companions, gods, aliens, and alternate selves.</p></div><button id="newCharacterBtn" class="gold">＋ New character</button></header>
+    <div class="workspace-grid character-workspace">
+      <section class="studio-card character-form-card">
+        <div class="card-title"><div><span class="step-dot">1</span><b>Character creation</b></div><small>SRD-compatible</small></div>
+        <form id="characterForm" class="studio-form">
+          <div class="wide char-portrait-area">
+            <div id="charPortraitPreview" class="char-portrait-preview"><div class="empty-state" style="padding:16px;font-size:10px">No portrait — fill in the form then click Generate</div></div>
+            <button type="button" id="generatePortraitBtn" class="ghost" style="width:100%;margin-top:6px">✦ Generate portrait from description</button>
+            <label style="margin-top:4px;font-size:9px;color:#8892a0">Style<select id="portraitStyleSelect" style="width:100%;background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:6px;margin-top:3px"></select></label>
+          </div>
+          <label class="wide">Character name<input name="name" required placeholder="Ari Solwyn"></label>
+          <label>Race / ancestry<select name="race" id="raceSelect"></select></label>
+          <label>Profession<select name="profession" id="professionSelect"></select></label>
+          <label>Background<select name="background" id="backgroundSelect"></select></label>
+          <label>Alignment<select name="alignment" id="alignmentSelect"></select></label>
+          <label>Gender<select name="gender" id="genderSelect"><option value="">— Select —</option><option value="Male">Male</option><option value="Female">Female</option></select></label>
+          <label>Level<input name="level" type="number" min="1" max="20" value="1"></label>
+          <label>Origin reality<select name="scenario"><option>Aethoria Prime</option><option>Neon Shard-9</option><option>Earth-Z</option><option>Celestia Drift</option><option>Mirror Universe</option></select></label>
+          <label class="wide">Backstory<textarea name="backstory" rows="4" placeholder="Their history, defining choice, secret, or debt..."></textarea></label>
+          <label class="wide">Goals<textarea name="goals" rows="2" placeholder="What do they want, and what will they sacrifice?"></textarea></label>
+          <div class="form-actions wide"><button type="button" id="randomCharacter" class="ghost">↻ Randomise</button><button type="submit" class="gold">Save character</button></div>
+        </form>
+      </section>
+      <section class="studio-card library-card"><div class="card-title"><b>Saved characters</b><button id="refreshCharacters">↻</button></div><div id="characterLibrary" class="entity-list"><div class="empty-state">Loading character archive...</div></div></section>
+    </div>
+  </section>
+
+  <section id="view-explore" class="app-view workspace-view">
+    <header class="workspace-head"><div><span class="eyebrow">CHARACTER ATLAS</span><h1>Explore</h1><p>Browse the built-in character library, or search and import from the web.</p></div></header>
+    <div class="workspace-grid">
+      <section class="studio-card">
+        <div class="card-title"><b>Built-in library</b><small id="libraryCount"></small></div>
+        <form id="libraryFilterForm" class="studio-form">
+          <label class="wide">Search<input name="query" placeholder="Name, race, or profession"></label>
+          <label>Race<select name="race" id="libraryRaceSelect"><option value="All">All</option></select></label>
+          <div class="form-actions wide"><button type="button" id="importAllBtn" class="ghost">Import all shown</button><button type="button" id="randomLibraryBtn" class="ghost">🎲 Random</button><button class="gold">Search</button></div>
+        </form>
+        <div id="libraryResults" class="entity-list"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Web character search</b><small>Requires internet</small></div>
+        <form id="webSearchForm" class="studio-form">
+          <label class="wide">Search term<input name="query" required placeholder="e.g. rogue, dragon, cyberpunk"></label>
+          <div class="form-actions wide"><button class="gold">Search web</button></div>
+        </form>
+        <div id="webSearchResults" class="entity-list"></div>
+      </section>
+    </div>
+    <div class="workspace-grid" style="margin-top:16px">
+      <section class="studio-card wide-card">
+        <div class="card-title"><b>Imported characters</b><button id="refreshImportedChars">↻</button><small style="margin-left:8px">Characters you've created or imported — click Use to activate</small></div>
+        <div id="importedCharacters" class="entity-list"><div class="empty-state">Loading…</div></div>
+      </section>
+    </div>
+    <div class="workspace-grid" style="margin-top:16px">
+      <section class="studio-card wide-card">
+        <div class="card-title"><b>Import character package</b><small>Character, chat, memory &amp; achievements together</small></div>
+        <nav class="detail-tabs" style="margin-bottom:14px">
+          <button class="active" data-import-mode="json">JSON</button>
+          <button data-import-mode="link">Link</button>
+          <button data-import-mode="text">Text</button>
+        </nav>
+        <div id="importMode-json" class="import-mode">
+          <p class="empty-state" style="text-align:left;border:none;padding:0 0 10px">Paste a character JSON object, or a full export with <code>character</code>, <code>messages</code>, <code>memory</code>, and <code>achievements</code>/<code>events</code> keys.</p>
+          <label class="wide" style="display:block;margin-bottom:10px">Upload a .json file<input id="importJsonFile" type="file" accept=".json"></label>
+          <textarea id="importJsonText" rows="6" style="width:100%;background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:10px" placeholder='{"character": {"name": "..."}, "messages": [...], "memory": [...], "achievements": [...]}'></textarea>
+          <div class="form-actions" style="margin-top:10px"><button id="importJsonBtn" class="gold">Import JSON</button></div>
+        </div>
+        <div id="importMode-link" class="import-mode" hidden>
+          <p class="empty-state" style="text-align:left;border:none;padding:0 0 10px">Fetches a chat log or character card from a URL, infers the character(s), and loads the conversation.</p>
+          <input id="importLinkInput" style="width:100%;background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:10px" placeholder="https://...">
+          <div class="form-actions" style="margin-top:10px"><button id="importLinkBtn" class="gold">Import from link</button></div>
+        </div>
+        <div id="importMode-text" class="import-mode" hidden>
+          <p class="empty-state" style="text-align:left;border:none;padding:0 0 10px">Paste a chat log or character description. Characters are inferred from the text.</p>
+          <textarea id="importTextInput" rows="6" style="width:100%;background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:10px" placeholder="Paste chat log or character text here..."></textarea>
+          <div class="form-actions" style="margin-top:10px"><button id="importTextBtn" class="gold">Import text</button></div>
+        </div>
+        <div id="importResult"></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="view-worlds" class="app-view workspace-view">
+    <header class="workspace-head"><div><span class="eyebrow">REALITY ENGINE</span><h1>Worlds</h1><p>Build universes with independent magic, technology, science, and danger.</p></div></header>
+    <div class="workspace-grid"><section class="studio-card"><div class="card-title"><b>Create a world</b></div><form id="worldForm" class="studio-form"><label class="wide">World name<input name="name" required placeholder="The Crimson Continuum"></label><label>Magic level<select name="magic"><option>none</option><option>low</option><option selected>medium</option><option>high</option><option>cosmic</option></select></label><label>Technology<select name="tech"><option>primitive</option><option selected>middle_age</option><option>modern</option><option>cyberpunk</option><option>futuristic</option></select></label><label>Genre<select name="space"><option>fantasy</option><option>zombie</option><option>supernatural</option><option>mystery</option><option>apocalyptic</option><option>cyberpunk</option><option>alien_space</option><option>mirror_universe</option></select></label><label>Locations<input name="num_locs" type="number" min="3" max="30" value="8"></label><div class="form-actions wide"><button class="gold">Create world</button></div></form></section><section class="studio-card"><div class="card-title"><b>Known realities</b><button id="refreshWorlds">↻</button></div><div id="worldLibrary" class="entity-list"></div></section></div>
+  </section>
+
+  <section id="view-media" class="app-view workspace-view">
+    <header class="workspace-head"><div><span class="eyebrow">CREATIVE ENGINE</span><h1>Media</h1><p>Portraits, scene art, voice, memories, and achievements.</p></div></header>
+    <div class="workspace-grid">
+      <section class="studio-card">
+        <div class="card-title"><b>Image generator</b><button class="ghost media-options-btn" style="font-size:9px;padding:4px 8px" data-media-type="image" title="Get 5 story options">✦ Options</button></div>
+        <form id="mediaImageForm" class="studio-form">
+          <label class="wide">Prompt<textarea name="prompt" required rows="3" placeholder="A vampire scholar in a ruined library, dramatic lighting"></textarea></label>
+          <label>Style<select name="style" id="mediaStyleSelect"></select></label>
+          <div class="form-actions wide"><button class="gold">Generate</button></div>
+        </form>
+        <div id="mediaImagePreview"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Voice studio</b><button class="ghost media-options-btn" style="font-size:9px;padding:4px 8px" data-media-type="voice" title="Get 5 story options">✦ Options</button></div>
+        <form id="voiceForm" class="studio-form">
+          <label class="wide">Text to speak<textarea name="content" required rows="3" placeholder="The portal hums beyond the ridge..."></textarea></label>
+          <div class="form-actions wide"><button class="gold">Speak</button></div>
+        </form>
+        <div id="voicePlayer"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Text to Animation</b><small>image + pan/zoom</small><button class="ghost media-options-btn" style="font-size:9px;padding:4px 8px" data-media-type="animation" title="Get 5 story options">✦ Options</button></div>
+        <form id="mediaAnimationForm" class="studio-form">
+          <label class="wide">Prompt<textarea name="prompt" required rows="3" placeholder="A dragon circling a burning tower, storm clouds"></textarea></label>
+          <label>Style<select name="style" id="animationStyleSelect"></select></label>
+          <label>Effect<select name="effect" id="animationEffectSelect"></select></label>
+          <div class="form-actions wide"><button class="gold">Animate</button></div>
+        </form>
+        <div id="mediaAnimationPreview"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Text to Video</b><small>multi-scene slideshow</small><button class="ghost media-options-btn" style="font-size:9px;padding:4px 8px" data-media-type="video" title="Get 5 story options">✦ Options</button></div>
+        <form id="mediaVideoForm" class="studio-form">
+          <label class="wide">Scenes (one per line)<textarea name="prompts" required rows="4" placeholder="Dawn breaks over the ruined city&#10;A lone survivor scavenges the wreckage&#10;A signal flare lights the sky"></textarea></label>
+          <label>Style<select name="style" id="videoStyleSelect"></select></label>
+          <div class="form-actions wide"><button class="gold">Render video</button></div>
+        </form>
+        <div id="mediaVideoPreview"></div>
+      </section>
+    </div>
+    <div class="workspace-grid" style="margin-top:16px">
+      <section class="studio-card">
+        <div class="card-title"><b>Campaign gallery</b><button id="refreshGallery">↻</button></div>
+        <div id="mediaGallery" class="entity-list"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Achievements</b><button id="refreshAchievements">↻</button></div>
+        <form id="achievementForm" class="studio-form"><label class="wide">Title<input name="title" required placeholder="First blood in the Ashen Ruins"></label><label class="wide">Description<input name="description" placeholder="What happened"></label><div class="form-actions wide"><button class="gold">Add</button></div></form>
+        <div id="achievementList" class="entity-list"></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="view-knowledge" class="app-view workspace-view"><header class="workspace-head"><div><span class="eyebrow">LORE & MEMORY</span><h1>Knowledge</h1><p>Give the Worldweaver consistent rules, lore, factions, and campaign memory.</p></div></header><div class="workspace-grid"><section class="studio-card"><div class="card-title"><b>Add lorebook entry</b></div><form id="loreForm" class="studio-form"><label class="wide">Title<input name="title" required placeholder="The Law of Broken Portals"></label><label class="wide">Content<textarea name="content" required rows="7" placeholder="Facts the AI should remember..."></textarea></label><label class="wide">Keywords<input name="keywords" placeholder="portal, aethoria, rift"></label><div class="form-actions wide"><button class="gold">Save lore</button></div></form></section><section class="studio-card"><div class="card-title"><b>Active knowledge</b><button id="refreshLore">↻</button></div><div id="loreLibrary" class="entity-list"></div></section></div>
+    <div class="workspace-grid" style="margin-top:16px">
+      <section class="studio-card">
+        <div class="card-title"><b>Document library</b><button id="reindexKnowledge" title="Index the bundled knowledge/ folder (D&amp;D SRD, character options)">↻ Reindex folder</button></div>
+        <form id="knowledgeSearchForm" class="studio-form"><label class="wide">Search documents<input name="query" placeholder="races, spellcasting, conditions..."></label><div class="form-actions wide"><button class="gold">Search</button></div></form>
+        <div id="knowledgeSearchResults" class="entity-list"></div>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Indexed documents</b><button id="refreshKnowledgeDocs">↻</button></div>
+        <label class="wide" style="display:block;margin-bottom:10px">Upload a document<input id="knowledgeUpload" type="file"></label>
+        <div id="knowledgeDocs" class="entity-list"></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="view-settings" class="app-view workspace-view"><header class="workspace-head"><div><span class="eyebrow">LOCAL CONFIGURATION</span><h1>Settings</h1><p>Manage LM Studio, interface preferences, and system health.</p></div></header><div class="settings-grid"><section class="studio-card"><div class="card-title"><b>LM Studio</b><span id="modelBadge" class="status-badge">Checking</span></div><div class="setting-row"><div><b>Local API</b><small>http://127.0.0.1:1234/v1</small></div><button id="checkModel">Check connection</button></div><div class="setting-row"><div><b>Active model</b><small id="activeModel">Local model selected by LM Studio</small></div></div><form id="modelForm" class="studio-form"><label class="wide">Model id override<input name="value" id="modelIdInput" placeholder="local-model"></label><div class="form-actions wide"><button class="gold">Save model id</button></div></form></section><section class="studio-card"><div class="card-title"><b>Game preferences</b></div><label class="toggle-row"><span><b>Reduced motion</b><small>Limit portal and interface animation</small></span><input id="reducedMotion" type="checkbox"></label><label class="toggle-row"><span><b>Compact interface</b><small>Show more information on screen</small></span><input id="compactMode" type="checkbox"></label></section><section class="studio-card"><div class="card-title"><b>System health</b><button id="refreshHealth">↻</button></div><div id="systemHealth" class="health-list"></div></section></div>
+    <div class="settings-grid" style="margin-top:16px">
+      <section class="studio-card">
+        <div class="card-title"><b>Roleplay system prompt</b></div>
+        <form id="preambleForm" class="studio-form"><label class="wide">System preamble<textarea name="value" id="preambleInput" rows="8"></textarea></label><div class="form-actions wide"><button class="gold">Save preamble</button></div></form>
+      </section>
+      <section class="studio-card">
+        <div class="card-title"><b>Backups &amp; maintenance</b></div>
+        <div class="setting-row"><div><b>Database backup</b><small id="backupStatus">No backup yet</small></div><button id="createBackup">Back up now</button></div>
+        <div class="setting-row"><div><b>Database integrity</b><small id="integrityStatus">Not checked</small></div><button id="checkIntegrity">Check</button></div>
+        <div class="setting-row"><div><b>Module import test</b><small id="importTestStatus">Not run</small></div><button id="runImportTest">Run</button></div>
+        <div id="backupList" class="entity-list"></div>
+      </section>
+    </div>
+    <div class="settings-grid" style="margin-top:16px">
+      <section class="studio-card">
+        <div class="card-title"><b>Voice test</b><small>Uses edge-tts (Microsoft neural TTS)</small></div>
+        <form id="settingsVoiceForm" class="studio-form">
+          <label class="wide">Text to speak<textarea name="vtext" rows="3" placeholder="The portal hums with ancient energy…"></textarea></label>
+          <div class="form-actions wide"><button class="gold">Test voice</button></div>
+        </form>
+        <div id="settingsVoiceResult"></div>
+      </section>
+    </div>
+  </section>
+  </div>
+  <section id="sceneOverlay" class="scene-overlay">
+    <div id="sceneBg" class="scene-bg"></div>
+    <div class="scene-topbar">
+      <div><strong id="sceneTitle">Location</strong><small id="sceneSubtitle"></small></div>
+      <button id="exitSceneBtn" class="gold">✕ Exit</button>
+    </div>
+    <div id="sceneLoading" class="scene-loading">Generating scene…</div>
+  </section>
+  <section id="combatOverlay" class="scene-overlay combat-overlay">
+    <div class="combat-shell">
+      <header class="combat-head">
+        <div><strong>⚔ Tactical Combat</strong><small id="combatRoundInfo">Round 1</small></div>
+        <div id="combatOutcome" class="combat-outcome" hidden></div>
+      </header>
+      <div class="combat-body">
+        <aside class="combat-turnorder">
+          <div class="panel-title"><span>TURN ORDER</span></div>
+          <div id="combatTurnList"></div>
+        </aside>
+        <div class="combat-board-wrap">
+          <div id="combatBoard" class="combat-board"></div>
+          <div class="combat-hint" id="combatHint">Click a highlighted tile to move, or a highlighted enemy to attack.</div>
+          <div class="combat-actions">
+            <button id="combatPlayBtn" class="ghost">▶ Play</button>
+            <select id="combatSpellSelect" class="combat-spell-select">
+              <option value="">⚔ Weapon attack</option>
+            </select>
+            <label id="combatPowerAttackLabel" class="combat-power-label" hidden>
+              <input type="checkbox" id="combatPowerAttack"> Power Attack
+            </label>
+            <button id="combatCastBtn" class="ghost" hidden>Cast</button>
+            <button id="combatDashBtn" class="ghost" title="Dash: double movement this turn">Dash</button>
+            <button id="combatDisengageBtn" class="ghost" title="Disengage: move without provoking opportunity attacks">Disengage</button>
+            <button id="combatDodgeBtn" class="ghost" title="Dodge: attacks against you have disadvantage until your next turn">Dodge</button>
+            <button id="combatEndTurnBtn" class="ghost">End Turn</button>
+            <button id="combatResultBtn" class="gold" hidden>⚔ Result</button>
+            <button id="combatEndBtn" class="ghost" hidden>✕ End</button>
+          </div>
+        </div>
+        <aside class="combat-log-panel">
+          <div class="panel-title"><span>COMBAT LOG</span></div>
+          <div id="combatLog" class="combat-log"></div>
+        </aside>
+      </div>
+      <div id="combatResultModal" class="combat-result-modal" hidden>
+        <div class="combat-result-panel">
+          <h2>⚔ Battle Summary</h2>
+          <div id="combatResultBody"></div>
+          <div style="margin-top:18px;display:flex;gap:10px">
+            <button id="combatResultCloseBtn" class="ghost" style="flex:1;padding:10px">← Back to battlefield</button>
+            <button id="combatResultEndBtn" class="gold" style="flex:1;padding:10px">Leave battlefield</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <div id="toast" class="toast" role="status"></div>
+
+  <style>
+/* Scenario cards */
+.scenario-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;max-height:360px;overflow-y:auto;margin-bottom:16px;padding-right:4px}
+.scenario-card{background:#141c24;border:1px solid var(--line);border-radius:6px;overflow:hidden;cursor:pointer;transition:border-color .2s,transform .15s;text-align:left}
+.scenario-card:hover{border-color:var(--gold);transform:translateY(-2px)}
+.scenario-card-img{height:110px;background:#0a1018;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:32px}
+.scenario-card-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .4s}
+.scenario-card-img img.sc-loaded{opacity:1}
+.scenario-card-body{padding:8px 10px 10px}
+.scenario-card-genre{font-size:9px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px}
+.scenario-card-name{font-weight:bold;font-size:13px;margin-bottom:5px;line-height:1.3}
+.scenario-card-teaser{font-size:10px;color:#8a9ab0;line-height:1.45;margin-bottom:6px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.scenario-card-actions{display:flex;gap:4px;align-items:center}
+.scenario-card-more{padding:4px 7px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:3px;cursor:pointer;font-size:12px;font-weight:bold;flex-shrink:0;line-height:1}
+.scenario-card-more:hover{background:rgba(199,163,79,.15)}
+.scenario-card-play{flex:1;padding:5px;background:var(--gold);color:#000;border:none;border-radius:3px;cursor:pointer;font-size:11px;font-weight:bold}
+.scenario-card-preview{padding:8px 10px 10px;font-size:10px;color:#9aa6b8;line-height:1.55;border-top:1px solid var(--line);white-space:pre-wrap;word-break:break-word;max-height:220px;overflow-y:auto;background:#0d1520}
+/* Chat formatting: actions, dialogue, speaker labels */
+.chat-action{font-style:italic;color:#9a8fb0;letter-spacing:.01em}
+.chat-dialogue{color:#e8d5a3}
+.chat-speaker{color:var(--gold);font-weight:bold;font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+/* Map location panel */
+.map-location-panel{position:absolute;bottom:0;left:0;right:0;z-index:10;display:flex;flex-direction:column;height:56%}
+.map-loc-img-wrap{flex:1;position:relative;overflow:hidden;background:#000}
+.map-loc-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#e9ecf1;font-size:12px;background:rgba(5,7,10,.8);z-index:2}
+.map-loc-info{display:flex;align-items:center;gap:8px;padding:5px 10px;background:#0a1018;border-top:1px solid var(--line);flex-shrink:0}
+.map-loc-info strong{font-size:13px}
+.map-loc-info small{color:var(--muted);font-size:11px}
+  </style>
+  <script src="/game.js"></script>
+</body>
+</html>

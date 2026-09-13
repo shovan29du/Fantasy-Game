@@ -52,7 +52,10 @@ DEFAULT_SYSTEM_PREAMBLE = (
     "without a transition. "
     "6. Character emotions and reactions must follow logically from previous events. "
     "7. Actions have lasting consequences â€” if someone was hurt, they stay hurt until healed. "
-    "8. NPCs remember what happened to them; their behavior changes based on past interactions."
+    "8. NPCs remember what happened to them; their behavior changes based on past interactions. "
+    "SCENE OPENING: When a new story starts, open directly in the active moment — 2 to 3 sentences "
+    "of immediate action, setting, or dialogue. Never begin by recapping the backstory or summarising "
+    "how things got to this point. Drop the player into the scene as if it is already happening."
 )
 
 _SETTINGS_KEY = "system_preamble"

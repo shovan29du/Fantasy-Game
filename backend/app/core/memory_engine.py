@@ -16,7 +16,7 @@ try:
     import chromadb
     from sentence_transformers import SentenceTransformer
     _VECTOR_OK = True
-except ImportError:
+except Exception:
     _VECTOR_OK = False
 
 try:
