@@ -414,11 +414,7 @@ async function loadLocations(){
  try{
   state.locations=await api(`/api/worlds/${world.id}/locations`);
   renderMapNodes();
-  if(state.pendingStartScene&&state.locations.length){
-   state.pendingStartScene=false;
-   const localLoc=state.locations.find(l=>!l.loc_type||l.loc_type==='local'||l.loc_type==='area');
-   enterLocation(localLoc||state.locations[0]);
-  }
+  if(state.pendingStartScene){state.pendingStartScene=false;}
  }catch(error){state.locations=[];renderMapNodes()}
 }
 async function _aiDescribePlace(prompt){
@@ -536,7 +532,7 @@ async function crossPortal(){
 }
 
 function loadSessionFromStorage(){try{const raw=localStorage.getItem(SESSION_KEY);return raw?JSON.parse(raw):null}catch{return null}}
-function saveSessionToStorage(){localStorage.setItem(SESSION_KEY,JSON.stringify({sessionId:state.sessionId,worldId:state.worlds[0]?.id,characterId:state.characterId}))}
+function saveSessionToStorage(){localStorage.setItem(SESSION_KEY,JSON.stringify({sessionId:state.sessionId,worldId:state.worlds[0]?.id,characterId:state.characterId,openingText:state.openingText||null}))}
 function toWorldEntry(w){const locs=(w.locations||w.world_json?.locations||[]);const first=locs[0];const sp=w.space_alignment||'';const theme=sp==='sci-fi'||sp==='futuristic'?'universe':sp==='ancient_civilization'||sp==='prehistoric'?'area':'local';return {id:w.id,name:w.name,ratings:w.ratings||{},reality_type:w.reality_type||'Prime Reality',space:sp||'unknown',place:first?first.name:(w.name||'Unknown Location'),theme,startX:first?first.x:50,startY:first?first.y:50}}
 
 // ── Chat content formatter: **action**, *action*, "dialogue", Name: line ──
@@ -819,9 +815,10 @@ $$('.media-options-btn').forEach(btn=>btn.onclick=async()=>{
  modal.querySelectorAll('[data-mopt]').forEach(el=>el.onclick=()=>{const inp=$('#chatInput');if(inp)inp.value=el.dataset.mopt;modal.remove();toast('Option copied to chat input')});
  document.addEventListener('click',function h(e){if(!modal.contains(e.target)&&!e.target.classList.contains('media-options-btn')){modal.remove();document.removeEventListener('click',h)}},{once:true,capture:true});
 });
-async function bindSession({sessionId,worldId,characterId}){
+async function bindSession({sessionId,worldId,characterId,openingText}){
  state.hasActiveGame=true;
  state.sessionId=sessionId||'default';
+ if(openingText){state.openingText=openingText;state.openingTextUsed=false;}
  let world=null;
  if(worldId){try{world=toWorldEntry(await api(`/api/worlds/${worldId}`))}catch{}}
  state.worlds=world?[world,...state.flavorWorlds.filter(f=>f.id!==world.id)]:state.flavorWorlds;
@@ -866,10 +863,7 @@ async function beginGame(payload){
   state.sessionId=result.session_id;
   state.worlds=[world,...state.flavorWorlds.filter(f=>f.id!==world.id)];
   state.worldIndex=0;
-  saveSessionToStorage();
-  hidePlayHub();
-  {const _ga=$('#gameArea');_ga.style.opacity='0';requestAnimationFrame(()=>requestAnimationFrame(()=>{_ga.style.opacity='1';}));}
-  {const _pp=$('.party-panel'),_gg=$('.game-grid');if(_pp)_pp.classList.add('party-hidden');if(_gg)_gg.classList.add('party-collapsed');}
+  if(!state.characterId){try{const cid=await getExistingCharacterId();if(cid){state.characterId=cid;await refreshCharacterState();}}catch{}}
   // Full custom_text is stored as lorebook context on the server; show only the final hook line here
   let opening;
   if(payload.custom_text){
@@ -878,12 +872,11 @@ async function beginGame(payload){
   }else{
    opening=`${world.name}. The story begins.`;
   }
+  state.openingText=opening;state.openingTextUsed=false;
+  saveSessionToStorage();
   try{await api('/api/chat/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'assistant',content:opening,session_id:state.sessionId})})}catch{}
-  await loadChatHistory();
-  state.openingText=opening;state.openingTextUsed=false;state.pendingStartScene=true;
-  updateWorld();move(world.startX??50,world.startY??50);renderParty();renderQuests();
-  updateClock();startClockTick();
-  toast(`New game started: ${world.name}`);
+  window.open(location.href,'_blank');
+  toast(`New game: ${world.name} — opening in new tab`);
  }catch(error){toast(error.message)}
 }
 // ── Scenario card image queue (max 2 concurrent) ──
@@ -983,7 +976,7 @@ async function rollRandomScenario(){try{const result=await api('/api/random/prom
 $('#rerollScenarioBtn').onclick=rollRandomScenario;
 $('#useRandomScenarioBtn').onclick=()=>beginGame({category:_activeCatKey(),scenario_name:'Random Scenario',scenario_type:'custom',custom_text:state.randomScenarioText});
 
-async function loadSavedGame(save){try{await bindSession({sessionId:save.session_id,worldId:save.world_id,characterId:save.character_id});hidePlayHub();toast(`Loaded: ${save.save_name}`)}catch(error){toast(error.message)}}
+async function loadSavedGame(save){try{await bindSession({sessionId:save.session_id,worldId:save.world_id,characterId:save.character_id});window.open(location.href,'_blank');toast(`Loaded: ${save.save_name} — opening in new tab`)}catch(error){toast(error.message)}}
 $('#startLoadGameBtn').onclick=async()=>{
  try{const saves=await api('/api/chat/saves');
   $('#savedGameList').innerHTML=saves.length?saves.map(s=>`<button data-save-id="${s.id}"><b>${safe(s.save_name)}</b><small>${safe(s.character_name||'')} · ${safe((s.created_at||'').slice(0,16))}</small></button>`).join(''):'<div class="empty-state">No saved games yet.</div>';
