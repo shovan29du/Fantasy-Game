@@ -113,3 +113,11 @@ input[type=range]{width:100%;accent-color:var(--gold);height:4px;cursor:pointer;
 .chat-speaker-name{color:var(--gold);font-weight:700;font-family:Georgia,serif;font-size:1em;margin-right:2px}
 .chat-action{font-style:italic;color:#8fb7c8;display:inline}
 .chat-dialogue{color:#e9ecf1}
+/* ═══ Play hub: full-screen scenario selection ═══ */
+.play-hub{align-items:stretch!important;justify-content:flex-start!important;padding:0!important}
+.start-panel{max-width:none!important;width:100%!important;padding:32px 48px 40px!important;box-sizing:border-box!important}
+.scenario-cards-grid{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))!important;max-height:none!important;min-height:55vh!important;align-content:start!important}
+.start-step h2{font-size:26px;margin-bottom:4px}
+#worldCategorySelect{padding:8px 12px;background:#141c24;border:1px solid var(--line);color:#e9ecf1;font:inherit;border-radius:3px;cursor:pointer}
+.start-actions{gap:12px}
+.start-grid{max-height:none!important;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))!important}
