@@ -228,7 +228,7 @@ async function generateQuest(){
  if(!state.characterId){goCreateCharacter();return}
  try{const world=state.worlds[state.worldIndex];await api('/api/quests/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character_name:state.sheet?.name,character_id:state.characterId,world_id:world?.id})});await refreshCharacterState();renderQuests();toast('New quest generated')}catch(error){toast(error.message)}
 }
-function goCreateCharacter(){toast('Create your adventurer in the Characters tab first');openView('characters');const nameField=$('#characterForm')?.elements?.name;if(nameField)nameField.focus()}
+function goCreateCharacter(){toast('Create your adventurer in the Characters tab first');openView('characters');const nameField=$('#characterFormV6')?.elements?.name;if(nameField){nameField.scrollIntoView({behavior:'smooth'});nameField.focus();}}
 function renderActions(filter='all'){
  const visible=actions.filter(a=>filter==='all'||a.kind===filter);
  $('#actionBar').innerHTML=visible.map((a,i)=>`<button class="action" data-action="${a.name}"><kbd>${i+1}</kbd><span class="icon">${a.icon}</span><b>${a.name}</b><small>${a.cost}</small></button>`).join('');
@@ -1420,54 +1420,8 @@ $$('.side-nav button').forEach(button=>button.onclick=()=>openView(button.datase
 
 let studioOptions={};
 function fillSelect(selector,values){const el=$(selector);if(!el)return;const list=Array.isArray(values)?values:Object.keys(values||{});el.innerHTML=list.map(value=>`<option value="${safe(value)}">${safe(value)}</option>`).join('')}
-async function loadCharacterStudio(){try{if(!Object.keys(studioOptions).length){studioOptions=await api('/api/options');fillSelect('#raceSelect',studioOptions.races);fillSelect('#professionSelect',studioOptions.professions);fillSelect('#backgroundSelect',studioOptions.backgrounds);fillSelect('#alignmentSelect',studioOptions.alignments);fillSelect('#originSelect',studioOptions.origins||[]);const el=$('#secondaryAncestrySelect');if(el){el.innerHTML='<option value="">— None —</option>';(Object.keys(studioOptions.races||{})).forEach(r=>{el.innerHTML+=`<option value="${safe(r)}">${safe(r)}</option>`})}const ptEl=$('#powerTierSelect');if(ptEl){ptEl.innerHTML=(studioOptions.powerTiers||[]).map(t=>`<option value="${t.tier}">${t.tier} · ${safe(t.name)} — ${safe(t.scope)}</option>`).join('')}initCharFormV6();}const characters=await api('/api/characters');$('#characterLibrary').innerHTML=characters.length?characters.map(c=>{const av=c.photo_path?`<img src="${safe(c.photo_path)}" class="char-avatar-img" alt="portrait">`:`<span class="entity-avatar">${safe((c.name||'?').slice(0,2).toUpperCase())}</span>`;const isActive=String(c.id)===String(state.characterId);return`<article class="entity-card">${av}<div><b>${safe(c.name)}</b><small>${safe(c.gender?c.gender+' · ':'')}${safe(c.race||'Unknown ancestry')} · ${safe(c.profession||'Adventurer')}</small></div><em>LV ${safe(c.level||1)}</em><button data-use-char="${c.id}" class="ghost" style="font-size:9px;padding:3px 8px;${isActive?'color:var(--gold);border-color:var(--gold)':''}">${isActive?'Active':'Use'}</button></article>`}).join(''):'<div class="empty-state">No saved characters yet. Create your first companion.</div>';$$('[data-use-char]').forEach(btn=>btn.onclick=async()=>{const cid=+btn.dataset.useChar;if(state.characterId===cid)return;state.characterId=cid;await refreshCharacterState();renderParty();renderQuests();loadCharacterStudio();toast('Adventurer switched — ready for play')})}catch(error){$('#characterLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
-$('#characterForm').onsubmit=async event=>{
- event.preventDefault();
- const formEl=event.currentTarget; // native currentTarget is cleared once we `await`, so capture it now
- const form=new FormData(formEl);
- const payload=Object.fromEntries(form.entries());
- payload.level=Number(payload.level||1);
- payload.origin_world=state.worlds[state.worldIndex]?.name||'Aethoria Prime';
- payload.scenario=`Origin reality: ${payload.scenario}`;
- try{
-  payload.photo_path=$('#charPortraitPreview').dataset.photoUrl||'';
-  const created=await api('/api/characters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  toast(`${payload.name} saved`);
-  formEl.reset();
-  const box=$('#charPortraitPreview');box.innerHTML='<div class="empty-state" style="padding:16px;font-size:10px">No portrait — fill in the form then click Generate</div>';delete box.dataset.photoUrl;
-  await loadCharacterStudio();
-  // Character creation is a single shared flow: the same form used here in
-  // the AI Companion library also becomes the Play view's active adventurer
-  // whenever Play doesn't have one bound yet.
-  if(created?.id){
-   if(!state.characterId){state.characterId=created.id;await refreshCharacterState();renderParty();renderQuests();showPanel('character');toast(`${payload.name} is now your active adventurer — switch to Play to begin`)}
-   else{toast(`${payload.name} saved — click Use to switch adventurers`)}
-  }
- }catch(error){toast(error.message)}
-};
-$('#randomCharacter').onclick=async()=>{try{const {character}=await api('/api/characters/random',{method:'POST'});const form=$('#characterForm');['name','race','gender','profession','background','alignment','backstory','goals','origin','power_tier','secondary_ancestry'].forEach(key=>{if(form.elements[key]&&character[key]!=null)form.elements[key].value=Array.isArray(character[key])?character[key].join(', '):character[key]});toast('Random character generated')}catch(error){toast(error.message)}};
-$('#generatePortraitBtn').onclick=async()=>{
- const form=$('#characterForm');
- const data=Object.fromEntries(new FormData(form).entries());
- const box=$('#charPortraitPreview');
- box.innerHTML='<div class="empty-state" style="padding:16px;font-size:10px">Generating portrait…</div>';
- try{
-  const parts=[];
-  if(data.gender&&data.gender!=='— Select —') parts.push(data.gender.toLowerCase());
-  if(data.race) parts.push(data.race);
-  if(data.profession) parts.push(data.profession);
-  if(data.backstory) parts.push(data.backstory.slice(0,100));
-  const prompt=parts.length?parts.join(', '):'fantasy portrait character';
-  const portraitStyle=($('#portraitStyleSelect')?.value)||'Anime Portrait';
-  const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:portraitStyle,width:512,height:768,save_to_chat:false})});
-  box.innerHTML=`<img src="${safe(result.url)}" alt="Character portrait">`;
-  box.dataset.photoUrl=result.url;
- }catch(error){
-  box.innerHTML='<div class="empty-state" style="padding:16px;font-size:10px">Portrait failed</div>';
-  toast(error.message);
- }
-};
-$('#refreshCharacters').onclick=loadCharacterStudio;$('#newCharacterBtn').onclick=()=>{$('#characterForm').scrollIntoView({behavior:'smooth'});$('#characterForm').elements.name.focus()};
+async function loadCharacterStudio(){try{if(!Object.keys(studioOptions).length){studioOptions=await api('/api/options');initCharFormV6();}const characters=await api('/api/characters');$('#characterLibrary').innerHTML=characters.length?characters.map(c=>{const av=c.photo_path?`<img src="${safe(c.photo_path)}" class="char-avatar-img" alt="portrait">`:`<span class="entity-avatar">${safe((c.name||'?').slice(0,2).toUpperCase())}</span>`;const isActive=String(c.id)===String(state.characterId);return`<article class="entity-card">${av}<div><b>${safe(c.name)}</b><small>${safe(c.gender?c.gender+' · ':'')}${safe(c.race||'Unknown ancestry')} · ${safe(c.profession||'Adventurer')}</small></div><em>LV ${safe(c.level||1)}</em><button data-use-char="${c.id}" class="ghost" style="font-size:9px;padding:3px 8px;${isActive?'color:var(--gold);border-color:var(--gold)':''}">${isActive?'Active':'Use'}</button></article>`}).join(''):'<div class="empty-state">No saved characters yet. Create your first companion.</div>';$$('[data-use-char]').forEach(btn=>btn.onclick=async()=>{const cid=+btn.dataset.useChar;if(state.characterId===cid)return;state.characterId=cid;await refreshCharacterState();renderParty();renderQuests();loadCharacterStudio();toast('Adventurer switched — ready for play')})}catch(error){$('#characterLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
+$('#refreshCharacters').onclick=loadCharacterStudio;$('#newCharacterBtn').onclick=()=>{const v6name=$('#characterFormV6')?.elements?.name;if(v6name){v6name.scrollIntoView({behavior:'smooth'});v6name.focus();}};
 
 async function loadWorlds(){try{const items=await api('/api/worlds');$('#worldLibrary').innerHTML=items.length?items.map(w=>`<article class="entity-card"><span class="entity-avatar">◎</span><div><b>${safe(w.name)}</b><small>${safe(w.space_alignment||'multiverse')} · ${safe(w.reality_type||'Prime Reality')} · Magic ${safe(w.ratings?.magic ?? w.magic_level)}</small></div><em>${safe(w.time_of_day||'Active')}</em><span style="display:flex;gap:4px;margin-left:auto"><button class="ghost" data-travel-world="${w.id}" style="font-size:9px;padding:2px 8px">Travel</button><button class="ghost" data-del-world="${w.id}" style="font-size:9px;padding:2px 6px;color:var(--muted)">✕</button></span></article>`).join(''):'<div class="empty-state">No database worlds yet. The four play-map realities remain available.</div>';$$('[data-travel-world]').forEach(btn=>btn.onclick=async()=>{const wid=+btn.dataset.travelWorld;try{const w=await api(`/api/worlds/${wid}`);if(!state.worlds.find(x=>x.id===wid)){const entry=typeof toWorldEntry==='function'?toWorldEntry(w):w;state.worlds.unshift(entry);state.worldIndex=0;}else{state.worldIndex=state.worlds.findIndex(x=>x.id===wid);}updateWorld();setScale('local');toast(`Traveling to ${safe(w.name)}`)}catch(e){toast(e.message)}});$$('[data-del-world]').forEach(btn=>btn.onclick=async()=>{const wid=+btn.dataset.delWorld;if(!confirm('Delete this world?'))return;try{await api(`/api/worlds/${wid}`,{method:'DELETE'});toast('World deleted');loadWorlds();}catch(e){toast(e.message)}});}catch(error){$('#worldLibrary').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}}
 $('#worldForm').onsubmit=async event=>{event.preventDefault();const formEl=event.currentTarget;const raw=Object.fromEntries(new FormData(formEl).entries());const payload={name:raw.name,magic:raw.magic,tech:raw.tech,space:raw.space,reality_type:raw.reality_type||'Prime Reality',num_locs:Number(raw.num_locs||8),ratings:{science:Number(raw.ratings_science||5),technology:Number(raw.ratings_technology||4),magic:Number(raw.ratings_magic||5),weapon:Number(raw.ratings_weapon||3),power:Number(raw.ratings_power||5),civilization:Number(raw.ratings_civilization||4),danger:Number(raw.ratings_danger||4),horror:Number(raw.ratings_horror||2)}};try{await api('/api/worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});toast(`${payload.name} created`);formEl.reset();loadWorlds()}catch(error){toast(error.message)}};$('#refreshWorlds').onclick=loadWorlds;

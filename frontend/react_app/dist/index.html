@@ -187,36 +187,12 @@
   <section id="view-characters" class="app-view workspace-view active">
     <header class="workspace-head"><div><span class="eyebrow">COMPANION STUDIO</span><h1>Characters</h1><p>Create heroes, rivals, companions, gods, aliens, and alternate selves.</p></div><button id="newCharacterBtn" class="gold">＋ New character</button></header>
     <div class="workspace-grid character-workspace">
-      <section class="studio-card character-form-card">
-        <div class="card-title"><div><span class="step-dot">1</span><b>Character creation</b></div><small>SRD-compatible</small></div>
-        <form id="characterForm" class="studio-form">
-          <div class="wide char-portrait-area">
-            <div id="charPortraitPreview" class="char-portrait-preview"><div class="empty-state" style="padding:16px;font-size:10px">No portrait — fill in the form then click Generate</div></div>
-            <button type="button" id="generatePortraitBtn" class="ghost" style="width:100%;margin-top:6px">✦ Generate portrait from description</button>
-            <label style="margin-top:4px;font-size:9px;color:#8892a0">Style<select id="portraitStyleSelect" style="width:100%;background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:6px;margin-top:3px"></select></label>
-          </div>
-          <label class="wide">Character name<input name="name" required placeholder="Ari Solwyn"></label>
-          <label>Race / ancestry<select name="race" id="raceSelect"></select></label>
-          <label>Secondary ancestry<select name="secondary_ancestry" id="secondaryAncestrySelect"><option value="">— None —</option></select></label>
-          <label>Profession<select name="profession" id="professionSelect"></select></label>
-          <label>Background<select name="background" id="backgroundSelect"></select></label>
-          <label>Alignment<select name="alignment" id="alignmentSelect"></select></label>
-          <label>Gender<select name="gender" id="genderSelect"><option value="">— Select —</option><option value="Male">Male</option><option value="Female">Female</option></select></label>
-          <label>Level<input name="level" type="number" min="1" max="20" value="1"></label>
-          <label>Character origin<select name="origin" id="originSelect"></select></label>
-          <label>Power tier<select name="power_tier" id="powerTierSelect"></select></label>
-          <label class="wide">Backstory<textarea name="backstory" rows="4" placeholder="Their history, defining choice, secret, or debt..."></textarea></label>
-          <label class="wide">Goals<textarea name="goals" rows="2" placeholder="What do they want, and what will they sacrifice?"></textarea></label>
-          <div class="form-actions wide"><button type="button" id="randomCharacter" class="ghost">↻ Randomise</button><button type="submit" class="gold">Save character</button></div>
-        </form>
-      </section>
       <section class="studio-card library-card"><div class="card-title"><b>Saved characters</b><button id="refreshCharacters">↻</button></div><div id="characterLibrary" class="entity-list"><div class="empty-state">Loading character archive...</div></div></section>
     </div>
 
     <!-- ═══ Extended Character Creation (v6) ═══ -->
-    <details id="extCharDetails" style="margin:0 0 24px">
-      <summary style="cursor:pointer;padding:12px 16px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font-weight:700;user-select:none;list-style:none;color:var(--gold)">⊕ Full Character Creation — Extended Fields</summary>
-      <div class="workspace-grid" style="margin-top:16px">
+    <div id="extCharDetails" style="margin:0 0 24px">
+      <div class="workspace-grid" style="margin-top:0">
         <section class="studio-card wide-card">
           <div class="card-title" style="flex-wrap:wrap;gap:8px">
             <div><b>Extended Character Creation</b><small style="margin-left:8px">Stats · Multi-select traits · Measurements</small></div>
@@ -348,7 +324,7 @@
         </div>
         <div id="v6savedChars" class="entity-list"><div class="empty-state">Open this panel to load characters.</div></div>
       </div>
-    </details>
+    </div>
   </section>
 
   <section id="view-explore" class="app-view workspace-view">
