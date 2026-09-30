@@ -72,7 +72,7 @@ input[type=range]{width:100%;accent-color:var(--gold);height:4px;cursor:pointer;
 .v6-multi-card h4{font-family:Georgia;margin:0 0 8px;color:#f4e2b0;font-size:13px}
 
 /* ═══ Game layout redesign: party panel top row, wide chat ═══ */
-.game-grid{grid-template-columns:minmax(220px,0.5fr) 640px 310px!important;grid-template-rows:80px 1fr!important}
+.game-grid{grid-template-columns:minmax(260px,1fr) minmax(360px,1.8fr) minmax(220px,0.8fr)!important;grid-template-rows:80px 1fr!important}
 .game-grid.party-collapsed{grid-template-rows:0px 1fr!important}
 .party-panel{grid-row:1!important;grid-column:1/-1!important;display:flex!important;flex-direction:row!important;align-items:stretch!important;overflow-x:auto!important;overflow-y:hidden!important;padding:0!important}
 .party-panel.party-hidden{display:none!important}
@@ -85,11 +85,13 @@ input[type=range]{width:100%;accent-color:var(--gold);height:4px;cursor:pointer;
 .party-panel .quest{border-bottom:none!important;border:1px solid var(--line);flex-shrink:0;min-width:115px;max-width:175px;padding:5px 7px}
 .party-panel .quest p{margin:2px 0!important;font-size:9px!important;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .party-panel .quest .quest-progress{font-size:8px}
-.map-column{grid-row:2!important;grid-column:1!important}
+.map-column{grid-row:2!important;grid-column:1!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;padding:0 12px 12px!important}
+.map-frame{flex:1!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;min-height:0!important}
+.map{flex:1!important;height:auto!important;min-height:260px!important}
 #chatPanel{grid-row:2!important;grid-column:2!important}
 .detail-panel{grid-row:2!important;grid-column:3!important}
 #gameArea{transition:opacity .4s ease}
-@media(max-width:1360px){.game-grid{grid-template-columns:minmax(200px,0.5fr) 580px!important;grid-template-rows:80px 1fr!important}.game-grid.party-collapsed{grid-template-rows:0px 1fr!important}.detail-panel{display:none!important}.brand{min-width:auto}.world-readout{display:none}}
+@media(max-width:1360px){.game-grid{grid-template-columns:minmax(220px,1fr) minmax(320px,1.8fr)!important;grid-template-rows:80px 1fr!important}.game-grid.party-collapsed{grid-template-rows:0px 1fr!important}.detail-panel{display:none!important}.brand{min-width:auto}.world-readout{display:none}}
 @media(max-width:760px){.game-grid{grid-template-columns:1fr!important;grid-template-rows:auto auto auto!important;height:auto!important;display:grid!important}.party-panel{display:flex!important;min-height:65px;flex-wrap:nowrap;grid-row:1!important;grid-column:1!important}.map-column{grid-row:2!important;grid-column:1!important}.detail-panel{display:none!important}}
 .map-location-panel{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;background:#0008}
 .map-loc-img-wrap{flex:1;position:relative;overflow:hidden;min-height:0}
@@ -103,7 +105,7 @@ input[type=range]{width:100%;accent-color:var(--gold);height:4px;cursor:pointer;
 .map-node-mid{width:38px!important;height:38px!important;font-size:15px!important;border-color:#7daa7d!important;background:#1a2a1a!important}
 .map-node-mid:after{font-size:9px!important;top:42px!important}
 .map-node-micro{width:34px;height:34px}
-.map-world{background-color:#1a2a3a;background-image:radial-gradient(ellipse at 55% 45%,#3a6a3a 0 18%,#2a5a2a 19% 30%,#1a3a1a 31% 45%,#0a2a3a 46%)}
+.map-world{background-color:#1a2a3a;background-image:radial-gradient(ellipse at 50% 50%,#2a4a6a 0 20%,#1a3a5a 21% 40%,#0a1a2a 41%);background-image:radial-gradient(ellipse at 55% 45%,#3a6a3a 0 18%,#2a5a2a 19% 30%,#1a3a1a 31% 45%,#0a2a3a 46%)}
 .chat-scene-img{width:100%;border-radius:4px;margin:4px 0;display:block;max-height:320px;object-fit:cover}
 .chat-scene-caption{font-size:9px;color:var(--muted);margin-top:2px;display:block}
 .chat-line{margin:1px 0}
