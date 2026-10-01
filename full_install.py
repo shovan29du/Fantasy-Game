@@ -37,6 +37,9 @@ OPTIONAL_PACKAGES = {
         "pyttsx3>=2.90",
         "gTTS>=2.5.0",
     ],
+    "media": [
+        "imageio-ffmpeg>=0.5.0",  # bundled ffmpeg binary for Text-to-Animation/Video
+    ],
     "documents": [
         "pypdf>=4.0.0",
         "python-docx>=1.1.0",

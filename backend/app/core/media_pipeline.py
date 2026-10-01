@@ -3,7 +3,7 @@ Image provider selector, FFmpeg animation pipeline, video job queue,
 achievement/boss cinematic triggers, character portrait batch gen."""
 
 from __future__ import annotations
-import json, os, subprocess, time, threading, hashlib
+import json, os, shutil, subprocess, time, threading, hashlib, uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 from core.storage import get_conn, now_iso
@@ -35,6 +35,19 @@ def get_provider_options() -> List[Dict]:
 
 # ═══ FFMPEG ANIMATION PIPELINE ═══
 
+def _ffmpeg_bin() -> str:
+    """Resolve the ffmpeg binary to invoke: prefer a system install already
+    on PATH, else fall back to the static binary bundled by the optional
+    imageio-ffmpeg package, so Animation/Video works right after `pip
+    install -r requirements.txt` with no separate system install."""
+    if shutil.which("ffmpeg"):
+        return "ffmpeg"
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
 ANIMATION_EFFECTS = {
     "zoom_in": "-vf \"zoompan=z='min(zoom+0.002,1.5)':d=125:s=1280x720\"",
     "zoom_out": "-vf \"zoompan=z='if(lte(zoom,1.0),1.5,max(1.001,zoom-0.002))':d=125:s=1280x720\"",
@@ -59,7 +72,7 @@ def create_animation(image_path: str, output_name: str = None,
     # Replace d= with actual frame count
     effect_filter = effect_filter.replace("d=125", f"d={frames}")
 
-    cmd = (f"ffmpeg -y -loop 1 -i \"{image_path}\" "
+    cmd = (f"\"{_ffmpeg_bin()}\" -y -loop 1 -i \"{image_path}\" "
            f"{effect_filter} "
            f"-t {duration} -pix_fmt yuv420p -c:v libx264 "
            f"\"{output_path}\"")
@@ -83,7 +96,7 @@ def create_slideshow(image_paths: List[str], output_name: str = "slideshow.mp4",
         for img in image_paths:
             if os.path.exists(img):
                 f.write(f"file '{img}'\nduration {duration_per_slide}\n")
-    cmd = (f"ffmpeg -y -f concat -safe 0 -i \"{concat_file}\" "
+    cmd = (f"\"{_ffmpeg_bin()}\" -y -f concat -safe 0 -i \"{concat_file}\" "
            f"-vf \"scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2\" "
            f"-pix_fmt yuv420p -c:v libx264 \"{output_path}\"")
     try:
@@ -97,6 +110,42 @@ def create_slideshow(image_paths: List[str], output_name: str = "slideshow.mp4",
     except Exception:
         pass
     return None
+
+# ═══ TEXT-TO-ANIMATION / TEXT-TO-VIDEO (chains image_gen + ffmpeg) ═══
+
+def generate_animated_clip(prompt: str, style_prefix: str = "", width: int = 768, height: int = 512,
+                            effect: str = "ken_burns", duration: int = 5) -> Optional[Dict]:
+    """Text -> image -> pan/zoom video, in one call. Returns {image_path,
+    video_path} or None if either generation step failed."""
+    from core.image_gen import download_image
+    full_prompt = f"{style_prefix}, {prompt}" if style_prefix else prompt
+    image_path = download_image(full_prompt, width=width, height=height)
+    if not image_path:
+        return None
+    video_path = create_animation(image_path, effect=effect, duration=duration)
+    if not video_path:
+        return None
+    return {"image_path": image_path, "video_path": video_path}
+
+def generate_scene_video(prompts: List[str], style_prefix: str = "", width: int = 768, height: int = 512,
+                          duration_per_slide: int = 3) -> Optional[Dict]:
+    """Text (one prompt per scene) -> a sequence of generated images -> a
+    single slideshow video. Returns {image_paths, video_path} or None if no
+    scene image could be generated."""
+    from core.image_gen import download_image
+    image_paths = []
+    for scene_prompt in prompts:
+        full_prompt = f"{style_prefix}, {scene_prompt}" if style_prefix else scene_prompt
+        path = download_image(full_prompt, width=width, height=height)
+        if path:
+            image_paths.append(path)
+    if not image_paths:
+        return None
+    output_name = f"video_{uuid.uuid4().hex[:8]}.mp4"
+    video_path = create_slideshow(image_paths, output_name=output_name, duration_per_slide=duration_per_slide)
+    if not video_path:
+        return None
+    return {"image_paths": image_paths, "video_path": video_path}
 
 # ═══ VIDEO JOB QUEUE ═══
 

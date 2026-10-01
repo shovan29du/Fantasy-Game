@@ -5,14 +5,27 @@ pip install edge-tts"""
 from core.logging_setup import get_logger
 
 log = get_logger(__name__)
-import asyncio, os, tempfile
+import asyncio, uuid
 from typing import List, Dict, Optional
+from shared_config import MEDIA_DIR
 
 try:
     import edge_tts
     EDGE_TTS_OK = True
 except ImportError:
     EDGE_TTS_OK = False
+
+VOICE_OUTPUT_DIR = MEDIA_DIR / "voice_clips"
+VOICE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _write_audio_file(audio: bytes) -> str:
+    """Save under MEDIA_DIR so the /media static mount can serve it back to
+    the browser (unlike a bare OS temp file, which the app has no route for)."""
+    path = str(VOICE_OUTPUT_DIR / f"{uuid.uuid4().hex[:12]}.mp3")
+    with open(path, "wb") as f:
+        f.write(audio)
+    return path
 
 # Popular voices by language/gender
 VOICE_PRESETS = {
@@ -56,9 +69,7 @@ def speak_text(text: str, voice: str = "en-US-JennyNeural", rate: str = "+0%") -
     try:
         audio = asyncio.run(_generate_audio(clean, voice, rate))
         if audio:
-            fd, path = tempfile.mkstemp(suffix=".mp3")
-            with os.fdopen(fd, 'wb') as f: f.write(audio)
-            return path
+            return _write_audio_file(audio)
     except Exception:
         log.debug("suppressed error", exc_info=True)
         # Try with new event loop
@@ -67,9 +78,7 @@ def speak_text(text: str, voice: str = "en-US-JennyNeural", rate: str = "+0%") -
             audio = loop.run_until_complete(_generate_audio(clean, voice, rate))
             loop.close()
             if audio:
-                fd, path = tempfile.mkstemp(suffix=".mp3")
-                with os.fdopen(fd, 'wb') as f: f.write(audio)
-                return path
+                return _write_audio_file(audio)
         except Exception:
             log.debug("suppressed error", exc_info=True)
             pass
