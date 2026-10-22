@@ -1,4 +1,4 @@
-﻿"""AiChat Pro v21 â€” Chat Engine
+"""AiChat Pro v21 â€” Chat Engine
 World state + stats + inventory + achievements injected into prompts.
 Message CRUD, rollback, moments, suggestions, export."""
 from __future__ import annotations

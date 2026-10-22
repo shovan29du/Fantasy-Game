@@ -360,14 +360,6 @@ function levelUp(newLevel){
  toast(`Level up! Now level ${newLevel}`);
  if($('#detailContent').innerHTML.includes('EXPERIENCE'))showPanel('character');
 }
-async function failQuest(idx){
- const q=state.quests[idx];if(!q)return;
- const chatLog=$('#chatLog');
- chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action" style="color:var(--muted)">✗ Quest Failed: "${safe(q.title)}"</em></div>`));
- chatLog.scrollTop=chatLog.scrollHeight;
- if(q.id){try{await api(`/api/quests/${q.id}`,{method:'DELETE'});}catch{}}
- state.quests.splice(idx,1);renderQuests();toast(`Quest failed: ${q.title}`);
-}
 async function travelToWorld(worldId){
  if(!worldId)return;
  const already=state.worlds.findIndex(w=>w.id===worldId);
@@ -1381,6 +1373,10 @@ Click a party member card — Speak as that character<br>
   const playerLabel=sp?`<b style="color:var(--gold)">${safe(sp.name)}:</b> `:'';
   $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',playerLabel+fmtChat(msg)));
   input.value='';$('#aiStatus').textContent='Thinking…';
+  // typing indicator bubble
+  const typingId='typing-'+Date.now();
+  $('#chatLog').insertAdjacentHTML('beforeend',`<div class="chat-msg gm" id="${typingId}"><div class="msg-body"><span class="typing-dots"><span></span><span></span><span></span></span></div></div>`);
+  $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
   try{
     const world=state.worlds[state.worldIndex];
     let charName,extraCtx;
@@ -1391,16 +1387,40 @@ Click a party member card — Speak as that character<br>
     } else {
       charName='Worldweaver';extraCtx=playerContextLine();
     }
-    const r=await fetch('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:msg,extra_context:extraCtx,session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:charName,participants:sp?[sp.name]:['Worldweaver'],temperature:.75})});
-    const data=await r.json();if(!r.ok)throw new Error(data.detail||'Local model unavailable');
+    const payload={content:msg,extra_context:extraCtx,session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:charName,participants:sp?[sp.name]:['Worldweaver'],temperature:.75};
     const replyLabel=sp?`<b style="color:var(--gold)">${safe(sp.name)}</b> `:'<b>WORLDWEAVER</b> ';
-    $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',replyLabel+fmtChat(data.reply),data.id));
+    const streamResp=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!streamResp.ok||!streamResp.body){throw new Error('stream unavailable');}
+    // replace typing indicator with live streaming bubble
+    const typingEl=document.getElementById(typingId);
+    let fullReply='',msgId=null;
+    const streamBubbleId='stream-'+Date.now();
+    if(typingEl)typingEl.outerHTML=`<div class="chat-msg gm" id="${streamBubbleId}"><div class="msg-body">${replyLabel}<span id="${streamBubbleId}-txt"></span></div></div>`;
+    const txtEl=document.getElementById(`${streamBubbleId}-txt`);
+    const reader=streamResp.body.getReader();const dec=new TextDecoder();
+    let buf='';
+    while(true){
+      const{done,value}=await reader.read();
+      if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const lines=buf.split('\n');buf=lines.pop();
+      for(const line of lines){
+        if(!line.startsWith('data:'))continue;
+        const raw=line.slice(5).trim();
+        if(raw==='[DONE]')break;
+        try{
+          const chunk=JSON.parse(raw);
+          if(chunk.id)msgId=chunk.id;
+          if(chunk.text){fullReply+=chunk.text;if(txtEl)txtEl.innerHTML=fmtChat(fullReply);}
+        }catch{}
+      }
+    }
+    // update bubble id with server message id for actions
+    if(msgId){const el=document.getElementById(streamBubbleId);if(el)el.dataset.msgId=msgId;}
     $('#aiStatus').textContent=sp?`${sp.name} · ${sp.race||sp.profession||''}`.trim():'LM Studio connected';
-    speakReply(data.reply);
-    detectStoryChars(data.reply);
-    const _ds=detectScaleFromChat(data.reply);if(_ds&&_ds!==state.scale)setScale(_ds);
-    addLocationsFromChat(data.reply);addLocationsFromChat(msg);
+    if(fullReply){speakReply(fullReply);detectStoryChars(fullReply);const _ds=detectScaleFromChat(fullReply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(fullReply);addLocationsFromChat(msg);}
   }catch(error){
+    const typingEl=document.getElementById(typingId);if(typingEl)typingEl.remove();
     $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(error.message||'The local storyteller cannot be reached.')));
     $('#aiStatus').textContent='Start LM Studio on port 1234';
   }

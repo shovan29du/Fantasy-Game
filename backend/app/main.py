@@ -961,6 +961,108 @@ def send_chat(payload: ChatSendIn) -> dict:
     return {"reply": response, "session_id": payload.session_id}
 
 
+@app.post("/api/chat/stream")
+def stream_chat(payload: ChatSendIn) -> StreamingResponse:
+    """SSE streaming variant of /api/chat/send.
+    Yields text chunks as they arrive from LM Studio so the frontend can
+    display tokens in real-time without waiting for the full reply.
+    Final event: data: {"id": <msg_id>, "done": true}
+    """
+    from core.chat_engine import stream_from_llm
+    character = get_full_sheet(payload.character_id) if payload.character_id else None
+    character_name = payload.character_name or ((character or {}).get("name") if character else "Character")
+    world = get_world(payload.world_id) if payload.world_id else None
+    relationship = ensure_relationship(character_name) if character_name else None
+    user_line = f"**{payload.user_name or 'User'}:** {payload.content}"
+    save_message("user", user_line, payload.session_id)
+    history = get_history(payload.session_id, limit=50)
+    system_prompt = build_system_prompt(character=character, world=world, relationship=relationship, user_name=payload.user_name or "User")
+    profile_bits = [payload.user_name or "User"]
+    if payload.user_sex:
+        profile_bits.append(payload.user_sex)
+    if payload.user_age:
+        profile_bits.append(f"age {payload.user_age}")
+    system_prompt += f"\n[Player: {', '.join(profile_bits)}]"
+    participants = payload.participants or ([character_name] if character_name else [])
+    if len(participants) > 1:
+        system_prompt += "\n[MULTI-PERSPECTIVE: Write responses for each character with their name prefix. Characters in scene: " + ", ".join(participants) + ".]"
+    elif character_name:
+        system_prompt += f"\n[Always prefix responses with **{character_name}:** to show who is speaking.]"
+    quests = get_active_quests(character_name) if character_name else []
+    if quests:
+        system_prompt += "\n[Quests: " + "; ".join(q["title"][:30] for q in quests[:3]) + "]"
+    try:
+        from core.companion_soul import build_soul_prompt
+        soul_context = build_soul_prompt(character_name)
+        if soul_context:
+            system_prompt += f"\n{soul_context}"
+    except Exception:
+        pass
+    try:
+        from core.lorebook import build_lorebook_context
+        lore_context = build_lorebook_context(payload.content, payload.world_id or 0)
+        if lore_context:
+            system_prompt += f"\n{lore_context}"
+    except Exception:
+        pass
+    if payload.extra_context:
+        system_prompt += f"\n[Context: {payload.extra_context}]"
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend({"role": msg["role"], "content": msg["content"]} for msg in history[-RECENT_HISTORY_MESSAGES:])
+    try:
+        memory_context = memory_engine.build_memory_context(query=payload.content, character_name=character_name)
+        if memory_context:
+            messages[-1]["content"] += f"\n[Memory: {memory_context}]"
+    except Exception:
+        pass
+
+    import json as _json
+
+    def _generate():
+        full = []
+        for chunk in stream_from_llm(messages, temperature=payload.temperature):
+            full.append(chunk)
+            yield f"data: {_json.dumps({'text': chunk})}\n\n"
+        full_reply = "".join(full)
+        save_message("assistant", full_reply, payload.session_id)
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT id FROM messages WHERE session_id=? ORDER BY id DESC LIMIT 1",
+            (payload.session_id,),
+        ).fetchone()
+        conn.close()
+        msg_id = row["id"] if row else None
+        if not full_reply.startswith(("[LM Studio error]", "[Error]")):
+            try:
+                memory_engine.store_fact(
+                    f"{payload.user_name or 'Player'} said: {payload.content[:200]} | "
+                    f"{character_name or 'AI'} replied: {full_reply[:200]}",
+                    source="auto", character_name=character_name or "",
+                )
+            except Exception:
+                pass
+            if character_name:
+                sentiment = "positive" if any(w in payload.content.lower() for w in ["love","kiss","hug","thank","happy"]) else "neutral"
+                if any(w in payload.content.lower() for w in ["hate","attack","kill","angry"]):
+                    sentiment = "negative"
+                if any(w in payload.content.lower() for w in ["flirt","seduce","intimate","desire"]):
+                    sentiment = "flirt"
+                record_interaction(character_name, sentiment, payload.content[:80])
+                try:
+                    from core.companion_soul import update_affect
+                    update_affect(character_name, sentiment)
+                except Exception:
+                    pass
+        if payload.character_id:
+            award_xp(payload.character_id, 5, "chat")
+        _sync_world_from_text(payload.world_id, full_reply)
+        yield f"data: {_json.dumps({'id': msg_id, 'done': True})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_generate(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.post("/api/chat/regen")
 def regenerate_chat(payload: ChatSendIn) -> dict:
     last_user = payload.content
