@@ -1,12 +1,18 @@
 """AiChat Pro v21 — Image Generation with 4-provider fallback chain
 Pollinations.ai → ComfyUI → Automatic1111 → placeholder SVG.
 Provider selector UI support. Character prompt builder."""
-import os, urllib.parse, random, hashlib, json, base64
+import os, urllib.parse, random, hashlib, json, base64, threading, time
 from pathlib import Path
 from shared_config import MEDIA_DIR, COMFYUI_URL, A1111_URL
 from core.logging_setup import get_logger
 
 log = get_logger(__name__)
+
+# ─── Pollinations rate-limit guard ────────────────────────────────────────────
+# Free tier allows 1 request per 45 seconds.
+_POLLINATIONS_INTERVAL = 46.0          # seconds between outbound requests
+_pollinations_lock     = threading.Lock()
+_pollinations_last_req = 0.0           # monotonic timestamp of last completed request
 
 IMG_DIR = MEDIA_DIR / "images"; IMG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -41,14 +47,25 @@ PROVIDERS = ["pollinations", "comfyui", "automatic1111", "placeholder"]
 # ═══ PROVIDER IMPLEMENTATIONS ═══
 
 def _try_pollinations(prompt, width=512, height=768, seed=None):
-    """Free, no API key, no content filter."""
+    """Free, no API key — throttled to 1 request per 46 s to respect rate limit."""
+    global _pollinations_last_req
     import requests
+    with _pollinations_lock:
+        wait = _POLLINATIONS_INTERVAL - (time.monotonic() - _pollinations_last_req)
+        if wait > 0:
+            log.debug("Pollinations throttle: waiting %.1fs", wait)
+            time.sleep(wait)
+        _pollinations_last_req = time.monotonic()
+
     encoded = urllib.parse.quote(prompt)
     url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&nofeed=true&safe=false"
     if seed is not None: url += f"&seed={seed}"
     r = requests.get(url, timeout=120)
-    if r.status_code == 200 and len(r.content) > 1000:
+    ct = r.headers.get("Content-Type", "")
+    if r.status_code == 200 and ct.startswith("image/") and len(r.content) > 1000:
         return r.content
+    if r.status_code == 200 and not ct.startswith("image/"):
+        log.warning("Pollinations returned non-image content (%s) — rate limited?", ct)
     return None
 
 def _try_comfyui(prompt, width=512, height=768):
@@ -142,6 +159,13 @@ def generate_image_url(prompt, width=512, height=768, seed=None):
     if seed is not None: url += f"&seed={seed}"
     return url
 
+def _cache_path(prompt: str, width: int, height: int) -> Path:
+    """Return the deterministic cache path for a prompt+size combination."""
+    key = f"{prompt}|{width}x{height}"
+    h = hashlib.md5(key.encode()).hexdigest()
+    return IMG_DIR / f"cache_{h}.png"
+
+
 def download_image(prompt, filename=None, width=512, height=768, providers=None):
     """Download image through fallback chain. Returns file path or empty string.
 
@@ -156,6 +180,12 @@ def download_image(prompt, filename=None, width=512, height=768, providers=None)
             providers = [p for p in providers if p != "pollinations"]
     except Exception:
         log.debug("suppressed error", exc_info=True)
+
+    # Return cached file if it already exists and is a valid image (>1 KB)
+    cached = _cache_path(prompt, width, height)
+    if cached.exists() and cached.stat().st_size > 1000:
+        log.debug("Image cache hit: %s", cached.name)
+        return str(cached)
 
     img_data = None
     used_provider = None
@@ -183,14 +213,22 @@ def download_image(prompt, filename=None, width=512, height=768, providers=None)
 
     if not filename:
         h = hashlib.md5(prompt.encode()).hexdigest()[:8]
-        safe = "".join(c if c.isalnum() or c in " _-" else "_" for c in prompt[:30]).strip()
+        safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in prompt[:30]).strip()
         ext = ".svg" if used_provider == "placeholder" else ".png"
-        filename = f"{safe}_{h}{ext}"
+        filename = f"{safe_name}_{h}{ext}"
 
-    path = str(IMG_DIR / filename)
+    path = IMG_DIR / filename
     with open(path, "wb") as f:
         f.write(img_data)
-    return path
+
+    # Write to deterministic cache key so repeat requests skip the provider
+    if used_provider != "placeholder":
+        try:
+            cached.write_bytes(img_data)
+        except Exception:
+            pass
+
+    return str(path)
 
 def build_character_prompt(name, gender, race, hair, eyes, body_type, skin,
                            style_key="Anime Portrait", height="", extra=""):
