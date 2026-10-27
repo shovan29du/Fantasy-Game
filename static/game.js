@@ -593,7 +593,7 @@ $('#chatLog').addEventListener('click',async e=>{
   toast('Copied!');
  }
  else if(act==='paste'){
-  $('#chatInput').value=text;
+  $('#chatInput').value=text;if(window._chatInputGrow)window._chatInputGrow();
   $('#chatInput').focus();
  }
  else if(act==='select'){
@@ -786,7 +786,7 @@ async function showChatOptions(mode='progressions'){
  panel.innerHTML=`<div class="options-header">${mode==='alternatives'?'⏪ Alternative outcomes:':'✦ What do you do next?'}</div>`+
   options.map((o,i)=>`<button class="option-chip" data-opt="${safe(o)}">${i+1}. ${safe(o)}</button>`).join('');
  panel.querySelectorAll('.option-chip').forEach(btn=>btn.onclick=()=>{
-  $('#chatInput').value=btn.dataset.opt;
+  $('#chatInput').value=btn.dataset.opt;if(window._chatInputGrow)window._chatInputGrow();
   panel.hidden=true;_optionsPanelOpen=false;
   if(mode!=='alternatives')$('#chatForm').requestSubmit();
  });
@@ -1285,7 +1285,7 @@ if(SpeechRecognitionApi){
  speechRecognizer.continuous=false;speechRecognizer.interimResults=false;speechRecognizer.lang='en-US';
  speechRecognizer.onresult=e=>{
   const transcript=e.results[0][0].transcript;
-  $('#chatInput').value=transcript;
+  $('#chatInput').value=transcript;if(window._chatInputGrow)window._chatInputGrow();
   $('#chatForm').requestSubmit();
  };
  speechRecognizer.onend=()=>{isListening=false;$('#micBtn').classList.remove('listening')};
@@ -1372,7 +1372,7 @@ Click a party member card — Speak as that character<br>
   const sp=state.activeSpeaker;
   const playerLabel=sp?`<b style="color:var(--gold)">${safe(sp.name)}:</b> `:'';
   $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',playerLabel+fmtChat(msg)));
-  input.value='';$('#aiStatus').textContent='Thinking…';
+  input.value='';if(input.tagName==='TEXTAREA'){input.style.height='auto';}$('#aiStatus').textContent='Thinking…';
   // typing indicator bubble
   const typingId='typing-'+Date.now();
   $('#chatLog').insertAdjacentHTML('beforeend',`<div class="chat-msg gm" id="${typingId}"><div class="msg-body"><span class="typing-dots"><span></span><span></span><span></span></span></div></div>`);
@@ -1390,7 +1390,14 @@ Click a party member card — Speak as that character<br>
     const payload={content:msg,extra_context:extraCtx,session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:charName,participants:sp?[sp.name]:['Worldweaver'],temperature:.75};
     const replyLabel=sp?`<b style="color:var(--gold)">${safe(sp.name)}</b> `:'<b>WORLDWEAVER</b> ';
     const streamResp=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(!streamResp.ok||!streamResp.body){throw new Error('stream unavailable');}
+    if(!streamResp.ok||!streamResp.body){
+      const te2=document.getElementById(typingId);if(te2)te2.remove();
+      const fallResp=await api('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const reply=fallResp?.reply||fallResp?.content||'';
+      if(reply){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',replyLabel+fmtChat(reply)));speakReply(reply);detectStoryChars(reply);const _ds=detectScaleFromChat(reply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(reply);addLocationsFromChat(msg);}
+      $('#aiStatus').textContent=sp?`${sp.name} · ${sp.race||sp.profession||''}`.trim():'LM Studio connected';
+      saveSessionToStorage();$('#chatLog').scrollTop=$('#chatLog').scrollHeight;return;
+    }
     // replace typing indicator with live streaming bubble
     const typingEl=document.getElementById(typingId);
     let fullReply='',msgId=null;
@@ -1419,6 +1426,8 @@ Click a party member card — Speak as that character<br>
     if(msgId){const el=document.getElementById(streamBubbleId);if(el)el.dataset.msgId=msgId;}
     $('#aiStatus').textContent=sp?`${sp.name} · ${sp.race||sp.profession||''}`.trim():'LM Studio connected';
     if(fullReply){speakReply(fullReply);detectStoryChars(fullReply);const _ds=detectScaleFromChat(fullReply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(fullReply);addLocationsFromChat(msg);}
+    saveSessionToStorage();
+    (async()=>{const _ap=$('.detail-tabs button.active')?.dataset?.panel;if(_ap==='character'||_ap==='inventory'){try{await refreshCharacterState();if(_ap==='inventory')renderInventory();else showPanel('character');}catch{}}})();
   }catch(error){
     const typingEl=document.getElementById(typingId);if(typingEl)typingEl.remove();
     $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(error.message||'The local storyteller cannot be reached.')));
@@ -2626,3 +2635,16 @@ window.v6GenCharPhoto=async(id)=>{
     toast('Generating photo…');
   }catch{toast('Photo generation failed');}
 };
+
+// ─── Chat textarea: auto-grow + Enter to submit ───
+(()=>{
+  const ta=$('#chatInput');
+  if(!ta||ta.tagName!=='TEXTAREA')return;
+  const grow=()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,120)+'px';};
+  ta.addEventListener('input',grow);
+  ta.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#chatForm').requestSubmit();}
+  });
+  // expose for programmatic value sets (voice, option chips)
+  window._chatInputGrow=grow;
+})();
