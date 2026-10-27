@@ -868,6 +868,32 @@ $('#hubCloseBtn').onclick=hidePlayHub;
 $('#switchGameBtn').onclick=showPlayHub;
 $$('.back-btn').forEach(b=>b.onclick=()=>showStartStep(b.dataset.back));
 
+// ── Game topbar: Back and Close buttons ──────────────────────────────────────
+$('#gameBackBtn').onclick=()=>{
+  // Return to scenario selection (category step) without destroying the session
+  showPlayHub();
+  showStartStep('category');
+  // Ensure category grid is populated
+  if(categoriesCache){
+    const sel=$('#worldCategorySelect');
+    if(sel&&!sel.options.length){
+      sel.innerHTML='<option value="all">🌐 All Worlds</option>'+categoriesCache.map(c=>`<option value="${safe(c.key)}">${safe(c.label)} (${c.scenarios.length})</option>`).join('');
+      sel.onchange=()=>renderScenarioCards(categoriesCache,sel.value);
+    }
+    renderScenarioCards(categoriesCache,$('#worldCategorySelect')?.value||'all');
+  } else {
+    // Load categories if not yet fetched
+    api('/api/scenarios/categories').then(cats=>{
+      categoriesCache=cats;
+      const sel=$('#worldCategorySelect');
+      sel.innerHTML='<option value="all">🌐 All Worlds</option>'+cats.map(c=>`<option value="${safe(c.key)}">${safe(c.label)} (${c.scenarios.length})</option>`).join('');
+      sel.onchange=()=>renderScenarioCards(categoriesCache,sel.value);
+      renderScenarioCards(cats,'all');
+    }).catch(()=>{});
+  }
+};
+$('#gameCloseBtn').onclick=()=>{showPlayHub();showStartStep('choice');};
+
 let categoriesCache=null;
 async function beginGame(payload){
  try{
@@ -940,12 +966,21 @@ function renderScenarioCards(cats,filterKey){
   const mb=card.querySelector('.scenario-card-more');
   if(mb)mb.onclick=e=>{
    e.stopPropagation();
+   // Fill the Opening Scenario textarea with this card's full opening text
    const pv=card.querySelector('.scenario-card-preview');
-   if(!pv)return;
-   const open=pv.hidden;
-   pv.hidden=!open;
-   mb.textContent=open?'−':'＋';
-   mb.title=open?'Hide backstory':'Show backstory';
+   const fullText=pv?pv.textContent.trim():'';
+   const ta=$('#openingScenarioText');
+   if(ta&&fullText){
+    ta.value=fullText;
+    // Trigger resize if auto-grow is active
+    ta.dispatchEvent(new Event('input'));
+    // Scroll to and flash the textarea so the user sees it was filled
+    ta.scrollIntoView({behavior:'smooth',block:'center'});
+    ta.classList.remove('flash');
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{ta.classList.add('flash');setTimeout(()=>ta.classList.remove('flash'),800);}));
+    ta.focus();
+   }
+   mb.title='Story copied to Opening Scenario below';
   };
   card.onclick=go;
  });

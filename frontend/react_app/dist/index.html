@@ -48,8 +48,8 @@
         <div id="scenarioCardsGrid" class="scenario-cards-grid"></div>
         <div class="start-divider">or write your own</div>
         <form id="customScenarioForm" class="studio-form">
-          <label class="wide">Opening scenario<textarea name="text" rows="3" placeholder="You wake up in..."></textarea></label>
-          <div class="form-actions wide"><button type="button" id="autoGenScenarioBtn" class="ghost" style="margin-bottom:8px">✦ Auto-generate from world &amp; preset</button><button class="gold">Start with this</button></div>
+          <label class="wide">Opening scenario<textarea id="openingScenarioText" name="text" rows="4" placeholder="You wake up in…  (click ＋ on any card above to fill this from a scenario)"></textarea></label>
+          <div class="form-actions wide"><button type="button" id="autoGenScenarioBtn" class="ghost" style="margin-bottom:8px">✦ Auto-generate from world &amp; preset</button><button class="gold">▶ Start with this</button></div>
         </form>
         <div class="start-divider">or</div>
         <div class="start-actions">
@@ -94,7 +94,9 @@
     <div class="brand"><span class="brand-mark">W</span><div><strong>WORLDWEAVER</strong><small>MULTIVERSE TABLETOP</small></div></div>
     <div class="world-readout"><span class="eyebrow">CURRENT REALITY</span><b id="worldName">Aethoria Prime</b><span id="worldTags">Fantasy · Magic 8 · Tech 2</span></div>
     <div class="top-actions">
-      <button id="switchGameBtn" class="ghost" title="Start new game or load a saved one">⇄ New / Load Game</button>
+      <button id="gameBackBtn" class="ghost" title="Back to scenario selection">‹ Back</button>
+      <button id="gameCloseBtn" class="ghost" title="Close game and return to main menu">✕ Close</button>
+      <button id="switchGameBtn" class="ghost" title="Start new game or load a saved one" style="display:none">⇄ New / Load Game</button>
       <button id="journalBtn" class="ghost">◫ Journal</button>
       <button id="saveBtn" class="gold">Save game</button>
       <span class="online"><i></i> LOCAL</span>
@@ -553,8 +555,10 @@
 .scenario-card-name{font-weight:bold;font-size:13px;margin-bottom:5px;line-height:1.3}
 .scenario-card-teaser{font-size:10px;color:#8a9ab0;line-height:1.45;margin-bottom:6px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .scenario-card-actions{display:flex;gap:4px;align-items:center}
-.scenario-card-more{padding:4px 7px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:3px;cursor:pointer;font-size:12px;font-weight:bold;flex-shrink:0;line-height:1}
-.scenario-card-more:hover{background:rgba(199,163,79,.15)}
+.scenario-card-more{padding:4px 7px;background:var(--gold);color:#000;border:1px solid var(--gold);border-radius:3px;cursor:pointer;font-size:12px;font-weight:bold;flex-shrink:0;line-height:1}
+.scenario-card-more:hover{background:#e5b84a}
+#openingScenarioText{transition:box-shadow .25s}
+#openingScenarioText.flash{box-shadow:0 0 0 2px var(--gold);}
 .scenario-card-play{flex:1;padding:5px;background:var(--gold);color:#000;border:none;border-radius:3px;cursor:pointer;font-size:11px;font-weight:bold}
 .scenario-card-preview{padding:8px 10px 10px;font-size:10px;color:#9aa6b8;line-height:1.55;border-top:1px solid var(--line);white-space:pre-wrap;word-break:break-word;max-height:220px;overflow-y:auto;background:#0d1520}
 /* Chat formatting: actions, dialogue, speaker labels */
