@@ -242,16 +242,20 @@ def _ensure_turn_state_column():
     """Add turn_state_json column if it doesn't already exist (safe migration)."""
     conn = get_conn()
     try:
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(combat_encounters)").fetchall()]
-        if "turn_state_json" not in cols:
-            conn.execute("ALTER TABLE combat_encounters ADD COLUMN turn_state_json TEXT DEFAULT '{}'")
-            conn.commit()
-        if "encounter_id" not in [r[1] for r in conn.execute("PRAGMA table_info(combat_state)").fetchall()]:
-            conn.execute("ALTER TABLE combat_state ADD COLUMN encounter_id INTEGER")
-            conn.commit()
-        if "stats_json" not in [r[1] for r in conn.execute("PRAGMA table_info(combat_state)").fetchall()]:
-            conn.execute("ALTER TABLE combat_state ADD COLUMN stats_json TEXT DEFAULT '{}'")
-            conn.commit()
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "combat_encounters" in tables:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(combat_encounters)").fetchall()]
+            if "turn_state_json" not in cols:
+                conn.execute("ALTER TABLE combat_encounters ADD COLUMN turn_state_json TEXT DEFAULT '{}'")
+                conn.commit()
+        if "combat_state" in tables:
+            cs_cols = [r[1] for r in conn.execute("PRAGMA table_info(combat_state)").fetchall()]
+            if "encounter_id" not in cs_cols:
+                conn.execute("ALTER TABLE combat_state ADD COLUMN encounter_id INTEGER")
+                conn.commit()
+            if "stats_json" not in cs_cols:
+                conn.execute("ALTER TABLE combat_state ADD COLUMN stats_json TEXT DEFAULT '{}'")
+                conn.commit()
     finally:
         conn.close()
 
