@@ -27,7 +27,27 @@ const actions=[
  {name:'Loot',icon:'⚗',kind:'utility',cost:'Free'},
 ];
 
-let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:{},pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[],npcMemories:{},visitedWorldIds:new Set()};
+// ─── Persistent image cache (survives page reload) ────────────────────────────
+const IMG_CACHE_KEY='worldweaver-img-cache';
+function _loadImgCache(){try{const r=localStorage.getItem(IMG_CACHE_KEY);return r?JSON.parse(r):{};}catch{return {};}}
+function _saveImgCache(cache){try{localStorage.setItem(IMG_CACHE_KEY,JSON.stringify(cache));}catch{}}
+
+// ─── Thumbnail generation queue (serialise to respect Pollinations rate limit) ─
+const _thumbQueue=[];let _thumbRunning=false;
+function _enqueueThumb(fn){
+  _thumbQueue.push(fn);
+  if(!_thumbRunning)_drainThumbQueue();
+}
+async function _drainThumbQueue(){
+  _thumbRunning=true;
+  while(_thumbQueue.length){
+    const fn=_thumbQueue.shift();
+    try{await fn();}catch{}
+  }
+  _thumbRunning=false;
+}
+
+let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:_loadImgCache(),pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[],npcMemories:{},visitedWorldIds:new Set()};
 const SESSION_KEY='worldweaver-session';
 const TERRAIN_ICONS={Forest:'♣',Desert:'▲',Mountain:'⛰',Ocean:'≈',Swamp:'♨',Volcano:'▲',Plains:'❦',City:'⌂',Ruins:'⌂',Space:'✦',Underground:'▼',Tundra:'❄',Jungle:'♣',Savanna:'❦',Canyon:'▲'};
 
@@ -466,6 +486,7 @@ async function enterLocation(loc){
   const url=result.url||result.path;
   if(url){
    state.locationImageCache[loc.id]=url;
+   _saveImgCache(state.locationImageCache);
    img.src=url;img.onload=()=>{img.style.opacity='1'};
    const mapEl=$('#map');mapEl.style.backgroundImage=`url('${url}')`;mapEl.style.backgroundSize='cover';mapEl.style.backgroundPosition='center';
    if(useOpening){
@@ -2162,16 +2183,20 @@ async function addLocationsFromChat(text){
 
 async function _genLocationThumbnail(loc,world,terrain){
   if(state.locationImageCache[loc.id])return;
-  try{
-    const prompt=`Fantasy landscape: ${loc.name}, ${terrain} terrain, ${world?.name||'fantasy world'} setting. Scenic vista, atmospheric, painterly.`;
-    const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Fantasy Art',width:256,height:144,world_id:world?.id,character_name:loc.name})});
-    if(result.url){
-      state.locationImageCache[loc.id]=result.url;
-      // Refresh map node thumbnail if visible
-      const node=document.querySelector(`[data-loc-id="${loc.id}"] .node-thumb`);
-      if(node){node.style.backgroundImage=`url('${result.url}')`;node.style.backgroundSize='cover';}
-    }
-  }catch{}
+  _enqueueThumb(async()=>{
+    if(state.locationImageCache[loc.id])return; // double-check after queue wait
+    try{
+      const prompt=`Fantasy landscape: ${loc.name}, ${terrain} terrain, ${world?.name||'fantasy world'} setting. Scenic vista, atmospheric, painterly.`;
+      const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Fantasy Art',width:256,height:144,world_id:world?.id,character_name:loc.name})});
+      if(result.url){
+        state.locationImageCache[loc.id]=result.url;
+        _saveImgCache(state.locationImageCache);
+        // Refresh map node thumbnail if still visible
+        const node=document.querySelector(`[data-loc-id="${loc.id}"] .node-thumb`);
+        if(node){node.style.backgroundImage=`url('${result.url}')`;node.style.backgroundSize='cover';}
+      }
+    }catch{}
+  });
 }
 
 function initCharFormV6(){
