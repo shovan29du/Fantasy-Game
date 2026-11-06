@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 setlocal
 title Worldweaver Multiverse Tabletop
 cd /d "%~dp0"
