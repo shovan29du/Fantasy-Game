@@ -47,7 +47,7 @@ async function _drainThumbQueue(){
   _thumbRunning=false;
 }
 
-let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:_loadImgCache(),pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[],npcMemories:{},visitedWorldIds:new Set()};
+let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:_loadImgCache(),pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[],npcMemories:{},visitedWorldIds:new Set(),pendingGamePayload:null};
 const SESSION_KEY='worldweaver-session';
 const TERRAIN_ICONS={Forest:'♣',Desert:'▲',Mountain:'⛰',Ocean:'≈',Swamp:'♨',Volcano:'▲',Plains:'❦',City:'⌂',Ruins:'⌂',Space:'✦',Underground:'▼',Tundra:'❄',Jungle:'♣',Savanna:'❦',Canyon:'▲'};
 
@@ -204,7 +204,10 @@ function renderParty(){
 }
 function renderQuests(){
  if(!state.quests.length){$('#questList').innerHTML=`<div class="quest"><p>No active quests.</p><div class="quest-progress"><span>Generate one from the current reality</span><button id="genQuestBtn" class="ghost">✦ Generate</button></div></div>`;const b=$('#genQuestBtn');if(b)b.onclick=generateQuest;return}
- $('#questList').innerHTML=state.quests.map((q,i)=>`<div class="quest"><b>${i===0?'✦ ':''}${safe(q.title||'Quest')}</b><p>${safe(q.description||'')}</p><div class="quest-progress"><span>Progress ${safe(q.progress??0)} · Reward: ${safe(q.reward||'—')}</span><span style="display:flex;gap:4px"><button class="ghost quest-complete-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:var(--green,#4caf50);border-color:var(--green,#4caf50)">✓ Done</button><button class="ghost quest-fail-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:#c0392b;border-color:#c0392b" title="Mark as failed">✗ Fail</button><button class="ghost quest-abandon-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:var(--muted)" title="Abandon silently">—</button></span></div></div>`).join('');
+ $('#questList').innerHTML=state.quests.map((q,i)=>`<div class="quest quest-collapsible" data-qidx="${i}"><div class="quest-header"><b>${i===0?'✦ ':''}${safe(q.title||'Quest')}</b><span class="quest-toggle">▸</span></div><div class="quest-body"><p>${safe(q.description||'')}</p><div class="quest-progress"><span>Progress ${safe(q.progress??0)} · Reward: ${safe(q.reward||'—')}</span><span style="display:flex;gap:4px"><button class="ghost quest-complete-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:var(--green,#4caf50);border-color:var(--green,#4caf50)">✓ Done</button><button class="ghost quest-fail-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:#c0392b;border-color:#c0392b" title="Mark as failed">✗ Fail</button><button class="ghost quest-abandon-btn" data-qidx="${i}" style="font-size:9px;padding:2px 6px;color:var(--muted)" title="Abandon silently">—</button></span></div></div></div>`).join('');
+ $$('.quest-collapsible').forEach(card=>{
+  card.querySelector('.quest-header').onclick=e=>{if(e.target.closest('button'))return;card.classList.toggle('quest-open');const tog=card.querySelector('.quest-toggle');if(tog)tog.textContent=card.classList.contains('quest-open')?'▾':'▸';};
+ });
  $$('.quest-complete-btn').forEach(btn=>btn.onclick=()=>completeQuest(+btn.dataset.qidx));
  $$('.quest-fail-btn').forEach(btn=>btn.onclick=()=>failQuest(+btn.dataset.qidx));
  $$('.quest-abandon-btn').forEach(btn=>btn.onclick=()=>abandonQuest(+btn.dataset.qidx));
@@ -895,30 +898,109 @@ $('#gameBackBtn').onclick=()=>{
 $('#gameCloseBtn').onclick=()=>{showPlayHub();showStartStep('choice');};
 
 let categoriesCache=null;
-async function beginGame(payload){
- // Open the new tab synchronously (inside the user gesture) before any await,
- // otherwise browsers block it as a popup. We navigate it once the session is ready.
+// ── Player character creation step ───────────────────────────────────────────
+function launchPlayerStep(payload){
+ state.pendingGamePayload=payload;
+ const form=$('#playerCharForm');
+ if(form)form.reset();
+ const panel=$('#importExistingCharPanel');
+ if(panel)panel.style.display='none';
+ // Populate existing character dropdown
+ api('/api/characters').then(chars=>{
+  const sel=$('#existingCharSelect');
+  if(!sel)return;
+  sel.innerHTML=chars.length
+   ?chars.map(c=>`<option value="${c.id}" data-char='${JSON.stringify({name:c.name||'',age:c.age||25,gender:c.gender||'',profession:c.profession||'',backstory:c.backstory||''}).replace(/'/g,'&#39;')}'>${safe(c.name)} · ${safe(c.race||'')} ${safe(c.profession||'')} Lv${c.level||1}</option>`).join('')
+   :'<option value="">No saved characters yet</option>';
+ }).catch(()=>{});
+ showStartStep('player');
+}
+
+$('#playerCharForm').onsubmit=async e=>{
+ e.preventDefault();
+ const fd=new FormData(e.currentTarget);
+ const name=(fd.get('charName')||'').trim();
+ if(!name){toast('Enter your character name');return}
+ const btn=e.currentTarget.querySelector('button.gold');
+ if(btn)btn.disabled=true;
+ try{
+  const charData={name,age:parseInt(fd.get('charAge'))||25,gender:fd.get('charGender')||'',profession:fd.get('charProfession')||'',backstory:fd.get('charBackstory')||''};
+  const result=await api('/api/characters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(charData)});
+  state.characterId=result.id;
+  state.sheet=charData;
+  await _doBeginGame(charData);
+ }catch(error){toast(error.message)}
+ finally{if(btn)btn.disabled=false}
+};
+
+$('#importExistingCharBtn').onclick=()=>{
+ const panel=$('#importExistingCharPanel');
+ if(panel)panel.style.display=panel.style.display==='none'?'block':'none';
+};
+
+$('#useExistingCharBtn').onclick=async()=>{
+ const sel=$('#existingCharSelect');
+ if(!sel||!sel.value){toast('Select a character first');return}
+ try{
+  const charData=JSON.parse(sel.selectedOptions[0]?.dataset?.char||'{}');
+  state.characterId=parseInt(sel.value);
+  try{await refreshCharacterState();}catch{}
+  await _doBeginGame(state.sheet||charData);
+ }catch(error){toast(error.message)}
+};
+
+async function _doBeginGame(charInfo){
+ const payload=state.pendingGamePayload;
+ if(!payload)return;
+ const charName=(charInfo.name||'').trim();
+ // Replace "the User" / "User" placeholder with the actual character name
+ if(charName&&payload.custom_text){
+  payload.custom_text=payload.custom_text
+   .replace(/\bthe User\b/g,charName)
+   .replace(/\bUser\b/g,charName);
+ }
+ // Append backstory as AI context (strip on display later)
+ const backstory=(charInfo.backstory||'').trim();
+ if(backstory){
+  payload.custom_text=(payload.custom_text||'')+'\n\n[Character background: '+backstory+']';
+ }
+ payload._charName=charName;
+ // Open the tab NOW, inside this synchronous call chain (launchPlayerStep handler is sync)
  const newTab=window.open('about:blank','_blank');
  try{
+  await _beginGameInTab(payload,newTab);
+ }catch(error){if(newTab&&!newTab.closed)newTab.close();toast(error.message)}
+}
+
+async function _beginGameInTab(payload,newTab){
   const result=await api('/api/scenarios/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const world=toWorldEntry(result.world);
   state.sessionId=result.session_id;
   state.worlds=[world,...state.flavorWorlds.filter(f=>f.id!==world.id)];
   state.worldIndex=0;
   if(!state.characterId){try{const cid=await getExistingCharacterId();if(cid){state.characterId=cid;await refreshCharacterState();}}catch{}}
-  // Full custom_text is stored as lorebook context on the server; show only the final hook line here
+  // Build opening: use the scenario text (with char name) as the opening scene
   let opening;
   if(payload.custom_text){
-   const sents=(payload.custom_text.match(/[^.!?]+[.!?]+(?:\s|$)/g)||[]).map(s=>s.trim()).filter(Boolean);
-   opening=sents.length>2?sents.slice(-2).join(' '):payload.custom_text.slice(0,160);
+   // Strip the [Character background: ...] annotation from what's shown in chat
+   const displayText=payload.custom_text.replace(/\n\n\[Character background:[^\]]*\]$/s,'').trim();
+   opening=displayText.length>600?displayText.slice(0,597)+'…':displayText;
   }else{
-   opening=`${world.name}. The story begins.`;
+   opening=`${world.name}. ${payload._charName?payload._charName+' begins their journey.':'The story begins.'}`;
   }
   state.openingText=opening;state.openingTextUsed=false;
   saveSessionToStorage();
   try{await api('/api/chat/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'assistant',content:opening,session_id:state.sessionId})})}catch{}
   if(newTab&&!newTab.closed){newTab.location.href=location.href;}else{window.open(location.href,'_blank');}
   toast(`New game: ${world.name} — opening in new tab`);
+}
+
+async function beginGame(payload){
+ // Open the new tab synchronously (inside the user gesture) before any await,
+ // otherwise browsers block it as a popup. We navigate it once the session is ready.
+ const newTab=window.open('about:blank','_blank');
+ try{
+  await _beginGameInTab(payload,newTab);
  }catch(error){if(newTab&&!newTab.closed)newTab.close();toast(error.message)}
 }
 // ── Scenario card image queue (max 2 concurrent) ──
@@ -967,7 +1049,12 @@ function renderScenarioCards(cats,filterKey){
   </div>`;
  }).join('')||'<div class="empty-state">No scenarios found.</div>';
  $$('#scenarioCardsGrid .scenario-card').forEach(card=>{
-  const go=()=>{state.pendingCategory=cats.find(c=>c.key===card.dataset.cat);beginGame({category:card.dataset.cat,scenario_name:card.dataset.name,scenario_type:card.dataset.type})};
+  const go=()=>{
+   state.pendingCategory=cats.find(c=>c.key===card.dataset.cat);
+   const pv=card.querySelector('.scenario-card-preview');
+   const openingText=pv?pv.textContent.trim():'';
+   launchPlayerStep({category:card.dataset.cat,scenario_name:card.dataset.name,scenario_type:card.dataset.type,custom_text:openingText||undefined});
+  };
   const pb=card.querySelector('.scenario-card-play');if(pb)pb.onclick=e=>{e.stopPropagation();go()};
   const mb=card.querySelector('.scenario-card-more');
   if(mb)mb.onclick=e=>{
@@ -1012,14 +1099,14 @@ $('#startNewGameBtn').onclick=async()=>{
  }catch(error){toast(error.message)}
 };
 function _activeCatKey(){const v=$('#worldCategorySelect')?.value;return(v&&v!=='all')?v:state.pendingCategory?.key||'fantasy'}
-$('#customScenarioForm').onsubmit=e=>{e.preventDefault();const text=new FormData(e.currentTarget).get('text')||'';if(!text.trim()){toast('Write a scenario first');return}beginGame({category:_activeCatKey(),scenario_name:text.slice(0,40),scenario_type:'custom',custom_text:text})};
+$('#customScenarioForm').onsubmit=e=>{e.preventDefault();const text=new FormData(e.currentTarget).get('text')||'';if(!text.trim()){toast('Write a scenario first');return}launchPlayerStep({category:_activeCatKey(),scenario_name:text.slice(0,40),scenario_type:'custom',custom_text:text})};
 
 $('#showTemplatesBtn').onclick=async()=>{await loadTemplateList();showStartStep('templates')};
 async function loadTemplateList(){
  try{const templates=await api('/api/scenario-templates');$('#templateList').innerHTML=templates.length?templates.map(t=>`<button data-template-id="${t.id}"><b>${safe(t.name)}</b><small>${safe(t.scenario.slice(0,60))}</small></button>`).join(''):'<div class="empty-state">No saved templates yet.</div>';
   $$('#templateList [data-template-id]').forEach(btn=>{
    const template=templates.find(t=>String(t.id)===btn.dataset.templateId);
-   btn.onclick=async()=>{try{const rendered=await api('/api/scenario-templates/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:template.name,scenario:template.scenario})});beginGame({category:state.pendingCategory?.key||'fantasy',scenario_name:template.name,scenario_type:'custom',custom_text:rendered.scenario})}catch(error){toast(error.message)}};
+   btn.onclick=async()=>{try{const rendered=await api('/api/scenario-templates/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:template.name,scenario:template.scenario})});launchPlayerStep({category:state.pendingCategory?.key||'fantasy',scenario_name:template.name,scenario_type:'custom',custom_text:rendered.scenario})}catch(error){toast(error.message)}};
   });
  }catch(error){$('#templateList').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}
 }
@@ -1028,7 +1115,7 @@ $('#newTemplateForm').onsubmit=async e=>{e.preventDefault();const formEl=e.curre
 $('#randomScenarioBtn').onclick=async()=>{await rollRandomScenario();showStartStep('random')};
 async function rollRandomScenario(){try{const result=await api('/api/random/prompts');state.randomScenarioText=result.scenario;$('#randomScenarioText').textContent=result.scenario}catch(error){$('#randomScenarioText').textContent=error.message}}
 $('#rerollScenarioBtn').onclick=rollRandomScenario;
-$('#useRandomScenarioBtn').onclick=()=>beginGame({category:_activeCatKey(),scenario_name:'Random Scenario',scenario_type:'custom',custom_text:state.randomScenarioText});
+$('#useRandomScenarioBtn').onclick=()=>launchPlayerStep({category:_activeCatKey(),scenario_name:'Random Scenario',scenario_type:'custom',custom_text:state.randomScenarioText});
 
 async function loadSavedGame(save){try{await bindSession({sessionId:save.session_id,worldId:save.world_id,characterId:save.character_id});window.open(location.href,'_blank');toast(`Loaded: ${save.save_name} — opening in new tab`)}catch(error){toast(error.message)}}
 $('#startLoadGameBtn').onclick=async()=>{

@@ -87,6 +87,30 @@
         <h2>Saved games</h2>
         <div id="savedGameList" class="start-grid"></div>
       </div>
+
+      <div id="startStep-player" class="start-step" hidden>
+        <button class="ghost back-btn" data-back="category">‹ Back</button>
+        <h2>Your character</h2>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:14px">Who are you in this story?</p>
+        <form id="playerCharForm" class="studio-form">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px">
+            <label>Name <span style="color:var(--gold)">*</span><input name="charName" required placeholder="Aria Stormwind" autocomplete="off"></label>
+            <label>Age<input name="charAge" type="number" min="1" max="9999" placeholder="25" value="25"></label>
+            <label>Gender<select name="charGender"><option value="">— select —</option><option>Male</option><option>Female</option><option>Non-binary</option><option>Other</option></select></label>
+            <label>Occupation<input name="charProfession" placeholder="Soldier, Mage, Rogue…"></label>
+          </div>
+          <label class="wide">Backstory / notes (optional)<textarea name="charBackstory" rows="3" placeholder="Who are you? What drives you? Any special traits or history…"></textarea></label>
+          <div class="form-actions wide" style="margin-top:14px">
+            <button type="button" id="importExistingCharBtn" class="ghost">📂 Import existing character</button>
+            <button class="gold">▶ Start Adventure</button>
+          </div>
+        </form>
+        <div id="importExistingCharPanel" style="display:none;margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:6px">
+          <p style="font-size:12px;color:var(--muted);margin-bottom:8px">Choose a saved character to play as:</p>
+          <select id="existingCharSelect" style="width:100%;background:#141c24;border:1px solid var(--line);color:#e9ecf1;padding:8px 12px;border-radius:4px;font-size:13px;margin-bottom:10px"></select>
+          <button id="useExistingCharBtn" class="gold" style="width:100%">Use this character →</button>
+        </div>
+      </div>
     </div>
   </section>
   <div id="gameArea" hidden>
