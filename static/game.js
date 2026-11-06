@@ -896,6 +896,9 @@ $('#gameCloseBtn').onclick=()=>{showPlayHub();showStartStep('choice');};
 
 let categoriesCache=null;
 async function beginGame(payload){
+ // Open the new tab synchronously (inside the user gesture) before any await,
+ // otherwise browsers block it as a popup. We navigate it once the session is ready.
+ const newTab=window.open('about:blank','_blank');
  try{
   const result=await api('/api/scenarios/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const world=toWorldEntry(result.world);
@@ -914,9 +917,9 @@ async function beginGame(payload){
   state.openingText=opening;state.openingTextUsed=false;
   saveSessionToStorage();
   try{await api('/api/chat/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'assistant',content:opening,session_id:state.sessionId})})}catch{}
-  window.open(location.href,'_blank');
+  if(newTab&&!newTab.closed){newTab.location.href=location.href;}else{window.open(location.href,'_blank');}
   toast(`New game: ${world.name} — opening in new tab`);
- }catch(error){toast(error.message)}
+ }catch(error){if(newTab&&!newTab.closed)newTab.close();toast(error.message)}
 }
 // ── Scenario card image queue (max 2 concurrent) ──
 const _scImgCache={};
