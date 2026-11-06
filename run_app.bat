@@ -49,7 +49,7 @@ echo   ║   Close this window to stop the server.             ║
 echo   ╚══════════════════════════════════════════════════════╝
 echo.
 
-start "" "http://127.0.0.1:8501"
+start msedge "http://127.0.0.1:8501"
 "%PYTHON_EXE%" -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8501
 
 if %errorlevel% neq 0 (
