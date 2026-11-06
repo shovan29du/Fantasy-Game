@@ -923,16 +923,16 @@ const _scImgCache={};
 let _scImgQ=[],_scImgBusy=0;
 function _scDrain(){
  if(_scImgBusy>=2||!_scImgQ.length)return;
- const{name,prompt,img}=_scImgQ.shift();
+ const{name,prompt,style,img}=_scImgQ.shift();
  if(_scImgCache[name]){img.src=_scImgCache[name];img.onload=()=>img.classList.add('sc-loaded');_scDrain();return}
  _scImgBusy++;
- api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Fantasy Art',width:512,height:384,save_to_chat:false})})
+ api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:style||'Fantasy Art',width:512,height:384,save_to_chat:false})})
   .then(r=>{const u=r.url||r.path;if(u){_scImgCache[name]=u;img.src=u;img.onload=()=>img.classList.add('sc-loaded')}})
   .catch(()=>{}).finally(()=>{_scImgBusy--;_scDrain()});
 }
-function _scQueueImg(name,prompt,img){
+function _scQueueImg(name,prompt,img,style){
  if(_scImgCache[name]){img.src=_scImgCache[name];img.onload=()=>img.classList.add('sc-loaded');return}
- _scImgQ.push({name,prompt,img});_scDrain();
+ _scImgQ.push({name,prompt,style:style||'Fantasy Art',img});_scDrain();
 }
 
 let _scObserver=null;
@@ -946,8 +946,11 @@ function renderScenarioCards(cats,filterKey){
   const op=s.opening||'';
   const preview=op.length>0?`<div class="scenario-card-preview" hidden>${safe(op)}</div>`:'' ;
   const teaser=op.length>0?`<div class="scenario-card-teaser">${safe(op.slice(0,120))}${op.length>120?'…':''}</div>`:'';
+  const _sceneHint=op.length>20?op.slice(0,120).replace(/['"<>&]/g,''):'';
+  const _scPrompt=_sceneHint?`${s.catLabel} scene: ${s.name} — ${_sceneHint}, cinematic rpg illustration, atmospheric lighting, detailed environment, no text`:`${s.catLabel} rpg scene, ${s.name}, cinematic illustration, atmospheric, detailed`;
+  const _scStyle={fantasy:'Fantasy Art',anime:'Anime Portrait',zombie:'Dark Fantasy',supernatural:'Dark Fantasy',mystery:'Dark Fantasy',apocalyptic:'Dark Fantasy',cyberpunk:'Cyberpunk',alien_space:'Sci-Fi',drama:'Cinematic',game:'Fantasy Art'}[s.catKey]||'Fantasy Art';
   return `<div class="scenario-card" data-cat="${safe(s.catKey)}" data-name="${safe(s.name)}" data-type="${safe(s.type)}">
-   <div class="scenario-card-img" style="background:${COLORS[s.catKey]||'#141c24'}" data-prompt="${safe(`a ${s.catLabel} rpg scene for ${s.name}, character portrait, cinematic fantasy illustration`)}"><span>${ICONS[s.catKey]||'⚔'}</span><img src="" alt=""></div>
+   <div class="scenario-card-img" style="background:${COLORS[s.catKey]||'#141c24'}" data-prompt="${safe(_scPrompt)}" data-style="${safe(_scStyle)}"><span>${ICONS[s.catKey]||'⚔'}</span><img src="" alt=""></div>
    <div class="scenario-card-body">
     <div class="scenario-card-genre">${safe(s.catLabel)}</div>
     <div class="scenario-card-name">${safe(s.name)}</div>
@@ -990,7 +993,7 @@ function renderScenarioCards(cats,filterKey){
   const imgDiv=entry.target;_scObserver.unobserve(imgDiv);
   const img=imgDiv.querySelector('img'),card=imgDiv.closest('.scenario-card');
   if(!img||!card)return;
-  _scQueueImg(card.dataset.name,imgDiv.dataset.prompt,img);
+  _scQueueImg(card.dataset.name,imgDiv.dataset.prompt,img,imgDiv.dataset.style||'Fantasy Art');
  })},{threshold:0.1,rootMargin:'60px'});
  $$('#scenarioCardsGrid .scenario-card-img').forEach(el=>_scObserver.observe(el));
 }
