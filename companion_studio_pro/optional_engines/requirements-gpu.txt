@@ -1,0 +1,11 @@
+accelerate>=1.6,<2
+diffusers>=0.35,<1
+transformers>=4.51,<5
+safetensors>=0.5,<1
+opencv-python>=4.11,<5
+imageio[ffmpeg]>=2.37,<3
+edge-tts>=7,<8
+faster-whisper>=1.1,<2
+rembg>=2.0.67,<3
+onnxruntime>=1.21,<2
+

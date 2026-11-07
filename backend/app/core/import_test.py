@@ -31,6 +31,7 @@ CORE_MODULES = [
     "core.media_pipeline",
     "core.character_search",
     "core.web_search",
+    "core.tactical_combat",
 ]
 
 UI_MODULES = [
@@ -38,6 +39,11 @@ UI_MODULES = [
     "backend.app.services.chat_service",
     "backend.app.services.character_service",
     "backend.app.services.scenario_template_service",
+    "backend.app.domain.worldscale",
+    "backend.app.domain.weapons",
+    "backend.app.domain.multiverse",
+    "backend.app.domain.spells",
+    "backend.app.domain.dnd_weapons",
 ]
 
 def test_imports(modules: List[str] = None) -> Tuple[List[str], List[Tuple[str, str]]]:
