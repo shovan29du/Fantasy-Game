@@ -1005,21 +1005,46 @@ async function beginGame(payload){
   await _beginGameInTab(payload,newTab);
  }catch(error){if(newTab&&!newTab.closed)newTab.close();toast(error.message)}
 }
-// ── Scenario card image queue (max 2 concurrent) ──
+// ── Scenario cover images ─────────────────────────────────────────────────────
+// _scCovers holds pre-generated persistent covers loaded from /api/scenarios/covers.
+// _scImgCache holds in-session generated fallbacks (not persisted).
+let _scCovers={};
 const _scImgCache={};
 let _scImgQ=[],_scImgBusy=0;
+
+async function _loadScenarioCovers(){
+ try{const data=await api('/api/scenarios/covers');if(data&&typeof data==='object')_scCovers=data;}
+ catch(e){}
+}
+
 function _scDrain(){
  if(_scImgBusy>=2||!_scImgQ.length)return;
- const{name,prompt,style,img}=_scImgQ.shift();
+ const{name,prompt,style,opening,category,img}=_scImgQ.shift();
  if(_scImgCache[name]){img.src=_scImgCache[name];img.onload=()=>img.classList.add('sc-loaded');_scDrain();return}
  _scImgBusy++;
- api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:style||'Fantasy Art',width:512,height:384,save_to_chat:false})})
+ // Try to generate and save a persistent cover via the covers API first
+ api('/api/scenarios/covers/generate',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({name,opening:opening||'',category:category||'',force:false})})
+ .then(r=>{
+  const u=r.url;
+  if(u){_scImgCache[name]=u;_scCovers[name]=u;img.src=u;img.onload=()=>img.classList.add('sc-loaded')}
+ })
+ .catch(()=>{
+  // Fallback: generate ephemeral image via media API
+  return api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({prompt,style:style||'Fantasy Art',width:512,height:384,save_to_chat:false})})
   .then(r=>{const u=r.url||r.path;if(u){_scImgCache[name]=u;img.src=u;img.onload=()=>img.classList.add('sc-loaded')}})
-  .catch(()=>{}).finally(()=>{_scImgBusy--;_scDrain()});
+  .catch(()=>{});
+ })
+ .finally(()=>{_scImgBusy--;_scDrain()});
 }
-function _scQueueImg(name,prompt,img,style){
+
+function _scQueueImg(name,prompt,img,style,opening,category){
+ // If a pre-generated cover exists, use it immediately
+ if(_scCovers[name]){img.src=_scCovers[name];img.onload=()=>img.classList.add('sc-loaded');return}
  if(_scImgCache[name]){img.src=_scImgCache[name];img.onload=()=>img.classList.add('sc-loaded');return}
- _scImgQ.push({name,prompt,style:style||'Fantasy Art',img});_scDrain();
+ _scImgQ.push({name,prompt,style:style||'Fantasy Art',opening:opening||'',category:category||'',img});
+ _scDrain();
 }
 
 let _scObserver=null;
@@ -1065,7 +1090,7 @@ function renderScenarioCards(cats,filterKey){
   const protagonist=SCENARIO_PROTAGONISTS[s.name]||'';
   const storyTitle=protagonist?`${safe(s.name)} <span class="scenario-card-protagonist">· ${safe(protagonist)}'s story</span>`:`${safe(s.name)}`;
   return `<div class="scenario-card" data-cat="${safe(s.catKey)}" data-name="${safe(s.name)}" data-type="${safe(s.type)}">
-   <div class="scenario-card-img" style="background:${COLORS[s.catKey]||'#141c24'}" data-prompt="${safe(_scPrompt)}" data-style="${safe(_scStyle)}"><span>${ICONS[s.catKey]||'⚔'}</span><img src="" alt=""></div>
+   <div class="scenario-card-img" style="background:${COLORS[s.catKey]||'#141c24'}" data-prompt="${safe(_scPrompt)}" data-style="${safe(_scStyle)}" data-opening="${safe(op.slice(0,200))}" data-category="${safe(s.catKey)}"><span>${ICONS[s.catKey]||'⚔'}</span><img src="" alt=""></div>
    <div class="scenario-card-body">
     <div class="scenario-card-genre">${safe(s.catLabel)}</div>
     <div class="scenario-card-name">${storyTitle}</div>
@@ -1108,12 +1133,22 @@ function renderScenarioCards(cats,filterKey){
   card.onclick=go;
  });
  if(_scObserver)_scObserver.disconnect();
+ // Apply any already-loaded pre-generated covers immediately
+ $$('#scenarioCardsGrid .scenario-card').forEach(card=>{
+  const name=card.dataset.name;const url=_scCovers[name];if(!url)return;
+  const img=card.querySelector('.scenario-card-img img');
+  if(img&&!img.classList.contains('sc-loaded')){img.src=url;img.onload=()=>img.classList.add('sc-loaded');}
+ });
  _scObserver=new IntersectionObserver(entries=>{entries.forEach(entry=>{
   if(!entry.isIntersecting)return;
   const imgDiv=entry.target;_scObserver.unobserve(imgDiv);
   const img=imgDiv.querySelector('img'),card=imgDiv.closest('.scenario-card');
   if(!img||!card)return;
-  _scQueueImg(card.dataset.name,imgDiv.dataset.prompt,img,imgDiv.dataset.style||'Fantasy Art');
+  if(_scCovers[card.dataset.name]){
+   img.src=_scCovers[card.dataset.name];img.onload=()=>img.classList.add('sc-loaded');return;
+  }
+  _scQueueImg(card.dataset.name,imgDiv.dataset.prompt,img,imgDiv.dataset.style||'Fantasy Art',
+   imgDiv.dataset.opening||'',imgDiv.dataset.category||'');
  })},{threshold:0.1,rootMargin:'60px'});
  $$('#scenarioCardsGrid .scenario-card-img').forEach(el=>_scObserver.observe(el));
 }
@@ -1121,6 +1156,17 @@ function renderScenarioCards(cats,filterKey){
 $('#startNewGameBtn').onclick=async()=>{
  try{
   if(!categoriesCache)categoriesCache=await api('/api/scenarios/categories');
+  // Load pre-generated covers (non-blocking — renders cards with whatever is ready)
+  _loadScenarioCovers().then(()=>{
+   // Re-inject any covers that loaded after initial render
+   $$('#scenarioCardsGrid .scenario-card').forEach(card=>{
+    const name=card.dataset.name;
+    const url=_scCovers[name];
+    if(!url)return;
+    const img=card.querySelector('.scenario-card-img img');
+    if(img&&!img.classList.contains('sc-loaded')){img.src=url;img.onload=()=>img.classList.add('sc-loaded');}
+   });
+  });
   const sel=$('#worldCategorySelect');
   sel.innerHTML='<option value="all">🌐 All Worlds</option>'+categoriesCache.map(c=>`<option value="${safe(c.key)}">${safe(c.label)} (${c.scenarios.length})</option>`).join('');
   sel.onchange=()=>renderScenarioCards(categoriesCache,sel.value);

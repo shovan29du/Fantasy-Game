@@ -54,6 +54,9 @@ from backend.app.services.scenario_template_service import (
     save_scenario_template,
 )
 from backend.app.world.prebuilt import create_prebuilt_world, get_prebuilt_by_category, get_prebuilt_opening
+from core.scenario_covers import (
+    cover_url, generate_cover, start_pregen_thread, all_covers_map, cover_path,
+)
 from core import tactical_combat
 from backend.app.chat_io.character_builder import build_characters_from_chat
 from backend.app.chat_io.importer import import_chat_file, import_chat_url
@@ -549,6 +552,23 @@ class BoolSettingIn(BaseModel):
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    # Pre-generate scenario cover images in background (skips existing files)
+    try:
+        all_scenarios: list[dict] = []
+        for category in scenarios.CATEGORIES:
+            cat_key = category.get("key", "")
+            if category.get("presets") in ("anime", "game"):
+                continue
+            for name in get_prebuilt_by_category(cat_key):
+                all_scenarios.append({
+                    "name": name,
+                    "opening": get_prebuilt_opening(name),
+                    "category": cat_key,
+                })
+        if all_scenarios:
+            start_pregen_thread(all_scenarios)
+    except Exception as _exc:
+        log.warning("Could not start scenario cover pre-generation: %s", _exc)
 
 
 @app.get("/api/health")
@@ -1214,6 +1234,36 @@ def scenario_categories() -> list[dict]:
             entry["scenarios"] = [{"type": "prebuilt", "name": name, "opening": get_prebuilt_opening(name)} for name in get_prebuilt_by_category(category["key"])]
         result.append(entry)
     return result
+
+
+@app.get("/api/scenarios/covers")
+def scenario_covers() -> dict[str, str]:
+    """Return {scenario_name: url} for every pre-generated cover on disk."""
+    result: dict[str, str] = {}
+    for category in scenarios.CATEGORIES:
+        if category.get("presets") in ("anime", "game"):
+            continue
+        for name in get_prebuilt_by_category(category.get("key", "")):
+            url = cover_url(name)
+            if url:
+                result[name] = url
+    return result
+
+
+class ScenarioCoverIn(BaseModel):
+    name: str
+    opening: str = ""
+    category: str = ""
+    force: bool = False
+
+
+@app.post("/api/scenarios/covers/generate")
+def generate_scenario_cover(payload: ScenarioCoverIn) -> dict:
+    """Generate and save a cover image for one scenario (idempotent unless force=True)."""
+    url = generate_cover(payload.name, payload.opening, payload.category, payload.force)
+    if url:
+        return {"url": url, "name": payload.name}
+    raise HTTPException(status_code=503, detail="Image generation failed.")
 
 
 @app.post("/api/scenarios/start")
