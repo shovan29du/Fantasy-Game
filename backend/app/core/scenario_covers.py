@@ -2,6 +2,8 @@
 Pre-generates and caches a cover image for every prebuilt scenario.
 Images are saved to MEDIA_DIR/scenario_covers/<slug>.jpg and served at
 /media/scenario_covers/<slug>.jpg so they persist across server restarts.
+
+Style target: photorealistic, bright natural lighting, vibrant colors.
 """
 import re
 import threading
@@ -16,482 +18,597 @@ log = get_logger(__name__)
 COVERS_DIR = MEDIA_DIR / "scenario_covers"
 COVERS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Appended to every prompt for consistent bright-realistic look
+_LIGHT = (
+    ", golden hour sunlight, bright natural lighting, vivid colors, "
+    "sharp focus, cinematic 8k photorealistic, ultra-detailed, no text, no watermark"
+)
+
 # ── Creative prompts keyed by exact scenario name ────────────────────────────
-# Each prompt is an evocative scene description tuned for that scenario's
-# genre and backstory. Generic fallback is built from the category + name.
+# Format: (scene_description, style)
+# Style "Cinematic" → "cinematic scene, movie poster quality, dramatic lighting, 4k"
+# Style "Realistic Portrait" → "photorealistic portrait photograph, studio lighting, 8k, detailed face"
+# All prompts have _LIGHT appended at generation time.
 SCENARIO_COVER_PROMPTS: dict[str, tuple[str, str]] = {
-    # (prompt, style)
     "Ninja Village": (
-        "A lone ninja silhouetted against a blood-red moon atop a village rooftop, "
-        "kunai drawn, hidden-leaf headband glinting, shadow clones dispersing in mist, "
-        "dark forest beyond the gates, urgent warning fires on the northern border",
-        "Anime Portrait",
+        "A lone ninja warrior in full shinobi gear standing on a rooftop at sunrise, "
+        "golden morning light catching the headband, misty mountain village below, "
+        "kunai ready in hand, ancient wooden buildings with lanterns still glowing, "
+        "cherry blossom petals drifting past, distant forest with signal fires fading",
+        "Cinematic",
     ),
     "Magic Academy": (
-        "Grand gothic magic academy at twilight, a lone student standing in a corridor of "
-        "floating spell-books and glowing runes, stained-glass windows casting multicolored "
-        "light, mysterious power crackling at their fingertips, professors watching from shadows",
-        "Fantasy Art",
+        "A young student mage standing in a sunlit grand library hall of a gothic magic academy, "
+        "towers of spell-books floating in amber light, stained-glass windows casting rainbow patterns "
+        "on stone floors, magical runes glowing warm gold, wonder in their eyes, "
+        "afternoon sun streaming through tall arched windows",
+        "Cinematic",
     ),
     "Pirate Seas": (
-        "A pirate ship cutting through storm-tossed seas at dawn, jolly roger snapping in the wind, "
-        "Marines fleet visible on the horizon, golden treasure chest glowing below deck, "
-        "crew scrambling on rigging, lightning splitting dark clouds above",
-        "Fantasy Art",
+        "A tall-ship pirate vessel sailing at dawn through tropical waters, "
+        "golden sunrise lighting the billowing sails, jolly roger catching the breeze, "
+        "crew silhouetted in warm light on the rigging, turquoise sea sparkling, "
+        "distant island on the horizon, salt spray catching sunlight",
+        "Cinematic",
     ),
     "Cyberpunk City": (
-        "Neon-drenched cyberpunk alleyway, hacker jacked into a holographic data stream, "
-        "corporate black-site guards reflected in puddles, encrypted data shards flying, "
-        "neon signs in Japanese and English, rain hammering chrome implants",
-        "Cyberpunk",
+        "A skilled hacker in neon-lit cyberpunk alley at golden hour, "
+        "holographic data streams glowing around gloved hands, chrome implants catching sunlight, "
+        "vibrant neon reflections in rain puddles, futuristic cityscape in warm afternoon light, "
+        "electric blue and orange hues, sharp high-tech details",
+        "Cinematic",
     ),
     "Dragon Realm": (
-        "A young rider on a massive obsidian dragon soaring above ancient mountain peaks, "
-        "fire-breathing dragonback corps in the sky behind them, shadow dragons emerging "
-        "from storm clouds, dragon bond energy arcing between rider and dragon",
-        "Fantasy Art",
+        "A dragon rider soaring on a majestic golden dragon over mountain peaks at sunrise, "
+        "brilliant morning light illuminating their bond, ancient peaks below, "
+        "dragon scales catching warm gold and amber sunlight, clouds parting dramatically, "
+        "other dragons visible as silhouettes in the bright sky",
+        "Cinematic",
     ),
     "Hero Academy": (
-        "Superhero academy rooftop at golden hour, student with an unclassified crackling quirk "
-        "standing apart from uniformed classmates, power manifesting as something the textbooks "
-        "have no word for, principal watching from a tower window",
-        "Fantasy Art",
+        "A superhero student in a bright modern academy courtyard, "
+        "unclassified power manifesting as brilliant white-gold light around their hands, "
+        "classmates watching in sunlit uniform, wide blue sky above, "
+        "academy buildings gleaming in strong afternoon sun, sense of potential and wonder",
+        "Cinematic",
     ),
     "Medieval Kingdom": (
-        "A lone traveler clutching a royal knight's seal at the crossroads of a fog-shrouded "
-        "medieval kingdom, cobblestone road stretching east into dark forest, royal banners "
-        "behind them, something watching from the treeline ahead",
-        "Fantasy Art",
+        "A knight errant on horseback at the edge of a sunlit medieval kingdom, "
+        "golden morning light on cobblestone roads and stone walls, "
+        "royal banners snapping in the breeze, distant castle towers catching the sun, "
+        "green countryside stretching ahead, vivid blue sky with scattered clouds",
+        "Cinematic",
     ),
     "The Wrongly Accused": (
-        "A prisoner emerging from a stone dungeon into blinding dawn light, shackle marks on "
-        "wrists, loyal spouse waiting at the gate with tears and secrets, the real culprit's "
-        "shadow still visible inside the prison, stolen artifact glowing in the distance",
-        "Dark Fantasy",
+        "A freed prisoner stepping into brilliant morning sunlight outside a stone fortress, "
+        "squinting into radiant dawn light, shackle marks on wrists visible, "
+        "loyal companion waiting with warm embrace at the gate, "
+        "golden sunrise flooding the courtyard, tears catching the light",
+        "Cinematic",
     ),
     "The Traitor's Escape": (
-        "A rain-soaked princess and two ex-Royal Guards at a candlelit kitchen door at 3am, "
-        "royal crest torn from their armor, urgent whispers, something hidden under a cloak, "
-        "royal cavalry torches approaching down the moonlit road",
-        "Dark Fantasy",
+        "A cloaked princess and two ex-guards on horseback riding hard at dawn through misty countryside, "
+        "first golden light breaking over hills, royal crest hidden under plain cloaks, "
+        "horses' breath steaming in cool morning air, urgent determination on their faces, "
+        "glowing sunrise ahead, pursuit torches fading behind",
+        "Cinematic",
     ),
     "The Suitor's Tournament": (
-        "Renaissance tournament grounds at sunset, armored suitors in the lists, a princess "
-        "watching from a flower-draped balcony with carefully neutral expression, the herald "
-        "smiling knowingly, foreign delegation murmuring in the shadows",
-        "Fantasy Art",
+        "A grand Renaissance tournament in full sunlight, armored knights on horseback, "
+        "colorful pennants snapping in the breeze, golden afternoon light on the lists, "
+        "princess watching from a flower-draped balcony in warm sunlight, "
+        "crowd cheering, vivid heraldic colors, festive and bright",
+        "Cinematic",
     ),
     "Blade for Hire": (
-        "A mercenary standing guard over a cloaked princess on a mountain road, usurper's "
-        "cavalry dust rising in the valley below, classified documents clutched tight, "
-        "three days from the capital, choice hanging in the air",
-        "Dark Fantasy",
+        "A battle-hardened mercenary standing guard on a mountain pass at sunrise, "
+        "golden light on worn armor, cloaked figure of a princess visible behind, "
+        "sweeping valley below in morning mist, sword at ready, "
+        "dust catching sunlight from a distant road, vivid sky above",
+        "Cinematic",
     ),
     "The Prince's Champion": (
-        "A champion standing before castle gates, royal prince watching from the battlements, "
-        "childhood friend-turned-warrior on the other side of the drawbridge in enemy colors, "
-        "ancient title carved in stone above the arch, dawn breaking over besieged towers",
-        "Fantasy Art",
+        "A champion in gleaming armor at castle gates in bright morning sun, "
+        "royal prince watching proudly from sunlit battlements, "
+        "flags and banners brilliant in the light, "
+        "childhood friend in distant colors silhouetted against bright sky, "
+        "golden light across stone walls and cobblestones",
+        "Cinematic",
     ),
     "Fifteen Years a Prisoner": (
-        "A prisoner walking out of a stone dungeon after fifteen years, warden's shaking hands "
-        "holding open the door, golden morning light flooding a cell that held a lifetime of "
-        "injustice, the names of betrayers written on the wall behind",
-        "Dark Fantasy",
+        "A prisoner walking free from a medieval dungeon into radiant golden dawn, "
+        "brilliant sunlight flooding the dark corridor behind them, "
+        "overwhelmed by light after years inside, tears of relief, "
+        "loyal figure waiting in the sun, sky impossibly blue and vast beyond the gate",
+        "Cinematic",
     ),
     "Human and the Elven Queen": (
-        "A human envoy and an ethereal elven queen facing each other across a crystal table in "
-        "an ancient elven court, royal advisors horrified in the background, border map "
-        "untouched between them, something unspoken written in both their eyes",
-        "Fantasy Art",
+        "A human envoy and a luminous elven queen standing in a sunlit crystal hall of an ancient elven palace, "
+        "warm golden light through tall tree-shaped windows, ancient forest visible outside, "
+        "elven advisors in the background, a moment of unexpected connection, "
+        "vibrant autumn leaves outside, warm amber and green hues",
+        "Cinematic",
     ),
     "Ivywood Dormitory": (
-        "A half-empty gothic dormitory corridor at night, one lit room at the end, a student "
-        "arriving with a scholarship letter in an atmosphere of meaningful glances and "
-        "rearranged furniture, something unusual already stirring in the walls",
-        "Dark Fantasy",
+        "A sunlit gothic university dormitory courtyard, ivy-covered walls glowing in afternoon light, "
+        "a new student arriving with a scholarship letter, warm golden windows, "
+        "other students glancing meaningfully from bright doorways, "
+        "dappled light through tall trees, sense of mystery within warmth",
+        "Cinematic",
     ),
     "Wandering Blades": (
-        "An adventuring party camped in an unmapped forest, campfire casting long shadows, "
-        "a mysterious merchant holding a second set of documents, dungeon warden appearing "
-        "from the treeline at dawn, the guild's map burning at the edges",
-        "Fantasy Art",
+        "An adventuring party of four at a bright forest clearing, "
+        "dappled golden sunlight through tall trees, weapons at ease, "
+        "mysterious merchant holding a second map, campfire glowing in warm afternoon light, "
+        "vibrant green forest, ancient ruins visible through the trees",
+        "Cinematic",
     ),
     "The Abandoned Party": (
-        "A lone adventurer watching from a hillside as former party members celebrate a "
-        "victory built on stolen credit, face half in shadow, hands around a cold guild "
-        "contract with their old companions' names on it, resolve in their eyes",
-        "Dark Fantasy",
+        "A lone adventurer standing on a sunlit hilltop watching a distant celebration, "
+        "warm golden afternoon light, determination in their posture, "
+        "guild contract in hand, vivid blue sky, green hills rolling away, "
+        "subtle strength of someone building something better alone",
+        "Cinematic",
     ),
     "Space Station": (
-        "A space station commander in an eerie corridor, sublevel four door sealed with "
-        "warning glyphs, holographic logs of three missing captains floating in the air, "
-        "alien ambassador watching from the airlock, AI core blinking in the darkness",
-        "Sci-Fi",
+        "A space station commander in a bright futuristic observation deck, "
+        "brilliant Earth below filling the viewport, "
+        "clean white station interior with warm accent lighting, "
+        "holographic star charts glowing in the light, "
+        "alien ambassador reflected in the window, vastness of lit space beyond",
+        "Cinematic",
     ),
     "Demon Slayer Corps": (
-        "A demon slayer standing in mist at pre-dawn, unorthodox breathing style visible as "
-        "violet flame, Hashira watching from the shadows, a crow motionless on a branch, "
-        "top-secret mission scroll in hand, moonlit bamboo forest",
-        "Dark Fantasy",
+        "A demon slayer in traditional Taisho-era Japan at golden sunrise, "
+        "vibrant haori catching the morning breeze, wooden village behind, "
+        "breathing technique visible as violet flame in warm sunlight, "
+        "wisteria in bloom, golden rice fields, brilliant dawn sky",
+        "Cinematic",
     ),
     "Post-Apocalypse": (
-        "A vault dweller stepping out of a sealed bunker door for the first time, shielding "
-        "eyes from harsh sunlight over a ruined city skyline, raider smoke on the horizon, "
-        "settlement fires in the distance, the old world on faded wall maps behind them",
-        "Dark Fantasy",
+        "A vault dweller stepping out of an underground bunker into harsh bright sunlight, "
+        "squinting at a golden wasteland stretching to the horizon, "
+        "brilliant blue sky above ruined buildings, dust and light, "
+        "vivid contrast of old-world color inside versus bleached bright world outside",
+        "Cinematic",
     ),
     "Zombie Outbreak": (
-        "Survivor barricaded in a ruined building, zombie horde pressing against boarded windows, "
-        "small group of survivors with dwindling supplies, a distant signal flare cutting "
-        "through smoke-black sky, one person in the group hiding a bite mark",
-        "Dark Fantasy",
+        "Survivors on a rooftop in bright daylight, city below overrun, "
+        "harsh afternoon sun on abandoned streets, signal mirror flashing, "
+        "one survivor scanning the bright horizon with binoculars, "
+        "vibrant blue sky contrasting with chaos below, sharp and vivid",
+        "Cinematic",
     ),
     "Haunted Precinct": (
-        "A detective in a rain-soaked precinct at midnight, crime board covered in impossible "
-        "evidence, ghostly figure visible in the window reflection, cold case files bleeding "
-        "ink, partner's chair empty, something in the evidence room moving",
-        "Dark Fantasy",
+        "A detective in a sunlit precinct office, evidence board on a bright wall, "
+        "afternoon light streaming through venetian blinds casting warm stripes, "
+        "coffee steaming on the desk, old case photos and new leads, "
+        "dust motes in the light, something just out of frame",
+        "Cinematic",
     ),
     "Deep Space Frontier": (
-        "A lone starship at the edge of charted space, alien signal pulsing on the console, "
-        "first contact protocols ready, crew in tense silence, nebula of impossible colors "
-        "outside the viewport, the unknown stretching infinitely ahead",
-        "Sci-Fi",
+        "A starship at the edge of a brilliantly lit nebula, "
+        "vibrant purples, blues, and golds filling space, "
+        "crew member at a bright viewport in wonder at first contact signal, "
+        "alien colors saturating the view, light from two distant suns, vivid and luminous",
+        "Cinematic",
     ),
     "Crown & Shadows": (
-        "A Renaissance court at night, candlelit intrigue in velvet and steel, two noble "
-        "houses scheming at opposite ends of a gilded banquet table, a document being passed "
-        "in secret, throne casting a long shadow over everyone present",
+        "A grand Renaissance court in golden candlelight and afternoon sun through tall windows, "
+        "nobles in vivid brocade and jewels, a document passing discreetly, "
+        "gilded hall glowing warm, tapestries in deep color, "
+        "sunlight and intrigue in equal measure",
         "Cinematic",
     ),
     "The Sterling Family": (
-        "A tense family gathering in a modern manor, old secrets surfacing over inherited "
-        "wealth, family portraits watching from the walls, one envelope on the dining table "
-        "that changes everything, storm clouds gathering outside",
+        "A bright modern manor living room, afternoon sun through large windows, "
+        "family gathered in tense silence, one envelope on the coffee table, "
+        "warm wood and clean lines, light flooding the room, "
+        "family portraits on sunlit walls watching the scene",
         "Cinematic",
     ),
     "Office Rivalry": (
-        "Two professionals facing each other across a glass-walled boardroom, city skyline "
-        "at dusk behind them, promotion document on the desk, the rest of the team "
-        "watching through the glass, everything professional except the tension",
+        "Two sharp professionals facing each other in a glass-walled boardroom, "
+        "brilliant city skyline in golden afternoon sun behind them, "
+        "light flooding the space, polished surfaces reflecting warmth, "
+        "promotion document visible on a bright desk, everything professional and vivid",
         "Cinematic",
     ),
     "Twenty Years Gone": (
-        "A person standing outside the house they left twenty years ago, hand on the gate, "
-        "memories layered like transparencies over the present, old photographs blending "
-        "into the current street, a figure watching from an upstairs window",
+        "A person at the gate of a sunlit house on a bright autumn day, "
+        "golden leaves, warm afternoon light on familiar walls, "
+        "twenty years of absence visible in their posture, "
+        "a figure in an upstairs window, vivid yellow and amber light everywhere",
         "Cinematic",
     ),
     "Blood & Loyalty": (
-        "A crime family gathering at a rain-swept warehouse, loyalty tested by a single "
-        "phone call, alliance maps pinned to concrete walls, two generations of "
-        "obligations facing each other under a bare bulb",
+        "A crime family meeting in a bright warehouse in afternoon light, "
+        "dust motes in golden sunbeams, loyalty maps on a brick wall, "
+        "suited figures in strong directional light, sharp shadows, "
+        "tension and honor facing each other in vivid clarity",
         "Cinematic",
     ),
     "Ridgewood University": (
-        "A sprawling university campus at autumn dusk, secrets buried under ivy and tradition, "
-        "a student standing at a crossroads of two paths that lead to very different futures, "
-        "old campus newspaper headline reflected in a dormitory window",
+        "Ridgewood University campus at golden autumn dusk, "
+        "warm amber light on brick buildings, students on paths, "
+        "a protagonist at a sunlit crossroads, old newspaper headline visible, "
+        "vibrant orange and gold trees, blue sky, brightness and possibility",
         "Cinematic",
     ),
     "Second Marriage": (
-        "A wedding venue at golden hour, two people with histories standing at the altar, "
-        "blended family watching with complicated expressions, fresh flowers over old scars, "
-        "the question of whether this time it means something different",
+        "A wedding venue in golden afternoon sunlight, "
+        "two people at the altar in warm light, "
+        "blended family in vivid attire, "
+        "flowers brilliant in the light, sheer joy mixed with history, "
+        "streaming sun through tall chapel windows",
         "Cinematic",
     ),
     "The Return": (
-        "A person arriving back in the town they once left, duffel bag in hand, old memories "
-        "overlaid on changed streets, familiar faces with unfamiliar expressions, "
-        "the past and present colliding at the threshold of everything unfinished",
+        "A traveler arriving on a bright main street in warm afternoon light, "
+        "familiar storefronts in golden sun, duffel bag in hand, "
+        "faces turning in recognition, vivid daylight, "
+        "the gap between who they were and who they are visible in the light",
         "Cinematic",
     ),
     "The Forgotten Twin": (
-        "Two faces, mirror images, one in shadow, one in light, a family secret splitting "
-        "them down the middle, old photograph in a drawer half-burned, "
-        "one twin building a life on a foundation the other never knew existed",
+        "Two identical faces in one bright photograph held in sunlit hands, "
+        "one half in warm light, one half in cool shadow, "
+        "family album spread on a sunlit table, "
+        "afternoon light through lace curtains, golden and revealing",
         "Cinematic",
     ),
     "Before Everything Breaks": (
-        "A couple at a crossroads in a modern apartment, all the signs of a life built together "
-        "and a conversation long overdue, city lights through the window, "
-        "one moment before something irreversible is said",
+        "A couple at a bright apartment window in warm afternoon light, "
+        "city outside vivid and golden, "
+        "both looking different directions, "
+        "a moment before honesty changes everything, "
+        "warm light on faces, beautiful and tense",
         "Cinematic",
     ),
     "Lily at the Coffee Shop": (
-        "A warm coffee shop in autumn rain, a barista and a regular at opposite sides of a counter "
-        "that keeps shrinking, both holding back something they should probably just say, "
-        "steam rising from two cups going cold",
+        "A warm coffee shop on a bright autumn afternoon, "
+        "golden light through fogged windows, two people at a counter, "
+        "steam rising from cups in warm rays, "
+        "autumn leaves outside catching the sun, "
+        "cozy and luminous, the moment before something is said",
         "Cinematic",
     ),
     "The Ghost at the Wedding": (
-        "A wedding reception, everyone dancing, one person standing still at the edge of the room "
-        "watching someone they were not supposed to see again, old feelings "
-        "arriving uninvited with the plus-one that changes everything",
+        "A bright wedding reception, "
+        "golden evening light on a dancing crowd, "
+        "one person standing still in the warm glow spotting a face from the past, "
+        "champagne catching the light, "
+        "everyone else in vivid color and motion",
         "Cinematic",
     ),
     "Three Exes and a Waitress": (
-        "A diner at closing time, three familiar faces from the past arriving one after another, "
-        "a waitress who thought she had moved on refilling the same coffee cup, "
-        "every table holding a different version of the same story",
+        "A bright diner at noon, afternoon sun flooding in, "
+        "familiar faces arriving one by one, "
+        "a waitress refilling coffee in warm light, "
+        "vintage diner in vivid color, humorous and warm, "
+        "golden sunlight across checkered floors",
         "Cinematic",
     ),
     "Reese": (
-        "A quiet modern space between two people who keep ending up in the same place, "
-        "afternoon light, a conversation that starts as one thing and becomes something else, "
-        "one name that keeps coming up and one person who makes you rethink everything",
+        "Two people in a bright modern space, "
+        "afternoon light streaming through floor-to-ceiling windows, "
+        "a conversation that becomes something more, "
+        "golden hour light on their faces, "
+        "simple and luminous, genuine connection in vivid color",
         "Cinematic",
     ),
     "Audrey": (
-        "An intimate modern setting, two people, a secret kept longer than it should have been, "
-        "the moment before honesty changes the shape of everything, warm light, "
-        "close quarters, a truth arriving without warning",
+        "A bright modern living room, afternoon sun warm through sheer curtains, "
+        "two people close, one about to say something true, "
+        "warm golden light on soft furnishings, "
+        "emotional and luminous, honesty arriving in daylight",
         "Cinematic",
     ),
     "The Beach House": (
-        "A beach house at the edge of summer, sun-faded photographs on the walls, "
-        "old friends gathering for the last time, the sea indifferent, "
-        "one conversation that cannot be postponed any longer",
+        "A beach house deck at golden sunset, "
+        "warm orange light on the ocean and faces, "
+        "old friends gathered for the last summer, "
+        "sunlight on weathered wood and laughter, "
+        "golden water, vivid sky, nostalgia made beautiful by light",
         "Cinematic",
     ),
     "Kendra": (
-        "A modern cityscape at night, two people whose paths keep crossing in ways "
-        "that stopped feeling like coincidence, one honest moment arriving "
-        "in an otherwise complicated series of choices",
+        "Two people walking in a bright city at golden hour, "
+        "warm sunlight on modern streets, "
+        "the city luminous around them, "
+        "a moment of genuine connection in vivid daylight, "
+        "long golden shadows, busy and beautiful",
         "Cinematic",
     ),
     "The Exiled Prince": (
-        "A deposed prince traveling incognito through his own kingdom, hood drawn, "
-        "royal crest hidden, allies and enemies everywhere in the market crowd, "
-        "the palace spires visible and unreachable in the distance, "
-        "a child who recognizes him even in disguise",
-        "Dark Fantasy",
+        "A young man in plain clothes walking through a bright medieval market town, "
+        "golden afternoon sunlight on stone streets, "
+        "hood down just enough to show a noble face, "
+        "colorful market stalls, vivid fabrics, a child recognizing him, "
+        "distant palace towers gleaming in the sun",
+        "Cinematic",
     ),
     "Elina Vos": (
-        "A sharp professional in a modern city, one decision that sent her life "
-        "in an unexpected direction, the past and the person she is becoming "
-        "standing at opposite ends of a glass-walled office at dusk",
+        "A sharp professional woman in a bright glass-walled office at sunset, "
+        "golden city light streaming in, "
+        "the past and future visible in her expression, "
+        "vibrant metropolis through the windows, "
+        "warm light on a face about to make a decision",
         "Cinematic",
     ),
     "Megan at the Door": (
-        "A front door at night, one knock, one face no one expected, "
-        "everything that was settled suddenly unsettled, "
-        "two people standing in the light and dark of a threshold",
+        "A bright front door at noon, strong daylight, "
+        "one unexpected face in the golden light, "
+        "a person at the threshold between who they were and who they are, "
+        "suburban garden bright behind the visitor, "
+        "warm and vivid, everything about to change",
         "Cinematic",
     ),
     "The Poison Bride": (
-        "A medieval banquet hall, a bride in white with a secret in her eyes, "
-        "the groom reaching for a goblet, poison and politics woven into "
-        "the wedding flowers, an alliance built on a lie about to unravel",
-        "Dark Fantasy",
+        "A medieval banquet hall at golden candlelight, "
+        "a bride in luminous white at the head of a long table, "
+        "warm flames catching jewels and silver, "
+        "a goblet being lifted in bright torchlight, "
+        "flowers brilliant in the warm light, "
+        "beauty and danger in equal measure",
+        "Cinematic",
     ),
     "Dragon Riders": (
-        "A formation of dragon riders soaring over ancient peaks at dawn, "
-        "bond energy linking each rider to their dragon, an enemy formation "
-        "emerging from storm clouds ahead, the last intact dragon wing "
-        "standing between the kingdom and extinction",
-        "Fantasy Art",
+        "A formation of dragon riders in brilliant sunrise light over mountain peaks, "
+        "dragons in vivid colors catching first light, "
+        "golden and orange sky, breath of fire illuminating the formation, "
+        "majestic scale and beauty, luminous and epic",
+        "Cinematic",
     ),
     "Witch Trials": (
-        "A colonial-era village at dusk, accused witch standing before an angry crowd, "
-        "real magic flickering at the edges of her hands, the accuser in the front row "
-        "hiding something, storm clouds gathering over the town gallows",
-        "Dark Fantasy",
+        "A colonial village square at high noon, harsh bright sunlight, "
+        "a woman in vivid dress standing before a crowd in strong daylight, "
+        "real magic flickering like blue flame in bright light, "
+        "accuser in the crowd, sky brilliant above the gathering, "
+        "sharp and vivid, justice and injustice in full light",
+        "Cinematic",
     ),
     "The Heist": (
-        "A crew of specialists in a darkened museum at 3am, laser grid visible in dusty air, "
-        "the prize glowing in the case at the center of the room, "
-        "one crew member's earpiece picking up something that was not in the plan",
+        "A crew of specialists in a bright museum space at dawn, "
+        "first light coming through skylights above precious art, "
+        "laser grid visible in dusty morning air, "
+        "golden exhibit lighting on a glass case, "
+        "vivid oil paintings on the walls, tension in warm morning light",
         "Cinematic",
     ),
     "Fallen Kingdom": (
-        "A once-great kingdom in ruins, a lone figure standing in the rubble of the throne room, "
-        "crown half-buried in debris, loyal retainers forming a last guard, "
-        "the conquering force's banners visible through shattered stained glass",
-        "Dark Fantasy",
+        "Ruins of a great throne room in bright afternoon sun streaming through broken walls, "
+        "golden light on toppled pillars and scattered crown, "
+        "a lone figure standing in the light, "
+        "vibrant sky visible through the ruined ceiling, "
+        "flowers growing through cracks in stone, life returning",
+        "Cinematic",
     ),
     "The Oracle's Apprentice": (
-        "A mystical oracle's chamber at the edge of a cliff, apprentice kneeling before "
-        "a vision pool showing three possible futures, the oracle's eyes already closed, "
-        "a prophecy half-spoken hanging in the incense smoke",
-        "Fantasy Art",
+        "A mystical mountain temple at sunrise, "
+        "golden morning light flooding through open archways, "
+        "apprentice kneeling before a glowing vision pool, "
+        "warm amber light on stone and incense smoke, "
+        "three paths of light in the vision, luminous and otherworldly",
+        "Cinematic",
     ),
     "Shipwrecked": (
-        "Survivors on a tropical island shore at dawn, ship wreckage in the surf, "
-        "dense unknown jungle ahead, one among them with a secret about why the ship went down, "
-        "first light revealing something in the treeline that should not be there",
-        "Fantasy Art",
+        "Shipwreck survivors on a beautiful tropical beach at golden morning, "
+        "brilliant blue water, vivid green jungle, warm sun already high, "
+        "ship wreckage catching morning light in the surf, "
+        "paradise threatening and beautiful in equal measure",
+        "Cinematic",
     ),
     "Vampire Court": (
-        "An opulent vampire court at midnight, centuries of power arranged around a "
-        "throne of onyx, a human standing in the center of it all with an invitation "
-        "no one was supposed to extend, blood-red chandeliers above, "
-        "ancient politics in every shadowed alcove",
-        "Dark Fantasy",
+        "An opulent court hall lit by hundreds of candles and daylight blocked by heavy drapes, "
+        "warm amber light on centuries of gold and velvet, "
+        "a human guest standing in a pool of light among shadows, "
+        "rich jewel tones, vivid opulence, candle flames reflecting in dark eyes",
+        "Cinematic",
     ),
     "The Wild Hunt": (
-        "A moonlit ancient forest, the Wild Hunt thundering through the trees, "
-        "spectral horses and riders in a rider's wake, one mortal who was not supposed "
-        "to hear the horn but did, the boundary between worlds thinning with every step",
-        "Dark Fantasy",
+        "An ancient forest at golden twilight, shafts of amber light through tall oaks, "
+        "spectral riders in warm mist, one mortal in a pool of golden light, "
+        "magical boundary visible as shimmer in the last sunlight, "
+        "vivid autumn leaves, luminous and haunting",
+        "Cinematic",
     ),
     "Time Rift": (
-        "A temporal anomaly tearing through a modern city street, past and future bleeding "
-        "into the present, a figure standing at the rift with the ability to close it "
-        "or walk through it, every choice echoing in both directions",
-        "Sci-Fi",
+        "A temporal rift blazing with golden-white light tearing through a bright modern city street, "
+        "past and future visible in luminous layers, "
+        "a figure standing in dazzling light at the threshold, "
+        "brilliant light flooding the scene, vivid and overwhelming",
+        "Cinematic",
     ),
     "Alien Contact": (
-        "First contact moment on a research outpost, an alien presence making itself known "
-        "through light and impossible geometry, two species trying to understand each other "
-        "across a gulf no translator was built for",
-        "Sci-Fi",
+        "First contact on a sunlit research outpost, "
+        "brilliant alien light pulsing in impossible geometry, "
+        "scientist stepping forward in golden morning sun, "
+        "vibrant aurora-like colors filling the sky, "
+        "two forms of life in a pool of radiant shared light",
+        "Cinematic",
     ),
     "Bounty Hunter": (
-        "A lone bounty hunter on a dust-blown frontier, wanted poster in hand, "
-        "target visible in the cantina window across the street, "
-        "three other hunters closing in from different angles, "
-        "one of them is not what they appear",
-        "Fantasy Art",
+        "A lone bounty hunter on a bright frontier town main street at high noon, "
+        "harsh sunlight on weathered leather and iron, "
+        "wanted poster in hand, target visible through a bright saloon window, "
+        "vivid blue sky, strong shadows, classic and sharp",
+        "Cinematic",
     ),
     "The Last Mage": (
-        "The last surviving mage in a world where magic is hunted, "
-        "power barely contained behind trembling hands, inquisitors visible in the city below, "
-        "the final spellbook hidden under floorboards, one decision that changes everything",
-        "Dark Fantasy",
+        "A mage in a sunlit cottage attic, "
+        "afternoon light through dusty windows, "
+        "power glowing warm gold in trembling hands, "
+        "inquisitor soldiers visible in the bright street below, "
+        "last spell-book in golden light, vivid and urgent",
+        "Cinematic",
     ),
     "Rebellion": (
-        "A resistance leader in an underground cell, liberation maps spread across a table, "
-        "a regime informer's face on the board, the city above still sleeping, "
-        "the moment a movement becomes a revolution",
-        "Dark Fantasy",
+        "A resistance leader in a bright warehouse meeting room, "
+        "afternoon light through high windows on a planning table, "
+        "liberation maps, vivid faces in strong directional light, "
+        "urgency and hope in equal measure, "
+        "golden light on determined faces",
+        "Cinematic",
     ),
     "Underground Arena": (
-        "An underground fighting arena packed with roaring spectators, "
-        "a fighter standing over a defeated opponent in a ring of torchlight, "
-        "a shadowy patron in the VIP box who controls who wins and who disappears",
-        "Dark Fantasy",
+        "An underground arena lit by blazing torches and bright spotlights, "
+        "fighter standing over an opponent in a ring of vivid orange flame and white light, "
+        "roaring crowd in the warm bright haze, "
+        "sweat and muscle in sharp relief, dramatic and luminous",
+        "Cinematic",
     ),
     "The Forgotten God": (
-        "A crumbling temple in a jungle reclaimed by nature, carvings of a god "
-        "no one worships anymore coming to life at the touch of the last believer, "
-        "divine power awakening in the ruins, the old faith and the new world colliding",
-        "Fantasy Art",
+        "Ancient jungle temple at golden noon, "
+        "bright sunlight breaking through jungle canopy onto stone carvings coming alive, "
+        "divine light emanating from the last believer's touch, "
+        "vivid green jungle exploding with color in the light, "
+        "gold and amber light on forgotten glyphs",
+        "Cinematic",
     ),
     "Prison Break": (
-        "A maximum-security prison at night, one person with a plan that took three years, "
-        "air vent diagram scratched into a floor tile, guards making their rounds, "
-        "a contact on the outside blinking morse code from a flashlight",
-        "Dark Fantasy",
+        "A prison courtyard in bright daylight, "
+        "one prisoner studying the layout in strong afternoon sun, "
+        "light and shadow of walls and fences, "
+        "a contact's signal catching sunlight from a distant rooftop, "
+        "vivid and sharp, freedom visible in the bright sky above the walls",
+        "Cinematic",
     ),
     "War Correspondent": (
-        "A journalist in a war zone at the golden hour of a brief ceasefire, "
-        "notebook in one hand and camera in the other, standing between two armies "
-        "and the story no one is supposed to tell, their press badge the only armor they have",
+        "A journalist at the edge of a golden ceasefire in warm afternoon sun, "
+        "press badge in the light, notebook and camera in hand, "
+        "two lines of soldiers visible in golden haze on either side, "
+        "truth between them glowing in the warm light, vivid and human",
         "Cinematic",
     ),
     "Royal Scandal": (
-        "A royal palace in uproar, compromising documents on the king's desk, "
-        "courtiers frozen mid-bow at the revelation, the dynasty's future "
-        "balanced on what happens in the next five minutes",
-        "Fantasy Art",
+        "A royal palace room flooded with morning light, "
+        "courtiers in vivid dress frozen in strong sunlight, "
+        "a document on the king's desk catching the light, "
+        "gold and color everywhere, scandal and splendor in bright relief",
+        "Cinematic",
     ),
     "The Cure": (
-        "A scientist in a makeshift lab surrounded by specimen vials, the cure visible "
-        "in a single glowing flask, pharmaceutical agents visible through the window, "
-        "the choice between who gets to live and who controls the knowledge",
-        "Sci-Fi",
+        "A scientist in a bright modern lab, "
+        "afternoon sunlight on stainless steel and glass, "
+        "a glowing flask on a sunlit counter, "
+        "pharmaceutical agents visible through a bright window, "
+        "hope and urgency in the light, vivid and clear",
+        "Cinematic",
     ),
     "Galactic Senate": (
-        "An alien senate chamber of impossible architecture, a human delegate "
-        "standing before a hundred species at a turning-point vote, "
-        "the future of the galaxy hanging on a speech that must not fail",
-        "Sci-Fi",
+        "A vast alien senate chamber flooded with brilliant light from above, "
+        "a human delegate in a pool of bright light at the center, "
+        "hundreds of alien species in vivid colors on tiered seats, "
+        "light beams crisscrossing the chamber, luminous and epic",
+        "Cinematic",
     ),
     "The Cult": (
-        "An isolated compound at dusk, true believers going about evening rituals, "
-        "one person who sees through the ceremony to something darker underneath, "
-        "the leader's eyes finding them across the courtyard",
-        "Dark Fantasy",
+        "A compound at golden sunset, warm orange light on whitewashed walls, "
+        "believers in pale robes moving in evening light, "
+        "one person at the edge of the crowd in the last daylight, "
+        "the leader's gaze finding them in the warm glow, vivid and unsettling",
+        "Cinematic",
     ),
     "River Crossing": (
-        "A flooded river crossing in a storm, two strangers who must trust each other "
-        "to reach the other bank, what each is running from visible in what they carry, "
-        "the bridge gone, the current rising",
+        "Two strangers at a bright riverbank in afternoon sun, "
+        "golden light on rushing water, makeshift rope bridge, "
+        "both soaked and vivid in strong daylight, "
+        "trust forming in the light, lush green banks, "
+        "blue sky and brilliant water",
         "Cinematic",
     ),
     "The Inheritance": (
-        "A dusty Victorian estate at the reading of a will, estranged family gathered "
-        "around a lawyer's table, one envelope addressed to someone no one expected, "
-        "portraits of the deceased watching the living argue",
+        "A sunlit Victorian estate dining room, "
+        "afternoon light through tall windows on a gathered family, "
+        "a lawyer at the head of the table, one envelope in a pool of light, "
+        "portraits on bright walls, vivid dress and expressions, warm and revealing",
         "Cinematic",
     ),
     "Island Survival": (
-        "A group of strangers on a lush but dangerous island, smoke from a makeshift signal "
-        "fire, shelter half-built, one person who knows exactly how they all got here "
-        "but hasn't said so yet, something moving in the jungle at night",
-        "Fantasy Art",
+        "Survivors on a vivid tropical island beach at bright midday, "
+        "brilliant sun, turquoise water, intense green jungle, "
+        "signal fire smoke rising into blue sky, "
+        "one person looking at the trees with something they haven't said yet, "
+        "paradise and danger in full color",
+        "Cinematic",
     ),
     "Cold Case": (
-        "A detective reopening a cold case file at midnight, evidence board with "
-        "twenty-year-old photographs, a new lead that changes everything, "
-        "the original detective's notes with something crossed out but still readable",
-        "Dark Fantasy",
+        "A detective in a bright office at noon, "
+        "sunlight on a cold case evidence board, "
+        "new photograph in strong afternoon light, "
+        "twenty-year-old file in the glow, "
+        "the moment a case breaks open in full vivid daylight",
+        "Cinematic",
     ),
     "The Duel": (
-        "Two duelists at dawn mist, seconds stepping back, "
-        "the event that made this inevitable written in both their stances, "
-        "the whole question of honor and pride and what it costs narrowed to one moment",
-        "Fantasy Art",
+        "Two duelists at dawn mist and golden light on an open field, "
+        "brilliant sunrise behind them, seconds stepping back, "
+        "dew on the grass catching the light, "
+        "honor and consequence in the first golden rays, "
+        "vivid morning colors, clear and final",
+        "Cinematic",
     ),
     "Academy for Villains": (
-        "A dark academy for those with villainous potential, students learning arts "
-        "that heroes fear, one among them questioning who decided what counts as evil, "
-        "the headmaster watching rankings as if they predict the future",
-        "Dark Fantasy",
+        "A dark academy campus in strong afternoon sun, "
+        "imposing Gothic architecture vivid against blue sky, "
+        "students in black and deep colors in bright daylight, "
+        "one student looking up at the sky with a question, "
+        "sharp contrast of brilliant light and shadow",
+        "Cinematic",
     ),
     "Midnight Market": (
-        "A hidden market that only exists after midnight, impossible goods in impossible stalls, "
-        "a dealer with a proposition that offers exactly what you want "
-        "and something you are only beginning to understand you would have to give",
-        "Dark Fantasy",
+        "A hidden night market illuminated by thousands of warm glowing lanterns, "
+        "brilliant warm light on impossible goods, "
+        "a dealer in a pool of golden lamp light, "
+        "glowing contracts and vivid wares, "
+        "magical luminosity, like a thousand suns in miniature",
+        "Cinematic",
     ),
     "The Siege": (
-        "A fortress under siege at nightfall, walls holding but barely, "
-        "a defender who knows something the attackers do not, "
-        "the commander choosing between survival and a secret that changes why the fortress matters",
-        "Dark Fantasy",
+        "Castle walls in vivid morning light, defenders in the sun, "
+        "attackers below in bright open field, "
+        "commander at the battlements in strong golden light, "
+        "blue sky above, vivid banners, the fortress gleaming",
+        "Cinematic",
     ),
     "Fae Bargain": (
-        "A moonlit crossroads between worlds, a fae creature and a mortal "
-        "negotiating terms that only one of them fully understands, "
-        "glowing contracts written in living light, the fine print in a language "
-        "no human was meant to read",
-        "Fantasy Art",
+        "A forest crossroads at golden dusk, "
+        "warm amber light on a fae creature of living light and a mortal in the glow, "
+        "glowing contracts rising like fireflies in the warm air, "
+        "golden leaves, luminous mushroom rings, vivid and magical",
+        "Cinematic",
     ),
     "Deep Jungle": (
-        "An expedition deep in an uncharted jungle, ancient ruins emerging from the canopy, "
-        "something old awakening at the explorers' approach, "
-        "the guide stopping and refusing to go further, eyes on the treeline",
-        "Fantasy Art",
+        "An expedition team at the edge of ancient jungle ruins at high noon, "
+        "brilliant tropical sun through the canopy, "
+        "golden light on stone carvings emerging from green, "
+        "vibrant jungle colors, the guide frozen at the treeline, "
+        "light and shadow playing on something ancient",
+        "Cinematic",
     ),
     "Haunted Circus": (
-        "A traveling circus at midnight, performers who are not entirely human, "
-        "a tent that leads somewhere the tickets do not mention, "
-        "one visitor who notices that the acts never end and the audience never leaves",
-        "Dark Fantasy",
+        "A traveling circus tent in golden late afternoon sun, "
+        "warm amber light on colorful performers, "
+        "one visitor in bright daylight noticing something that doesn't quite fit, "
+        "vivid reds and yellows, the impossible visible in full light, "
+        "beautiful and strange",
+        "Cinematic",
     ),
     "The Healer": (
-        "A healer in a warzone between factions, treating both sides in a cellar clinic, "
-        "the power to save anyone and the impossibility of choosing who, "
-        "a secret in their healing gift that one faction would kill for",
-        "Fantasy Art",
+        "A healer in a bright field clinic between battle lines, "
+        "golden afternoon sun on a makeshift tent, "
+        "treating two opposing soldiers in warm light, "
+        "vivid bandages and healing hands in the sun, "
+        "compassion in full daylight, the war distant beyond the warmth",
+        "Cinematic",
     ),
     "Underground Railroad": (
-        "A network of safe houses in a historical setting, a conductor moving refugees "
-        "through the night, lamplight signals in windows, an informant somewhere on the route, "
-        "the next house two miles through dark forest",
+        "A conductor leading refugees through a bright autumn forest, "
+        "golden afternoon light through tall trees, "
+        "vivid fall colors, lamplight signals in distant farmhouse windows, "
+        "urgency and hope in the golden day, "
+        "light showing the path forward",
         "Cinematic",
     ),
 }
@@ -515,24 +632,25 @@ def cover_url(scenario_name: str) -> str | None:
 
 def _build_prompt(scenario_name: str, opening_text: str = "", category: str = "") -> tuple[str, str]:
     if scenario_name in SCENARIO_COVER_PROMPTS:
-        return SCENARIO_COVER_PROMPTS[scenario_name]
-    # Creative fallback: use opening text excerpt + genre
+        base, style = SCENARIO_COVER_PROMPTS[scenario_name]
+        return base + _LIGHT, style
+    # Creative fallback from opening text
     genre_map = {
-        "fantasy": "Fantasy Art", "anime": "Anime Portrait", "cyberpunk": "Cyberpunk",
-        "supernatural": "Dark Fantasy", "apocalyptic": "Dark Fantasy", "zombie": "Dark Fantasy",
-        "mystery": "Dark Fantasy", "drama": "Cinematic", "alien_space": "Sci-Fi",
+        "fantasy": "Fantasy Art", "anime": "Cinematic", "cyberpunk": "Cinematic",
+        "supernatural": "Cinematic", "apocalyptic": "Cinematic", "zombie": "Cinematic",
+        "mystery": "Cinematic", "drama": "Cinematic", "alien_space": "Cinematic",
     }
-    style = genre_map.get(category, "Fantasy Art")
+    style = genre_map.get(category, "Cinematic")
     excerpt = opening_text[:180].replace("\n", " ").strip() if opening_text else ""
     if excerpt:
         prompt = (
-            f"Cinematic RPG scene for '{scenario_name}': {excerpt} — "
-            "atmospheric illustration, dramatic lighting, detailed environment, no text"
+            f"Cinematic RPG scene for '{scenario_name}': {excerpt}"
+            + _LIGHT
         )
     else:
         prompt = (
             f"{category or 'fantasy'} RPG scene, '{scenario_name}', "
-            "cinematic illustration, atmospheric lighting, epic composition, no text"
+            "cinematic illustration, atmospheric, detailed" + _LIGHT
         )
     return prompt, style
 
@@ -541,7 +659,7 @@ def generate_cover(scenario_name: str, opening_text: str = "", category: str = "
                    force: bool = False) -> str | None:
     """Generate and save the cover image for one scenario.
     Returns the /media/… URL on success, None on failure.
-    Skips generation if the file already exists (unless force=True).
+    Skips generation if file already exists (unless force=True).
     """
     path = cover_path(scenario_name)
     if path.exists() and not force:
@@ -567,18 +685,21 @@ def generate_cover(scenario_name: str, opening_text: str = "", category: str = "
 
 def pregenerate_all_covers(scenarios: list[dict], force: bool = False) -> None:
     """Background thread: generate covers for every scenario that lacks one."""
-    log.info("Scenario cover pre-generation started (%d scenarios)", len(scenarios))
+    total = len(scenarios)
+    log.info("Scenario cover pre-generation started (%d scenarios, force=%s)", total, force)
     generated = 0
-    for s in scenarios:
+    for i, s in enumerate(scenarios):
         name = s.get("name", "")
         if not name:
             continue
         if not force and cover_path(name).exists():
             continue
+        log.info("Generating cover %d/%d: %s", i + 1, total, name)
         url = generate_cover(
             name,
             opening_text=s.get("opening", ""),
             category=s.get("category", ""),
+            force=force,
         )
         if url:
             generated += 1

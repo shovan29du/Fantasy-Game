@@ -552,21 +552,21 @@ class BoolSettingIn(BaseModel):
 @app.on_event("startup")
 def startup() -> None:
     init_db()
-    # Pre-generate scenario cover images in background (skips existing files)
+    # Pre-generate scenario cover images in background (force=True regenerates all)
     try:
-        all_scenarios: list[dict] = []
-        for category in scenarios.CATEGORIES:
-            cat_key = category.get("key", "")
-            if category.get("presets") in ("anime", "game"):
+        _all_scenarios: list[dict] = []
+        for _cat in scenarios.CATEGORIES:
+            _cat_key = _cat.get("key", "")
+            if _cat.get("presets") in ("anime", "game"):
                 continue
-            for name in get_prebuilt_by_category(cat_key):
-                all_scenarios.append({
-                    "name": name,
-                    "opening": get_prebuilt_opening(name),
-                    "category": cat_key,
+            for _name in get_prebuilt_by_category(_cat_key):
+                _all_scenarios.append({
+                    "name": _name,
+                    "opening": get_prebuilt_opening(_name),
+                    "category": _cat_key,
                 })
-        if all_scenarios:
-            start_pregen_thread(all_scenarios)
+        if _all_scenarios:
+            start_pregen_thread(_all_scenarios, force=True)
     except Exception as _exc:
         log.warning("Could not start scenario cover pre-generation: %s", _exc)
 
@@ -1264,6 +1264,22 @@ def generate_scenario_cover(payload: ScenarioCoverIn) -> dict:
     if url:
         return {"url": url, "name": payload.name}
     raise HTTPException(status_code=503, detail="Image generation failed.")
+
+
+@app.post("/api/scenarios/covers/regenerate-all")
+def regenerate_all_covers() -> dict:
+    """Kick off background regeneration of ALL scenario covers (force, overwrites existing)."""
+    all_scens: list[dict] = []
+    for cat in scenarios.CATEGORIES:
+        cat_key = cat.get("key", "")
+        if cat.get("presets") in ("anime", "game"):
+            continue
+        for name in get_prebuilt_by_category(cat_key):
+            all_scens.append({"name": name, "opening": get_prebuilt_opening(name), "category": cat_key})
+    if not all_scens:
+        return {"started": False, "count": 0}
+    start_pregen_thread(all_scens, force=True)
+    return {"started": True, "count": len(all_scens)}
 
 
 @app.post("/api/scenarios/start")
