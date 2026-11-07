@@ -961,10 +961,15 @@ async function _doBeginGame(charInfo){
    .replace(/\bUser\b/g,charName);
   if(defaultProt)payload.custom_text=payload.custom_text.replace(new RegExp(`\\b${defaultProt}\\b`,'g'),charName);
  }
- // Append backstory as AI context (strip on display later)
- const backstory=(charInfo.backstory||'').trim();
- if(backstory){
-  payload.custom_text=(payload.custom_text||'')+'\n\n[Character background: '+backstory+']';
+ // Append full character profile as AI context (stripped from display later)
+ const bgParts=[];
+ if((charInfo.name||'').trim()) bgParts.push('Name: '+charInfo.name.trim());
+ if(charInfo.age) bgParts.push('Age: '+charInfo.age);
+ if((charInfo.gender||'').trim()) bgParts.push('Gender: '+charInfo.gender.trim());
+ if((charInfo.profession||'').trim()) bgParts.push('Profession: '+charInfo.profession.trim());
+ if((charInfo.backstory||'').trim()) bgParts.push('Backstory: '+charInfo.backstory.trim());
+ if(bgParts.length){
+  payload.custom_text=(payload.custom_text||'')+'\n\n[Character background: '+bgParts.join('. ')+']';
  }
  payload._charName=charName;
  // Open the tab NOW, inside this synchronous call chain (launchPlayerStep handler is sync)
