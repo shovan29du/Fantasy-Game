@@ -953,11 +953,13 @@ async function _doBeginGame(charInfo){
  const payload=state.pendingGamePayload;
  if(!payload)return;
  const charName=(charInfo.name||'').trim();
- // Replace "the User" / "User" placeholder with the actual character name
+ // Replace "the User" / "User" placeholder and the scenario's default protagonist with the actual character name
  if(charName&&payload.custom_text){
+  const defaultProt=payload.scenario_name?SCENARIO_PROTAGONISTS[payload.scenario_name]:'';
   payload.custom_text=payload.custom_text
    .replace(/\bthe User\b/g,charName)
    .replace(/\bUser\b/g,charName);
+  if(defaultProt)payload.custom_text=payload.custom_text.replace(new RegExp(`\\b${defaultProt}\\b`,'g'),charName);
  }
  // Append backstory as AI context (strip on display later)
  const backstory=(charInfo.backstory||'').trim();
@@ -1021,6 +1023,32 @@ function _scQueueImg(name,prompt,img,style){
 }
 
 let _scObserver=null;
+// Protagonist character names for each prebuilt scenario
+const SCENARIO_PROTAGONISTS={
+ 'Ninja Village':'Kaito','Magic Academy':'Lyra','Pirate Seas':'Riven',
+ 'Cyberpunk City':'Nyx','Dragon Realm':'Ash','Hero Academy':'Hikaru',
+ 'Medieval Kingdom':'Aldric','The Wrongly Accused':'Seraph','The Traitor\'s Escape':'Dax',
+ 'The Suitor\'s Tournament':'Celia','Blade for Hire':'Talon','The Prince\'s Champion':'Kira',
+ 'Fifteen Years a Prisoner':'Orion','Human and the Elven Queen':'Morgan',
+ 'Ivywood Dormitory':'Ember','Wandering Blades':'Zane','The Abandoned Party':'Freya',
+ 'Space Station':'Nova','Demon Slayer Corps':'Ren','Post-Apocalypse':'Rex',
+ 'Zombie Outbreak':'Sage','Haunted Precinct':'Quinn','Deep Space Frontier':'Ara',
+ 'Crown & Shadows':'Isolde','The Sterling Family':'Blake','Office Rivalry':'Avery',
+ 'Twenty Years Gone':'Lena','Blood & Loyalty':'Marco','Ridgewood University':'Cassie',
+ 'Second Marriage':'Diana','Dragon Riders':'Faelen','Witch Trials':'Mira',
+ 'The Heist':'Ghost','Fallen Kingdom':'Brennan','The Oracle\'s Apprentice':'Vesper',
+ 'Shipwrecked':'Coral','Vampire Court':'Lucian','The Wild Hunt':'Briar',
+ 'Time Rift':'Echo','Alien Contact':'Juno','Bounty Hunter':'Steel',
+ 'The Last Mage':'Cyrus','Rebellion':'Flint','Underground Arena':'Crix',
+ 'The Forgotten God':'Aria','Prison Break':'Vox','War Correspondent':'Kai',
+ 'Royal Scandal':'Elara','The Cure':'Dex','Galactic Senate':'Zara',
+ 'The Cult':'Silas','River Crossing':'Ida','The Inheritance':'Jules',
+ 'Island Survival':'Finn','Cold Case':'Reeve','The Duel':'Theron',
+ 'Academy for Villains':'Shade','Midnight Market':'Coin','The Siege':'Ward',
+ 'Fae Bargain':'Puck','The Exiled Prince':'Daric','Deep Jungle':'Rook',
+ 'Haunted Circus':'Milo','The Healer':'Wren','Underground Railroad':'Iris'
+};
+
 function renderScenarioCards(cats,filterKey){
  const ICONS={fantasy:'⚔',anime:'✨',gaming:'🎮',cyberpunk:'⚡',supernatural:'👁',apocalyptic:'☢',zombie:'🧟',mystery:'🔍',drama:'💔',alien_space:'🚀'};
  const COLORS={fantasy:'#1a1a3e',anime:'#2e1a3e',gaming:'#0d1f0d',cyberpunk:'#0a1f1a',supernatural:'#2a1a2a',apocalyptic:'#2e1a0d',zombie:'#1a2a1a',mystery:'#1a1a2a',drama:'#2a0d1a',alien_space:'#0d1a2e'};
@@ -1034,11 +1062,13 @@ function renderScenarioCards(cats,filterKey){
   const _sceneHint=op.length>20?op.slice(0,120).replace(/['"<>&]/g,''):'';
   const _scPrompt=_sceneHint?`${s.catLabel} scene: ${s.name} — ${_sceneHint}, cinematic rpg illustration, atmospheric lighting, detailed environment, no text`:`${s.catLabel} rpg scene, ${s.name}, cinematic illustration, atmospheric, detailed`;
   const _scStyle={fantasy:'Fantasy Art',anime:'Anime Portrait',zombie:'Dark Fantasy',supernatural:'Dark Fantasy',mystery:'Dark Fantasy',apocalyptic:'Dark Fantasy',cyberpunk:'Cyberpunk',alien_space:'Sci-Fi',drama:'Cinematic',game:'Fantasy Art'}[s.catKey]||'Fantasy Art';
+  const protagonist=SCENARIO_PROTAGONISTS[s.name]||'';
+  const storyTitle=protagonist?`${safe(s.name)} <span class="scenario-card-protagonist">· ${safe(protagonist)}'s story</span>`:`${safe(s.name)}`;
   return `<div class="scenario-card" data-cat="${safe(s.catKey)}" data-name="${safe(s.name)}" data-type="${safe(s.type)}">
    <div class="scenario-card-img" style="background:${COLORS[s.catKey]||'#141c24'}" data-prompt="${safe(_scPrompt)}" data-style="${safe(_scStyle)}"><span>${ICONS[s.catKey]||'⚔'}</span><img src="" alt=""></div>
    <div class="scenario-card-body">
     <div class="scenario-card-genre">${safe(s.catLabel)}</div>
-    <div class="scenario-card-name">${safe(s.name)}</div>
+    <div class="scenario-card-name">${storyTitle}</div>
     ${teaser}
     <div class="scenario-card-actions">
      ${op.length>0?`<button class="scenario-card-more" title="Show backstory">＋</button>`:''}
@@ -2345,6 +2375,13 @@ function initCharFormV6(){
   fillV6Sel('#v6eyesSelect',V6_EYES_OPTS);
   fillV6Sel('#v6bodySelect',V6_BODY_TYPES);
   fillV6Sel('#v6langSelect',V6_LANGUAGES);
+  // Set initial measurement ranges and language order for default race/gender
+  setTimeout(()=>{v6UpdateMeasurementRanges();v6UpdateRaceLanguages();},0);
+  // Live measurement validation on input
+  ['v6bust','v6waist','v6hips'].forEach(id=>{
+    const inp=$('#'+id);
+    if(inp)inp.addEventListener('input',()=>v6UpdateMeasurementRanges());
+  });
   fillV6Sel('#v6weaponSelect',V6_WEAPON_TYPES);
   fillV6Sel('#v6magicSelect',V6_MAGIC_TYPES);
   fillV6Sel('#v6powerSelect',V6_POWER_SYSTEMS);
@@ -2655,8 +2692,81 @@ function v6UpdateRaceInfo(race){
   div.innerHTML=`<b style="color:var(--gold)">🛡️ ${safe(race)}</b>&nbsp;<span style="color:var(--muted)">${safe(info.lore||'')}</span><br>`+
     `<span>📏 ${safe(info.height||'?')} &nbsp;|&nbsp; 👟 ${info.speed||30}ft &nbsp;|&nbsp; ⚖️ ${safe(info.size||'?')} &nbsp;|&nbsp; 🗣️ ${(info.languages||[]).join(', ')}</span>`;
 }
+function v6GetGenderCat(){
+  const form=$('#characterFormV6');
+  const gVal=form?form.elements['gender']?.value:'';
+  return gVal==='Female'||gVal==='Futa / Futanari'?'f':gVal==='Non-binary'||gVal==='Androgynous'||gVal==='Gender-fluid'?'n':'m';
+}
+
+function v6UpdateMeasurementRanges(){
+  const raceEl=$('#v6raceSelect');
+  const race=raceEl?raceEl.value:'Human';
+  const gCat=v6GetGenderCat();
+  const rng=(V6_RACE_MEASUREMENTS[race]||V6_RACE_MEASUREMENTS['_default'])[gCat];
+  const fields=[
+    {id:'v6bust',   key:'bust',  label:'Bust/Chest'},
+    {id:'v6waist',  key:'waist', label:'Waist'},
+    {id:'v6hips',   key:'hip',   label:'Hips'}
+  ];
+  fields.forEach(({id,key,label})=>{
+    const inp=$('#'+id);if(!inp)return;
+    const [lo,hi]=rng[key];
+    inp.placeholder=`${lo}"–${hi}"`;
+    // Update or create range hint
+    let hint=inp.nextElementSibling;
+    if(!hint||!hint.classList.contains('v6-meas-range')){
+      hint=document.createElement('small');
+      hint.className='v6-meas-range';
+      hint.style.cssText='display:block;font-size:9px;color:var(--muted);margin-top:1px';
+      inp.after(hint);
+    }
+    hint.textContent=`Valid: ${lo}"–${hi}"`;
+    // Validate current value
+    const cur=parseFloat(inp.value);
+    if(inp.value&&!isNaN(cur)){
+      inp.style.borderColor=(cur<lo||cur>hi)?'#c0392b':'';
+    } else {
+      inp.style.borderColor='';
+    }
+  });
+}
+
+function v6UpdateRaceLanguages(){
+  const raceEl=$('#v6raceSelect');
+  const race=raceEl?raceEl.value:'Human';
+  const info=V6_DND_RACE_INFO[race];
+  const raceNativeLangs=new Set(info?info.languages:[]);
+  const sel=$('#v6langSelect');if(!sel)return;
+  // Re-sort: native langs first, then rest
+  const allLangs=V6_LANGUAGES;
+  const native=allLangs.filter(l=>raceNativeLangs.has(l));
+  const rest=allLangs.filter(l=>!raceNativeLangs.has(l));
+  const sorted=[...native,...rest];
+  // Remember current selection
+  const selected=new Set(Array.from(sel.selectedOptions).map(o=>o.value));
+  // If nothing selected yet and there are native langs, default-select them
+  const defaultSelect=selected.size===0&&native.length>0;
+  sel.innerHTML=sorted.map(l=>{
+    const isNative=raceNativeLangs.has(l);
+    const isSel=selected.has(l)||(defaultSelect&&isNative);
+    return `<option value="${safe(l)}"${isSel?' selected':''}${isNative?' data-native="1"':''} style="${isNative?'color:var(--gold)':''}">` +
+           `${isNative?'★ ':''}${safe(l)}</option>`;
+  }).join('');
+}
+
+function v6OnRaceOrGenderChange(){
+  const raceEl=$('#v6raceSelect');
+  if(raceEl)v6UpdateRaceInfo(raceEl.value);
+  v6UpdateMeasurementRanges();
+  v6UpdateRaceLanguages();
+}
+
 const _v6raceSelEl=$('#v6raceSelect');
-if(_v6raceSelEl)_v6raceSelEl.addEventListener('change',e=>v6UpdateRaceInfo(e.target.value));
+if(_v6raceSelEl)_v6raceSelEl.addEventListener('change',()=>v6OnRaceOrGenderChange());
+
+// Also wire gender change to update measurement ranges and language sort
+const _v6genderSelEl=$('#v6genderSelect');
+if(_v6genderSelEl)_v6genderSelEl.addEventListener('change',()=>v6UpdateMeasurementRanges());
 
 // Total Random button
 const _v6totalRnd=$('#v6totalRandom');
