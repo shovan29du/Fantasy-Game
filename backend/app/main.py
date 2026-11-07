@@ -552,7 +552,7 @@ class BoolSettingIn(BaseModel):
 @app.on_event("startup")
 def startup() -> None:
     init_db()
-    # Pre-generate scenario cover images in background (force=True regenerates all)
+    # Pre-generate scenario cover images in background (only missing images)
     try:
         _all_scenarios: list[dict] = []
         for _cat in scenarios.CATEGORIES:
@@ -566,7 +566,7 @@ def startup() -> None:
                     "category": _cat_key,
                 })
         if _all_scenarios:
-            start_pregen_thread(_all_scenarios, force=True)
+            start_pregen_thread(_all_scenarios, force=False)
     except Exception as _exc:
         log.warning("Could not start scenario cover pre-generation: %s", _exc)
 
