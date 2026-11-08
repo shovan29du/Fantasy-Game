@@ -971,6 +971,11 @@ async function _doBeginGame(charInfo){
  if(bgParts.length){
   payload.custom_text=(payload.custom_text||'')+'\n\n[Character background: '+bgParts.join('. ')+']';
  }
+ const party=(SCENARIO_PARTY[payload.scenario_name]||[]);
+ if(party.length){
+  const partyDesc=party.map(p=>p.name+' ('+p.role+': '+p.desc+')').join('; ');
+  payload.custom_text=(payload.custom_text||'')+'\n\n[Party members present at scenario start: '+partyDesc+']';
+ }
  payload._charName=charName;
  // Open the tab NOW, inside this synchronous call chain (launchPlayerStep handler is sync)
  const newTab=window.open('about:blank','_blank');
@@ -989,8 +994,11 @@ async function _beginGameInTab(payload,newTab){
   // Build opening: use the scenario text (with char name) as the opening scene
   let opening;
   if(payload.custom_text){
-   // Strip the [Character background: ...] annotation from what's shown in chat
-   const displayText=payload.custom_text.replace(/\n\n\[Character background:[^\]]*\]$/s,'').trim();
+   // Strip injected AI-only annotations from what's shown in chat
+   const displayText=payload.custom_text
+    .replace(/\n\n\[Character background:[^\]]*\]/s,'')
+    .replace(/\n\n\[Party members present[^\]]*\]/s,'')
+    .trim();
    opening=displayText.length>600?displayText.slice(0,597)+'…':displayText;
   }else{
    opening=`${world.name}. ${payload._charName?payload._charName+' begins their journey.':'The story begins.'}`;
@@ -1077,6 +1085,336 @@ const SCENARIO_PROTAGONISTS={
  'Academy for Villains':'Shade','Midnight Market':'Coin','The Siege':'Ward',
  'Fae Bargain':'Puck','The Exiled Prince':'Daric','Deep Jungle':'Rook',
  'Haunted Circus':'Milo','The Healer':'Wren','Underground Railroad':'Iris'
+};
+
+// Key named party members / major characters for each prebuilt scenario.
+// Injected as AI context so the story opens with the full cast introduced.
+const SCENARIO_PARTY={
+ 'Ninja Village':[
+  {name:'Captain Hiroshi',role:'ANBU Captain',desc:'gave you the mission, reads people like scrolls, owes you a debt he has never acknowledged'},
+  {name:'Yuki',role:'Medical Ninja',desc:'your team healer, calm under fire, hiding grief behind competence'},
+  {name:'Ryo',role:'Rival Ninja',desc:'faster than you and knows it, respects results not words'}
+ ],
+ 'Magic Academy':[
+  {name:'Professor Aldric',role:'Theory Professor',desc:'the only teacher who takes your anomalous test result seriously'},
+  {name:'Sera',role:'Student (House of Shadow)',desc:'top of the class, distrusts you, watches everything'},
+  {name:'Pip',role:'Outcast Student',desc:'knows every secret passage and forgotten rule in the Academy'}
+ ],
+ 'Pirate Seas':[
+  {name:'Captain Vane',role:'Pirate Captain',desc:'magnetic, brilliant, tells you exactly as much as you need and no more'},
+  {name:'Cook',role:'Ship\'s Cook',desc:'only honest crew member, former Marine, feeds everyone and trusts no one above deck'},
+  {name:'Navigator Ren',role:'Navigator',desc:'reads stars and people equally, the one keeping this crew alive'}
+ ],
+ 'Cyberpunk City':[
+  {name:'Cipher',role:'Hacker',desc:'your contact who set up the job, paranoid with good reason'},
+  {name:'Mako',role:'Street Samurai',desc:'hired muscle, loyal to credits but increasingly to the crew'},
+  {name:'Doc Voss',role:'Medtech',desc:'patches wounds, asks no questions, charges fair rates'}
+ ],
+ 'Dragon Realm':[
+  {name:'Wyrmologist Cass',role:'Dragon Scholar',desc:'the one who can explain what your bond means, fears what it implies'},
+  {name:'Rider Davan',role:'Senior Dragon Rider',desc:'established, territorial, cannot decide if you are a threat or a gift'},
+  {name:'Scale Smith Brenn',role:'Armour Crafter',desc:'makes the gear that keeps riders alive, respects the bond, not the politics'}
+ ],
+ 'Hero Academy':[
+  {name:'Principal Ozawa',role:'Academy Principal',desc:'knows exactly why your Quirk manifested late, not saying yet'},
+  {name:'Yumi',role:'Classmate',desc:'already has a hero name planned, sees you as competition and potential partner'},
+  {name:'Instructor Steele',role:'Combat Trainer',desc:'pushes everyone past limits, believes failure is curriculum'}
+ ],
+ 'Medieval Kingdom':[
+  {name:'Knight-Commander Aldus',role:'Royal Knight',desc:'the one who drafted you, old soldier, reads duty as religion'},
+  {name:'Bard Elise',role:'Court Bard',desc:'travels everywhere, knows everything, sells information in songs'},
+  {name:'Thief Corren',role:'Guild Thief',desc:'pressed into service same as you, quick fingers, quicker to disappear'}
+ ],
+ 'The Wrongly Accused':[
+  {name:'Warden Cho',role:'Prison Warden',desc:'follows the law precisely, would release you if the law told them to'},
+  {name:'Childhood Friend Lian',role:'Investigator',desc:'believes you, risking their position to prove it'},
+  {name:'Ghost of Elder Huo',role:'Ancestor Spirit',desc:'dead sect elder who witnessed the theft, can only communicate in riddles'}
+ ],
+ 'The Traitor\'s Escape':[
+  {name:'Princess Vael',role:'Deposed Royal',desc:'the client who is not what she was described as, dangerous in ways you are still learning'},
+  {name:'Loyalist Spy Maren',role:'Court Informant',desc:'planted near the princess, allegiance genuinely unclear'},
+  {name:'Old Mentor Brax',role:'Retired Mercenary',desc:'your former teacher, warned you against this job and helped you take it anyway'}
+ ],
+ 'The Suitor\'s Tournament':[
+  {name:'Princess Isolde',role:'Princess',desc:'your host and the prize the tournament is built around, deeply unimpressed by everyone so far'},
+  {name:'Herald Tomis',role:'Tournament Herald',desc:'manages every rule, the only neutral party, knows which suitors are cheating'},
+  {name:'Rival Suitor Davan',role:'Foreign Prince',desc:'charming, well-funded, playing a longer game than the tournament'}
+ ],
+ 'Blade for Hire':[
+  {name:'Princess Vael',role:'Client-in-Disguise',desc:'the merchant you were hired to guard, actually exiled royalty'},
+  {name:'Mercenary Captain Reith',role:'Rival Merc',desc:'competing contract, not necessarily an enemy'},
+  {name:'Old Retainer Sora',role:'Loyal Servant',desc:'has served the princess since birth, would die for her and may have to'}
+ ],
+ 'The Prince\'s Champion':[
+  {name:'Prince Davan',role:'The Prince',desc:'chose you personally over the official list, has his reasons, keeping them'},
+  {name:'Court Healer Lyss',role:'Royal Healer',desc:'independent, the prince\'s most trusted confidant, evaluating you'},
+  {name:'Commander Vane',role:'Knight\'s Order Captain',desc:'was not consulted on the prince\'s choice, has not forgotten'}
+ ],
+ 'Fifteen Years a Prisoner':[
+  {name:'Warden Cho',role:'Prison Warden',desc:'fair by the rules, the rules have kept you here fifteen years'},
+  {name:'Old Ally Mira',role:'Former Comrade',desc:'found you, got herself imprisoned to pass a message, time is running out'},
+  {name:'Rebel Leader Sable',role:'Resistance Commander',desc:'wants to use your freedom for a cause you have not agreed to yet'}
+ ],
+ 'Human and the Elven Queen':[
+  {name:'Queen Aelindra',role:'Elven Queen',desc:'ancient, precise, treating you as an experiment in human diplomacy'},
+  {name:'Half-Elf Guide Sil',role:'Border Guide',desc:'assigned to you, neither fully trusted by either side, your only honest source'},
+  {name:'Elven Advisor Theron',role:'Court Advisor',desc:'opposed your mission from the start, politely, persistently'}
+ ],
+ 'Ivywood Dormitory':[
+  {name:'Dorm Roommate Jess',role:'Roommate',desc:'has been here three years, knows every campus secret, decides in week one whether to like you'},
+  {name:'Professor Nori',role:'Faculty Advisor',desc:'assigned to you personally, the scholarship had conditions they are going to explain when ready'},
+  {name:'Rival Student Cade',role:'Student',desc:'comes from money, resents merit, good in a crisis when it suits them'}
+ ],
+ 'Wandering Blades':[
+  {name:'Guild Quartermaster Holt',role:'Quartermaster',desc:'assigned your party and the job, knows more about why than they\'re saying'},
+  {name:'Party Healer Wren',role:'Cleric',desc:'keeps you alive, keeps score, still waiting for an apology from the former leader'},
+  {name:'Rogue Dex',role:'Scout',desc:'heard about your expulsion from the last party, curious, cautious'}
+ ],
+ 'The Abandoned Party':[
+  {name:'New Ally Cass',role:'Former Enemy',desc:'was with the dungeon faction your old party fought, knows the layout, has their own agenda'},
+  {name:'Wandering Healer Yuki',role:'Healer',desc:'no guild ties, no past with your old party, the only clean slate you have'},
+  {name:'Guildmaster Vane',role:'Guild Commander',desc:'still waiting for your report on what happened three years ago'}
+ ],
+ 'Space Station':[
+  {name:'Engineer Reva',role:'Chief Engineer',desc:'has kept the station running through three command changes, trusts systems over people'},
+  {name:'Dr. Sato',role:'Station Scientist',desc:'was here before the last three captains, knows what actually happened to them'},
+  {name:'AI Entity ARIA',role:'Station AI',desc:'assists with everything, logged everything, bound by protocols that may be outdated'}
+ ],
+ 'Demon Slayer Corps':[
+  {name:'Hashira Riku',role:'Water Hashira',desc:'your direct superior, unorthodox style himself, believes in yours despite saying otherwise'},
+  {name:'Fellow Slayer Hana',role:'Slayer',desc:'passed Final Selection same season as you, the only one who witnessed your first kill'},
+  {name:'Crow Handler Momo',role:'Kakushi Support',desc:'delivers orders, retrieves the wounded, knows every slayer\'s real weakness'}
+ ],
+ 'Post-Apocalypse':[
+  {name:'Mechanic Voss',role:'Engineer',desc:'keeps the Vault\'s generators running, knows which systems are actually failing'},
+  {name:'Doctor Sable',role:'Vault Physician',desc:'has the full medical records for everyone born here, including you'},
+  {name:'Scout Ren',role:'Surface Scout',desc:'the only person who goes outside, brings back things the Overseer doesn\'t report'}
+ ],
+ 'Zombie Outbreak':[
+  {name:'Medic Yara',role:'Field Medic',desc:'has the last remaining antibiotics, making impossible calls about who gets them'},
+  {name:'Ex-Cop Mads',role:'Former Officer',desc:'knows the city layout, used to operating in chaos, trust issues with authority including their own'},
+  {name:'Scientist Orlov',role:'Virologist',desc:'knows what caused the outbreak, hasn\'t decided who to tell yet'}
+ ],
+ 'Haunted Precinct':[
+  {name:'Partner Detective Ash',role:'Detective',desc:'senior partner, should have retired, keeps finding reasons not to'},
+  {name:'Medium Reva',role:'Psychic Consultant',desc:'officially unofficial, the department pretends she doesn\'t exist, calls her every time'},
+  {name:'Coroner Mira',role:'Forensic Pathologist',desc:'finds things in autopsies that shouldn\'t be there, documents everything anyway'}
+ ],
+ 'Deep Space Frontier':[
+  {name:'Xenobiologist Dr. Vael',role:'Scientist',desc:'filed the report that started all this, trying to control what happens next'},
+  {name:'Alien Diplomat Thren',role:'First Contact Envoy',desc:'arriving on a schedule only they know, the reason the survey team transferred'},
+  {name:'Engineer Sable',role:'Chief Engineer',desc:'has read the previous survey reports, sharing what they found selectively'}
+ ],
+ 'Crown & Shadows':[
+  {name:'Court Advisor Maren',role:'Senior Advisor',desc:'briefed you, is testing you, has survived four monarchs by being indispensable'},
+  {name:'Spymaster Vane',role:'Intelligence Chief',desc:'was not told you were being appointed, finding out what you know'},
+  {name:'Heir Apparent Davan',role:'Royal Heir',desc:'your age, sharper than they appear, watching the new appointment with open interest'}
+ ],
+ 'The Sterling Family':[
+  {name:'Sterling Patriarch',role:'Family Head',desc:'controls the money, sets the rules, enforces both with equal precision'},
+  {name:'Sterling Sibling Ash',role:'Family Member',desc:'the only one who was honest with you about what this family is'},
+  {name:'Family Lawyer Reith',role:'Legal Counsel',desc:'knows where every asset is and what it cost, present at every critical moment'}
+ ],
+ 'Office Rivalry':[
+  {name:'Manager Holt',role:'Department Manager',desc:'playing you and your rival against each other deliberately, calling it healthy competition'},
+  {name:'Rival Coworker Blake',role:'Competitor',desc:'has been here longer, knows the politics, taking the rivalry personally'},
+  {name:'Assistant Yuki',role:'Team Assistant',desc:'observes everything, says little, the most accurate source of information in the building'}
+ ],
+ 'Twenty Years Gone':[
+  {name:'Former Partner Ash',role:'Old Friend',desc:'stayed, built a life, unsure whether to be angry or relieved you\'re back'},
+  {name:'What They Left Behind',role:'Family Member',desc:'grew up without you, formed their own opinion, not adjusting it for your return'},
+  {name:'Person Who Knew Why',role:'Witness',desc:'knows exactly why you left, has been waiting for someone to ask'}
+ ],
+ 'Blood & Loyalty':[
+  {name:'Underboss Reith',role:'Family Second',desc:'Marco\'s right hand, loyal to the family not the person, watching the new addition'},
+  {name:'Family Lawyer Sable',role:'Fixer',desc:'makes problems disappear legally, has a threshold for what they\'ll make disappear'},
+  {name:'Old Guard Voss',role:'Veteran Member',desc:'was here before Marco, remembers how the last outsider was brought in'}
+ ],
+ 'Ridgewood University':[
+  {name:'Roommate Jess',role:'Housemate',desc:'returning student, knows the campus and the unwritten rules, decides fast about people'},
+  {name:'Professor Nori',role:'Academic Advisor',desc:'assigned to your case specifically, one of the few who knows your full file'},
+  {name:'Campus Security Mads',role:'Security Officer',desc:'has seen every kind of trouble this campus produces, can read who causes which kind'}
+ ],
+ 'Second Marriage':[
+  {name:'Partner\'s Child Ash',role:'Stepchild',desc:'old enough to have an opinion, young enough to still be forming it about you'},
+  {name:'Former In-Law Reith',role:'Ex-Family Member',desc:'still present in the partner\'s life, made a point of meeting you early'},
+  {name:'Mutual Friend Yuki',role:'Family Friend',desc:'was friends with both before, trying to stay friends with both after, struggling'}
+ ],
+ 'Dragon Riders':[
+  {name:'Wyrmologist Cass',role:'Dragon Scholar',desc:'explains the bond\'s implications, terrified of what yours means for the program'},
+  {name:'Senior Rider Davan',role:'Established Rider',desc:'your dragon\'s first choice before it chose you, has not fully processed this'},
+  {name:'Scale Smith Brenn',role:'Armour Crafter',desc:'already measuring your dragon for kit, the most practical person in the facility'}
+ ],
+ 'Witch Trials':[
+  {name:'Investigator Holt',role:'Church Inquisitor',desc:'believes in the law if not the accusations, looking for the actual explanation'},
+  {name:'Village Healer Yara',role:'Herbalist',desc:'half the accused are her patients, she knows what they were actually doing'},
+  {name:'Former Accuser Ash',role:'Key Witness',desc:'started the accusations, wants to stop them, cannot without admitting why they began'}
+ ],
+ 'The Heist':[
+  {name:'Fixer Reith',role:'Coordinator',desc:'planned the job, knows every exit, only shares information on a need-to-know basis'},
+  {name:'Tech Specialist Yuki',role:'Systems Expert',desc:'handles the alarms and locks, nervous, the most honest member of the crew'},
+  {name:'Driver Mads',role:'Getaway Driver',desc:'outside the whole time, knows every route, the last person anyone suspects'}
+ ],
+ 'Fallen Kingdom':[
+  {name:'Old Mentor Voss',role:'Former General',desc:'taught you, believed in the king, is not sure the kingdom is worth what\'s being asked to restore it'},
+  {name:'Resistance Leader Sable',role:'Rebel Commander',desc:'has held the resistance together since the fall, paying personal costs that show'},
+  {name:'Spy Reva',role:'Double Agent',desc:'inside the usurper\'s court, information that comes at a price you won\'t like'}
+ ],
+ 'The Oracle\'s Apprentice':[
+  {name:'The Oracle',role:'Mentor',desc:'tells you what you need to hear rather than what you want to, in sequences that only later make sense'},
+  {name:'Fellow Apprentice Ash',role:'Rival Student',desc:'has been training longer, resents being surpassed in the Oracle\'s attention, brilliant'},
+  {name:'Pilgrim Yara',role:'Seeker',desc:'arrived with a question only the Oracle will answer, your first real test case'}
+ ],
+ 'Shipwrecked':[
+  {name:'Ship\'s Navigator Ren',role:'Survivor',desc:'knows these waters, their charts are gone but the knowledge isn\'t'},
+  {name:'Passenger Ash',role:'Civilian',desc:'was travelling for reasons they haven\'t explained, more capable than they look'},
+  {name:'Ship\'s Cook Momo',role:'Survivor',desc:'has the most practical skills on this island and the most even temper'}
+ ],
+ 'Vampire Court':[
+  {name:'Ancient Vael',role:'Elder Vampire',desc:'one of the oldest at court, chose your petition for reasons not yet disclosed'},
+  {name:'Court Liaison Ash',role:'Human Liaison',desc:'human, navigates the court for mortals, keeps score of who owes what'},
+  {name:'Rival Claimant Maren',role:'Competing Petitioner',desc:'wants what you want, playing by different rules'}
+ ],
+ 'The Wild Hunt':[
+  {name:'Hunt Master Davan',role:'Hunt Leader',desc:'bound to run the Hunt regardless of cost, respects those who can keep up'},
+  {name:'Fae Scout Puck',role:'Trickster Guide',desc:'your assigned guide, their help always costs something, usually worth it'},
+  {name:'Mortal Companion Ash',role:'Fellow Hunter',desc:'also caught up in this, also not fully sure how, the most honest thing in the forest'}
+ ],
+ 'Time Rift':[
+  {name:'Temporal Agent Voss',role:'Agency Handler',desc:'assigned to your case, working from a protocol written before this scenario was possible'},
+  {name:'Local Contact Yuki',role:'Period Contact',desc:'native to this time, knows you don\'t belong here, helping for reasons that become clearer'},
+  {name:'Rival Traveller Sable',role:'Competitor',desc:'arrived separately, same goal, fundamentally different approach'}
+ ],
+ 'Alien Contact':[
+  {name:'First Contact Lead Dr. Vael',role:'Linguist',desc:'has been preparing for this her entire career, the weight is showing'},
+  {name:'Alien Envoy Thren',role:'First Contact Representative',desc:'patient, watching every reaction, communicating in layers'},
+  {name:'Military Liaison Mads',role:'Security Officer',desc:'there to control the situation, not convinced that\'s possible'}
+ ],
+ 'Bounty Hunter':[
+  {name:'Fixer Reith',role:'Contract Broker',desc:'finds the jobs, takes the cut, provides information that may not be complete'},
+  {name:'Partner Ash',role:'Hunting Partner',desc:'works with you sometimes, has their own list, cleaner methods than yours or dirtier depending'},
+  {name:'Informant Yuki',role:'Network Contact',desc:'knows where people hide, charges fair rates, stays out of the actual work'}
+ ],
+ 'The Last Mage':[
+  {name:'Ancient Archive ARIA',role:'Magical Repository',desc:'holds the last recorded knowledge of the old mages, selective about what it shares and when'},
+  {name:'Hunter Voss',role:'Mage Hunter',desc:'sent to find you, finding you increasingly complicated'},
+  {name:'Young Mage Ash',role:'Student',desc:'found you first, learning from you, reason enough not to disappear'}
+ ],
+ 'Rebellion':[
+  {name:'Commander Sable',role:'Rebel Leader',desc:'founded the rebellion on a principle they have been asked to compromise every year since'},
+  {name:'Spy Reva',role:'Intelligence Officer',desc:'inside the empire\'s structure, the information comes at a cost to them they don\'t mention'},
+  {name:'Soldier Voss',role:'Veteran Fighter',desc:'has been in longer than you, knows what the rebellion has asked people to give'}
+ ],
+ 'Underground Arena':[
+  {name:'Arena Master Holt',role:'Promoter',desc:'owns your contract, respects fighters, operates in a world without rules and enforces his own'},
+  {name:'Trainer Yara',role:'Combat Coach',desc:'has taken broken fighters and made something out of them, sees something in you'},
+  {name:'Rival Mads',role:'Top Fighter',desc:'current champion, earned it, watching the new entry with professional attention'}
+ ],
+ 'The Forgotten God':[
+  {name:'Ancient Priest Voss',role:'Last Believer',desc:'kept the faith when everyone else stopped, waiting for you specifically'},
+  {name:'Scholar Reva',role:'Mythologist',desc:'studies forgotten religions academically, was not expecting any of this to be real'},
+  {name:'Skeptic Ash',role:'Witness',desc:'cannot explain what they saw, will not say it was what it looked like'}
+ ],
+ 'Prison Break':[
+  {name:'Cell Neighbour Yuki',role:'Inmate',desc:'knows the facility\'s rhythms better than the guards, waiting to see if you\'re worth including'},
+  {name:'Corrupt Guard Mads',role:'Officer',desc:'has a price, has lines they won\'t cross, figuring out which category you fall in'},
+  {name:'Outside Contact Reva',role:'External Ally',desc:'has resources you need, their own reasons for getting you out, timeline is not negotiable'}
+ ],
+ 'War Correspondent':[
+  {name:'Local Fixer Yuki',role:'Field Fixer',desc:'keeps you alive in territory you don\'t know, has opinions about the story you should be telling'},
+  {name:'Rival Journalist Ash',role:'Competitor',desc:'same conflict, different outlet, overlapping sources, more experience and less caution'},
+  {name:'Military Liaison Mads',role:'Embedded Officer',desc:'controls your access, invested in a specific narrative, not entirely wrong about the danger'}
+ ],
+ 'Royal Scandal':[
+  {name:'Royal Chamberlain Reith',role:'Palace Administrator',desc:'knows everything about the palace, sharing selectively, chose you for this role with intent'},
+  {name:'Implicated Noble Vael',role:'Scandal Figure',desc:'at the centre of what happened, their account is true in the ways that matter to them'},
+  {name:'Court Journalist Ash',role:'Press Contact',desc:'already has the story half-written, will publish with or without your cooperation'}
+ ],
+ 'The Cure':[
+  {name:'Lead Researcher Dr. Sato',role:'Scientist',desc:'found the compound, knows the side effects, trying to find a way around the choice'},
+  {name:'Test Subject Ash',role:'Patient',desc:'volunteered because there was no other option, coherent enough to consent, most of the time'},
+  {name:'Funder Reith',role:'Sponsor',desc:'paid for the research, owns the results legally, has decided what happens with them'}
+ ],
+ 'Galactic Senate':[
+  {name:'Senior Senator Vael',role:'Political Mentor',desc:'assigned as your guide, old enough to have caused several of the problems you\'re addressing'},
+  {name:'Opposition Senator Maren',role:'Political Rival',desc:'your most consistent opponent, frequently correct, never cooperative'},
+  {name:'Intelligence Liaison Ash',role:'Agency Contact',desc:'provides information the official channels don\'t carry, with terms attached'}
+ ],
+ 'The Cult':[
+  {name:'Cult Leader Silas',role:'Leader',desc:'believes everything they say, which makes them more dangerous not less'},
+  {name:'Doubting Member Yuki',role:'Insider',desc:'been here three years, finding cracks in the doctrine, needs someone to trust'},
+  {name:'Outside Investigator Ash',role:'Researcher',desc:'building a case, needs access you have, cannot guarantee your safety'}
+ ],
+ 'River Crossing':[
+  {name:'Guide Voss',role:'River Guide',desc:'knows every crossing point, working from a map last updated before recent events'},
+  {name:'Fellow Traveller Yuki',role:'Co-traveller',desc:'crossing for different reasons, your paths align for now, diverge later'},
+  {name:'Border Official Mads',role:'Authority',desc:'controls the official crossing, the reason you\'re looking for another one'}
+ ],
+ 'The Inheritance':[
+  {name:'Family Lawyer Reith',role:'Estate Lawyer',desc:'executor of the will, knows what was left and why it was structured this way'},
+  {name:'Other Heir Ash',role:'Contesting Heir',desc:'was not expecting to share, recalibrating'},
+  {name:'Family Retainer Yuki',role:'Household Staff',desc:'worked for the deceased their entire life, the most accurate source of what actually happened here'}
+ ],
+ 'Island Survival':[
+  {name:'Navigator Ren',role:'Survival Expert',desc:'keeps their head, knows which problems to solve in which order'},
+  {name:'Fellow Survivor Ash',role:'Survivor',desc:'resourceful in ways you wouldn\'t predict from looking at them'},
+  {name:'Injured Passenger Yuki',role:'Dependent',desc:'cannot help physically yet, has specific knowledge that changes what survival means here'}
+ ],
+ 'Cold Case':[
+  {name:'Partner Detective Ash',role:'Detective',desc:'worked this case before, transferred out, agreed to come back when you asked'},
+  {name:'Original Witness Yuki',role:'Witness',desc:'gave a statement years ago that doesn\'t fully hold together on re-reading, available to talk'},
+  {name:'Forensic Lead Dr. Mira',role:'Forensics',desc:'found something new in the archived evidence, that\'s why the case is open again'}
+ ],
+ 'The Duel':[
+  {name:'Second Voss',role:'Your Second',desc:'rules of the duel, your safety, managing both under conditions that keep changing'},
+  {name:'Opponent\'s Second Ash',role:'Opposing Second',desc:'equally bound by the rules, equally aware they\'re being tested'},
+  {name:'Mediator Reith',role:'Neutral Party',desc:'required to be present, trying to find the version of this where nobody dies'}
+ ],
+ 'Academy for Villains':[
+  {name:'Headmaster Vane',role:'Academy Head',desc:'built this institution on a philosophy you are about to test'},
+  {name:'Instructor Mads',role:'Combat Trainer',desc:'was a villain before this, took the job to give students options he didn\'t have'},
+  {name:'Rival Student Ash',role:'Top of Class',desc:'arrived with a fully formed plan for their career, you\'re not in it, they noticed you anyway'}
+ ],
+ 'Midnight Market':[
+  {name:'Market Elder Holt',role:'Senior Trader',desc:'has been here since before the market had its current name, decides who gets full access'},
+  {name:'Source Yuki',role:'Information Broker',desc:'trades in what people want to know, more careful than they appear'},
+  {name:'Enforcer Mads',role:'Market Security',desc:'keeps the peace by rules nobody fully understands, they enforce them consistently anyway'}
+ ],
+ 'The Siege':[
+  {name:'Commander Vane',role:'Garrison Commander',desc:'has held this position through two previous sieges, knows exactly what the walls can take'},
+  {name:'Quartermaster Holt',role:'Supply Officer',desc:'counting days until provisions run out, that number is accurate and not public knowledge'},
+  {name:'Scout Reva',role:'Intelligence Officer',desc:'slips through the lines, brings information that changes the situation and the options'}
+ ],
+ 'Fae Bargain':[
+  {name:'Fae Advisor Puck',role:'Trickster Guide',desc:'bound to help you by the bargain\'s terms, finding ways to be technically helpful'},
+  {name:'Mortal Contact Ash',role:'Human Liaison',desc:'has dealt with Fae before, knows which rules are real and which are theatre'},
+  {name:'Elder Fae Vael',role:'Ancient Authority',desc:'set the terms of the bargain, interested in whether you understand what you agreed to'}
+ ],
+ 'The Exiled Prince':[
+  {name:'Loyal Guard Reva',role:'Protector',desc:'chose exile over duty to the new regime, their reasons are not entirely about you'},
+  {name:'Local Contact Yuki',role:'Underground Connection',desc:'provides safe passage and information, running their own operation simultaneously'},
+  {name:'Rival Claimant Ash',role:'Competition',desc:'also exiled, also trying to return, would work with you if the terms were right'}
+ ],
+ 'Deep Jungle':[
+  {name:'Guide Voss',role:'Jungle Expert',desc:'knows this terrain in a way that cannot be explained from maps alone'},
+  {name:'Researcher Dr. Yuki',role:'Expedition Scientist',desc:'the official reason for the expedition, has begun to suspect the actual reason'},
+  {name:'Local Elder Momo',role:'Indigenous Guide',desc:'agreed to help for reasons not yet shared, the person who actually knows what\'s in here'}
+ ],
+ 'Haunted Circus':[
+  {name:'Ringmaster Vane',role:'Circus Director',desc:'knows the circus\'s history and has decided how much to tell you'},
+  {name:'Acrobat Ash',role:'Performer',desc:'has been here through the events that made this circus what it is, watched everyone leave'},
+  {name:'Roustabout Yuki',role:'Crew Member',desc:'sets up and tears down, sees everything, the most reliable source of what actually happens overnight'}
+ ],
+ 'The Healer':[
+  {name:'Senior Healer Mira',role:'Mentor',desc:'trained you, believes in your potential, bound by the same limits they\'re teaching you to work around'},
+  {name:'Patient Ash',role:'Difficult Case',desc:'your most demanding assignment, the case that is teaching you what healing actually requires'},
+  {name:'Administrator Holt',role:'Clinic Director',desc:'manages the resources, sets the cases, the reason you sometimes have to choose who gets help'}
+ ],
+ 'Underground Railroad':[
+  {name:'Station Master Mara',role:'Network Coordinator',desc:'runs this section of the network, careful, experienced, never uses more words than the situation requires'},
+  {name:'Conductor Voss',role:'Route Guide',desc:'knows the paths, the safe houses, the timing, what happens when things go wrong'},
+  {name:'Freedperson Ash',role:'Traveller',desc:'en route to safety, carrying information about what\'s behind and information you need to hear'}
+ ]
 };
 
 function renderScenarioCards(cats,filterKey){
