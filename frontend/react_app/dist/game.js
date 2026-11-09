@@ -13,8 +13,8 @@ function fillPortraitStyles(){const sel=$('#portraitStyleSelect');if(!sel)return
 // static mock.
 const WORLD_DEFS=[
  {name:'Aethoria Prime',magic:'high',tech:'middle_age',space:'fantasy',reality_type:'Prime Reality',place:'Thornwatch Crossing',theme:'local'},
- {name:'Neon Shard-9',magic:'very_low',tech:'cyberpunk',space:'sci-fi',reality_type:'Parallel Universe',place:'Kairox Undercity',theme:'area'},
- {name:'Earth-Z',magic:'none',tech:'post_collapse',space:'post-apocalyptic',reality_type:'Dead Universe',place:'London Quarantine',theme:'area'},
+ {name:'Neon Shard-9',magic:'very_low',tech:'cyberpunk',space:'sci-fi',reality_type:'Parallel Universe',place:'Kairox Undercity',theme:'country'},
+ {name:'Earth-Z',magic:'none',tech:'post_collapse',space:'post-apocalyptic',reality_type:'Dead Universe',place:'London Quarantine',theme:'country'},
  {name:'Celestia Drift',magic:'medium',tech:'futuristic',space:'sci-fi',reality_type:'Alternate Reality',place:'The Orison Gate',theme:'universe'},
 ];
 const party=[
@@ -50,6 +50,8 @@ async function _drainThumbQueue(){
 let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:_loadImgCache(),pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[],npcMemories:{},visitedWorldIds:new Set(),pendingGamePayload:null};
 const SESSION_KEY='worldweaver-session';
 const TERRAIN_ICONS={Forest:'♣',Desert:'▲',Mountain:'⛰',Ocean:'≈',Swamp:'♨',Volcano:'▲',Plains:'❦',City:'⌂',Ruins:'⌂',Space:'✦',Underground:'▼',Tundra:'❄',Jungle:'♣',Savanna:'❦',Canyon:'▲'};
+const BUILDING_ICONS={home:'🏠',house:'🏠',cottage:'🏡',hut:'🏠',manor:'🏡',mansion:'🏰',penthouse:'🏙',villa:'🏡',apartment:'🏢',office:'🏢',headquarters:'🏢',shop:'🛍',store:'🛒',market:'🏪',stall:'🏪',boutique:'🛍',cafe:'☕',coffee:'☕',bistro:'☕',restaurant:'🍽',diner:'🍽',dining:'🍽',eatery:'🍽',tavern:'🍺',inn:'🍺',pub:'🍺',bar:'🍺',alehouse:'🍺',academy:'🎓',university:'🎓',college:'🎓',school:'🏫',classroom:'🏫',hallway:'🏫',library:'📚',archive:'📚',dungeon:'⚔',crypt:'💀',tomb:'💀',vault:'💀',jungle:'🌿',grove:'🌿',garden:'🌸',park:'🌳',courtyard:'🌳',orchard:'🌳',forest:'🌲',wood:'🌲',beach:'🏖',shore:'🏖',hotel:'🏨',lodge:'🏨',resort:'🏨',palace:'🏛',court:'🏛',throne:'👑',temple:'⛩',church:'⛪',shrine:'⛩',chapel:'⛪',castle:'🏰',fortress:'🏰',citadel:'🏰',keep:'🏰',tower:'🗼',lighthouse:'🗼',spire:'🗼',arena:'⚔',ring:'⚔',pit:'⚔',hospital:'🏥',clinic:'🏥',infirmary:'🏥',dojo:'🥋',training:'🥋',gym:'🏋',stable:'🐴',barn:'🐮',farm:'🌾',port:'⚓',dock:'⚓',harbor:'⚓',pier:'⚓',cave:'🌑',cavern:'🌑',mine:'⛏',square:'🏪',plaza:'🏛',hall:'🏛',ballroom:'🎭',dormitory:'🛏',dorm:'🛏',kitchen:'🍳',workshop:'🔧',lab:'🔬',laboratory:'🔬',party:'🎉'};
+function _buildingIcon(name){const n=(name||'').toLowerCase();for(const[k,v]of Object.entries(BUILDING_ICONS)){if(n.includes(k))return v;}return'⌂';}
 
 async function ensureWorlds(){
  const existing=await api('/api/worlds');
@@ -405,21 +407,23 @@ function updateWorld(){
  if(state.scale!=='universe')loadLocations();
 }
 
-// ═══ Map hierarchy: Local → Province → Country → Universe ═══
-// loc_type values: 'local'|'area' → Local tab; 'province' → Province tab;
-// 'country'|'kingdom'|'empire'|'nation'|'republic'|'duchy'|'realm'|'federation'|'territory'|'dominion' → Country tab
-const COUNTRY_TYPES=new Set(['country','kingdom','empire','nation','republic','duchy','realm','federation','territory','dominion','sultanate','commonwealth','confederation']);
-function _isCountryType(t){return COUNTRY_TYPES.has((t||'').toLowerCase())}
+// ═══ Map hierarchy: Local → Country → Continent → Universe ═══
+// loc_type values: 'local'|'area' → Local tab (buildings/locations in a city/village);
+// 'country' → Country tab (regions/areas within a country);
+// 'continent'|'kingdom'|'empire'|... → Continent tab
+const CONTINENT_TYPES=new Set(['continent','kingdom','empire','nation','republic','duchy','realm','federation','territory','dominion','sultanate','commonwealth','confederation']);
+function _isContinentType(t){return CONTINENT_TYPES.has((t||'').toLowerCase())}
 function renderMapNodes(){
  const scale=state.scale;
  let shown;
  if(scale==='local') shown=state.locations.filter(l=>!l.loc_type||l.loc_type==='local'||l.loc_type==='area');
- else if(scale==='area') shown=state.locations.filter(l=>l.loc_type==='province');
- else if(scale==='world') shown=state.locations.filter(l=>_isCountryType(l.loc_type));
+ else if(scale==='country') shown=state.locations.filter(l=>l.loc_type==='country');
+ else if(scale==='continent') shown=state.locations.filter(l=>_isContinentType(l.loc_type));
  else shown=[];
  $('#mapNodes').innerHTML=shown.map(loc=>{
-  const tier=_isCountryType(loc.loc_type)?'macro':loc.loc_type==='province'?'mid':'micro';
-  return `<button class="map-node map-node-${tier}" style="--x:${loc.x}%;--y:${loc.y}%" data-loc-id="${loc.id}" data-label="${safe(loc.name)}" title="${safe(loc.name)}">${TERRAIN_ICONS[loc.terrain]||'⌂'}</button>`;
+  const tier=_isContinentType(loc.loc_type)?'macro':loc.loc_type==='country'?'mid':'micro';
+  const icon=(!loc.loc_type||loc.loc_type==='local'||loc.loc_type==='area')?_buildingIcon(loc.name):(TERRAIN_ICONS[loc.terrain]||'⌂');
+  return `<button class="map-node map-node-${tier}" style="--x:${loc.x}%;--y:${loc.y}%" data-loc-id="${loc.id}" data-label="${safe(loc.name)}" title="${safe(loc.name)}">${icon}</button>`;
  }).join('');
  $$('#mapNodes [data-loc-id]').forEach(el=>el.onclick=()=>{const loc=state.locations.find(l=>String(l.id)===el.dataset.locId);if(loc)enterLocation(loc)});
 }
@@ -430,6 +434,9 @@ async function loadLocations(){
   state.locations=await api(`/api/worlds/${world.id}/locations`);
   renderMapNodes();
   if(state.pendingStartScene){state.pendingStartScene=false;}
+  // Seed local map from opening backstory when starting a new game with no local locations
+  const hasLocal=state.locations.some(l=>!l.loc_type||l.loc_type==='local'||l.loc_type==='area');
+  if(!hasLocal&&state.openingText&&!state._backstorySeeded){state._backstorySeeded=true;seedLocalFromBackstory(state.openingText).catch(()=>{});}
  }catch(error){state.locations=[];renderMapNodes()}
 }
 async function _aiDescribePlace(prompt){
@@ -448,23 +455,23 @@ async function _aiDescribePlace(prompt){
 async function enterLocation(loc){
  const world=state.worlds[state.worldIndex];
  const chatLog=$('#chatLog');
- // ── Country/Kingdom → switch to Province tab and describe the country ──
- if(_isCountryType(loc.loc_type)){
-  setScale('area');
+ // ── Continent/Kingdom → switch to Country tab and describe ──
+ if(_isContinentType(loc.loc_type)){
+  setScale('country');
   state._activeCountry=loc;
   $('#mapLocName').textContent=loc.name;$('#mapLocSub').textContent=`${loc.loc_type||'Territory'} · ${world?.name||''}`;
   chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">📌 Entering ${safe(loc.name)} — ${safe(loc.loc_type||'territory')} of ${safe(world?.name||'the realm')}.</em></div></div></div>`);
   chatLog.scrollTop=chatLog.scrollHeight;
-  await _aiDescribePlace(`Describe the ${loc.loc_type||'territory'} of "${loc.name}" in ${world?.name||'this world'}. What notable provinces, cities, or landmarks does it contain? What is its culture, government, and defining character? 2 vivid paragraphs.`);
+  await _aiDescribePlace(`Describe the ${loc.loc_type||'territory'} of "${loc.name}" in ${world?.name||'this world'}. What notable regions, cities, or landmarks does it contain? What is its culture, government, and defining character? 2 vivid paragraphs.`);
   return;
  }
- // ── Province → switch to Local tab and describe the province ──
- if(loc.loc_type==='province'){
+ // ── Country/Region → switch to Local tab and describe ──
+ if(loc.loc_type==='country'){
   setScale('local');
-  $('#mapLocName').textContent=loc.name;$('#mapLocSub').textContent=`Province · ${world?.name||''}`;
-  chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">📌 Entering the province of ${safe(loc.name)}.</em></div></div></div>`);
+  $('#mapLocName').textContent=loc.name;$('#mapLocSub').textContent=`Region · ${world?.name||''}`;
+  chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">📌 Entering the region of ${safe(loc.name)}.</em></div></div></div>`);
   chatLog.scrollTop=chatLog.scrollHeight;
-  await _aiDescribePlace(`Describe the province/region of "${loc.name}" in ${world?.name||'this world'}. What towns, villages, or notable locations does it contain? What is everyday life like here? 1-2 paragraphs.`);
+  await _aiDescribePlace(`Describe the region/area of "${loc.name}" in ${world?.name||'this world'}. What towns, villages, or notable buildings does it contain? What is everyday life like here? 1-2 paragraphs.`);
   return;
  }
  // ── Local location → scene image + immersive description ──
@@ -526,7 +533,7 @@ function sfx(name){
   osc.start(t);osc.stop(t+c.dur);
  }catch{}
 }
-const SCALE_LABELS={local:'LOCAL MAP',area:'PROVINCE MAP',world:'COUNTRY MAP',universe:'UNIVERSE MAP'};
+const SCALE_LABELS={local:'LOCAL MAP',country:'COUNTRY MAP',continent:'CONTINENT MAP',universe:'UNIVERSE MAP'};
 function setScale(scale){
  const prev=state.scale;state.scale=scale;
  $('#map').className=`map map-${scale}`;$('#scaleLabel').textContent=SCALE_LABELS[scale]||`${scale.toUpperCase()} MAP`;
@@ -549,7 +556,7 @@ async function crossPortal(){
 
 function loadSessionFromStorage(){try{const raw=localStorage.getItem(SESSION_KEY);return raw?JSON.parse(raw):null}catch{return null}}
 function saveSessionToStorage(){localStorage.setItem(SESSION_KEY,JSON.stringify({sessionId:state.sessionId,worldId:state.worlds[0]?.id,characterId:state.characterId,openingText:state.openingText||null}))}
-function toWorldEntry(w){const locs=(w.locations||w.world_json?.locations||[]);const first=locs[0];const sp=w.space_alignment||'';const theme=sp==='sci-fi'||sp==='futuristic'?'universe':sp==='ancient_civilization'||sp==='prehistoric'?'area':'local';return {id:w.id,name:w.name,ratings:w.ratings||{},reality_type:w.reality_type||'Prime Reality',space:sp||'unknown',place:first?first.name:(w.name||'Unknown Location'),theme,startX:first?first.x:50,startY:first?first.y:50}}
+function toWorldEntry(w){const locs=(w.locations||w.world_json?.locations||[]);const first=locs[0];const sp=w.space_alignment||'';const theme=sp==='sci-fi'||sp==='futuristic'?'universe':sp==='ancient_civilization'||sp==='prehistoric'?'country':'local';return {id:w.id,name:w.name,ratings:w.ratings||{},reality_type:w.reality_type||'Prime Reality',space:sp||'unknown',place:first?first.name:(w.name||'Unknown Location'),theme,startX:first?first.x:50,startY:first?first.y:50}}
 
 // ── Chat content formatter: **action**, *action*, "dialogue", Name: line ──
 // Screenplay format: "Liam: Hello" → name badge + dialogue; **text** → action narration
@@ -1549,7 +1556,7 @@ $$('[data-scale]').forEach(b=>b.onclick=()=>setScale(b.dataset.scale));
 $$('.detail-tabs button').forEach(b=>b.onclick=()=>{$$('.detail-tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');showPanel(b.dataset.panel)});
 $$('.dock-head button').forEach(b=>b.onclick=()=>{$$('.dock-head button').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderActions(b.dataset.filter)});
 $('#map').addEventListener('click',e=>{if(e.target.closest('button'))return;const r=e.currentTarget.getBoundingClientRect();move((e.clientX-r.left)/r.width*100,(e.clientY-r.top)/r.height*100)});
-document.addEventListener('keydown',e=>{const active=document.activeElement;const tag=active?.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||active?.isContentEditable)return;const keys={w:[0,-3],ArrowUp:[0,-3],s:[0,3],ArrowDown:[0,3],a:[-3,0],ArrowLeft:[-3,0],d:[3,0],ArrowRight:[3,0]};if(keys[e.key]){e.preventDefault();move(state.x+keys[e.key][0],state.y+keys[e.key][1])}if('1234'.includes(e.key))setScale(['local','area','world','universe'][+e.key-1])});
+document.addEventListener('keydown',e=>{const active=document.activeElement;const tag=active?.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||active?.isContentEditable)return;const keys={w:[0,-3],ArrowUp:[0,-3],s:[0,3],ArrowDown:[0,3],a:[-3,0],ArrowLeft:[-3,0],d:[3,0],ArrowRight:[3,0]};if(keys[e.key]){e.preventDefault();move(state.x+keys[e.key][0],state.y+keys[e.key][1])}if('1234'.includes(e.key))setScale(['local','country','continent','universe'][+e.key-1])});
 $('#portal').onclick=crossPortal;
 $('#zoomIn').onclick=()=>{$('#zoomText').textContent=(state.zoom=Math.min(140,state.zoom+10))+'%';$('#map').style.backgroundSize=state.zoom+'%'};
 $('#zoomOut').onclick=()=>{$('#zoomText').textContent=(state.zoom=Math.max(70,state.zoom-10))+'%';$('#map').style.backgroundSize=state.zoom+'%'};
@@ -1875,16 +1882,17 @@ $('#chatForm').onsubmit=async e=>{
     const HELP_HTML=`<div style="font-size:11px;line-height:1.8">
 <b style="color:var(--gold);font-size:13px">⚔ Chat Commands</b><br>
 <code style="color:#8fb7c8">/place Name, Terrain, Description</code> — Add a location to the map<br>
-<small style="color:var(--muted)">Names containing kingdom/empire/island/federation → Country map; province/district/county → Province map; others → Local map</small><br>
+<small style="color:var(--muted)">Names with kingdom/empire/federation → Continent map; province/district/county → Country map; others → Local map</small><br>
 <small style="color:var(--muted)">Terrain: Forest, City, Ruins, Underground, Ocean, Mountains, Plains, Desert, Swamp</small><br>
+<code style="color:#8fb7c8">*add location: Name, local|country|continent|universe*</code> — Add location via chat<br>
 <code style="color:#8fb7c8">/help</code> — Show this command list<br>
 <hr style="border-color:var(--line);margin:6px 0">
-<b style="color:var(--gold)">Map Hierarchy</b><br>
-<kbd>1</kbd> <b>Local</b> — immediate area, click location to see scene image + description<br>
-<kbd>2</kbd> <b>Province</b> — regions &amp; districts within a country<br>
-<kbd>3</kbd> <b>Country</b> — kingdoms, empires, islands, federations in this world<br>
-<kbd>4</kbd> <b>Universe</b> — all saved worlds &amp; galaxies<br>
-<small style="color:var(--muted)">AI mentions of "X Kingdom", "X Province" etc. are auto-added to the correct map tab</small><br>
+<b style="color:var(--gold)">Map Tabs</b><br>
+<kbd>1</kbd> <b>Local</b> — buildings &amp; places in the same city/village (click to see scene image)<br>
+<kbd>2</kbd> <b>Country</b> — regions &amp; districts within the country<br>
+<kbd>3</kbd> <b>Continent</b> — kingdoms, empires, nations across the world<br>
+<kbd>4</kbd> <b>Universe</b> — all worlds &amp; realms<br>
+<small style="color:var(--muted)">Backstory buildings auto-populate the Local map; AI mentions of kingdoms/regions are auto-added</small><br>
 <hr style="border-color:var(--line);margin:6px 0">
 <b style="color:var(--gold)">Dialogue Format (in AI replies)</b><br>
 <code>Name: Hello there.</code> — Character dialogue (name in gold)<br>
@@ -1914,7 +1922,7 @@ Click a party member card — Speak as that character<br>
     const terrain=TERRAIN_WORDS[tKey]||(rawTerrain?rawTerrain.charAt(0).toUpperCase()+rawTerrain.slice(1):'Plains');
     // Auto-detect loc_type from name keywords
     const nameDesc=`${locName} ${desc}`.toLowerCase();
-    const loc_type=_isCountryType(nameDesc.match(/\b(\w+)\b/g)?.find(w=>COUNTRY_TYPES.has(w))||'')?'country':/\b(province|district|county|shire|region|canton|prefecture|march)\b/.test(nameDesc)?'province':'local';
+    const loc_type=_isContinentType(nameDesc.match(/\b(\w+)\b/g)?.find(w=>CONTINENT_TYPES.has(w))||'')?'continent':/\b(country|province|district|county|shire|region|canton|prefecture|march)\b/.test(nameDesc)?'country':'local';
     const world=state.worlds[state.worldIndex];
     if(!world){toast('Start a game first');return;}
     const existing=new Set(state.locations.map(l=>l.name.toLowerCase()));
@@ -1924,17 +1932,37 @@ Click a party member card — Speak as that character<br>
       const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:locName,terrain,x,y,description:desc||`Added by player: ${locName}`,loc_type})});
       if(loc&&loc.id){
         state.locations.push(loc);
-        const tabForType={country:'world',province:'area',local:'local'};
+        const tabForType={continent:'continent',country:'country',local:'local'};
         const targetScale=tabForType[loc_type]||'local';
         if(state.scale!==targetScale)setScale(targetScale);else renderMapNodes();
         const chatLog=$('#chatLog');
-        const tabLabel={country:'Country map',province:'Province map',local:'Local map'}[loc_type]||'map';
+        const tabLabel={continent:'Continent map',country:'Country map',local:'Local map'}[loc_type]||'map';
         chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">📍 ${safe(locName)} added to the ${tabLabel} (${safe(terrain)}).</em>${desc?` <span style="color:var(--muted);font-size:11px">${safe(desc)}</span>`:''}</div></div></div>`);
         chatLog.scrollTop=chatLog.scrollHeight;
         toast(`📍 ${locName} → ${tabLabel}`);
       }
     }catch(err){toast(`Failed to add location: ${err.message}`);}
     return;
+  }
+
+  // ── *add location: NAME, MAP* inline command (also passes through to AI) ──
+  {
+    const addLocRe=/\*add\s+location\s*:\s*([^,*\n]+),\s*(local|country|continent|universe)\s*\*/gi;
+    let alm;
+    while((alm=addLocRe.exec(msg))!==null){
+      const locName=alm[1].trim(), mapLevel=alm[2].toLowerCase();
+      const world2=state.worlds[state.worldIndex];
+      if(world2&&locName){
+        const lt=mapLevel==='continent'?'continent':mapLevel==='country'?'country':'local';
+        const existing2=new Set(state.locations.map(l=>l.name.toLowerCase()));
+        if(!existing2.has(locName.toLowerCase())){
+          const x2=10+Math.random()*80,y2=10+Math.random()*80;
+          api(`/api/worlds/${world2.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:locName,terrain:'Plains',x:x2,y:y2,description:'Added by player',loc_type:lt})})
+          .then(loc=>{if(loc&&loc.id){state.locations.push(loc);renderMapNodes();toast(`📍 ${locName} → ${mapLevel} map`);}})
+          .catch(()=>{});
+        }
+      }
+    }
   }
 
   const sp=state.activeSpeaker;
@@ -2691,8 +2719,8 @@ async function loadUniverseNodes(){
 function detectScaleFromChat(text){
   const t=(text||'').toLowerCase();
   if(/\b(universe|multiverse|cosmos|star system|galaxy|dimension|parallel world|alternate (world|reality)|void between worlds|astral plane|realm between|realities|the void)\b/.test(t))return'universe';
-  if(/\b(world map|continent|kingdom|nation|country|empire|federation|world of|across the (land|realm|world|kingdom)|the known world|great war|realm-wide)\b/.test(t))return'world';
-  if(/\b(province|district|county|region|neighboring (city|town|village)|surrounding (area|lands?)|travelling (to|towards|through)|journeyed? to|rode (to|through)|arrived at|ventured (to|into)|headed (to|towards))\b/.test(t))return'area';
+  if(/\b(world map|continent|kingdom|nation|empire|federation|world of|across the (land|realm|world|kingdom)|the known world|great war|realm-wide)\b/.test(t))return'continent';
+  if(/\b(province|district|county|region|country|neighboring (city|town|village)|surrounding (area|lands?)|travelling (to|towards|through)|journeyed? to|rode (to|through)|arrived at|ventured (to|into)|headed (to|towards))\b/.test(t))return'country';
   return null;
 }
 
@@ -2701,31 +2729,73 @@ async function addLocationsFromChat(text){
   if(!world||state.scale==='universe')return;
   const existing=new Set(state.locations.map(l=>l.name.toLowerCase()));
   const toAdd=[];let m;
-  // Country/Kingdom level: "Kingdom of X", "X Empire", "X Islands" etc.
+  // *add location: NAME, MAP* command in AI response
+  const addRe=/\*add\s+location\s*:\s*([^,*\n]+),\s*(local|country|continent|universe)\s*\*/gi;
+  while((m=addRe.exec(text))!==null){const n=m[1].trim(),lt=m[2].toLowerCase()==='continent'?'continent':m[2].toLowerCase()==='country'?'country':'local';if(n.length>=2&&n.length<=50&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:lt,terrain:'Plains'});existing.add(n.toLowerCase());}}
+  // Continent/Kingdom level: "Kingdom of X", "X Empire", "X Islands" etc.
   const cRe=/\b(?:Kingdom|Empire|Republic|Duchy|Federation|Nation|Realm|Dominion|Commonwealth|Sultanate|Territory|Confederation)\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})|([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Kingdom|Empire|Republic|Duchy|Federation|Islands?|Nation|Realm|Territory|Lands)\b/g;
-  while((m=cRe.exec(text))!==null){const n=(m[1]||m[2]||'').trim();if(n.length>=3&&n.length<=40&&!existing.has(n.toLowerCase())){const ct=/island|isle/i.test(n)?'Ocean':/mount|peak|highland|ridge/i.test(n)?'Mountains':/forest|wood|grove/i.test(n)?'Forest':'Plains';toAdd.push({name:n,loc_type:'country',terrain:ct});existing.add(n.toLowerCase());}}
-  // Province level: "X Province", "X District", "X County" etc.
+  while((m=cRe.exec(text))!==null){const n=(m[1]||m[2]||'').trim();if(n.length>=3&&n.length<=40&&!existing.has(n.toLowerCase())){const ct=/island|isle/i.test(n)?'Ocean':/mount|peak|highland|ridge/i.test(n)?'Mountains':/forest|wood|grove/i.test(n)?'Forest':'Plains';toAdd.push({name:n,loc_type:'continent',terrain:ct});existing.add(n.toLowerCase());}}
+  // Country/region level: "X Province", "X District", "X County" etc.
   const pRe=/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Province|District|County|Shire|Region|March|Canton|Prefecture)\b/g;
-  while((m=pRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){const pt=/mountain|highland|peak|vale|hill|ridge/i.test(n)?'Mountains':/forest|wood|grove|thicket/i.test(n)?'Forest':/swamp|marsh|bog|fen/i.test(n)?'Swamp':/coast|bay|shore|sea|port/i.test(n)?'Ocean':'Plains';toAdd.push({name:n,loc_type:'province',terrain:pt});existing.add(n.toLowerCase());}}
-  // Local level: "X tavern", "X castle", "X forest" etc.
-  const lRe=/\b(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:district|village|town|city|temple|forest|castle|ruins|cave|dungeon|tavern|market|inn|port|keep|tower|manor|shrine|gate|bridge|outpost|citadel|settlement|encampment|camp|hall|arena|palace|sanctuary|spire|grove|crossing|waypoint|fortress|barracks|library|academy|peak)\b/g;
-  while((m=lRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'local',terrain:'Plains'});existing.add(n.toLowerCase());}}
-  const deduped=toAdd.slice(0,4);
+  while((m=pRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){const pt=/mountain|highland|peak|vale|hill|ridge/i.test(n)?'Mountains':/forest|wood|grove|thicket/i.test(n)?'Forest':/swamp|marsh|bog|fen/i.test(n)?'Swamp':/coast|bay|shore|sea|port/i.test(n)?'Ocean':'Plains';toAdd.push({name:n,loc_type:'country',terrain:pt});existing.add(n.toLowerCase());}}
+  // Local/building level: "X tavern", "X castle", "X library" etc.
+  const lRe=/\b(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:district|village|town|city|temple|forest|castle|ruins|cave|dungeon|tavern|market|inn|port|keep|tower|manor|shrine|gate|bridge|outpost|citadel|settlement|encampment|camp|hall|arena|palace|sanctuary|spire|grove|crossing|waypoint|fortress|barracks|library|academy|school|cafe|restaurant|shop|office|garden|beach|hotel|dojo|gym|hospital|workshop|barn|stable|dormitory|dorm)\b/g;
+  while((m=lRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'local',terrain:'City'});existing.add(n.toLowerCase());}}
+  const deduped=toAdd.slice(0,5);
   if(!deduped.length)return;
   for(const entry of deduped){
-    const t=entry.loc_type==='local'?(/forest|grove|jungle/i.test(entry.name)?'Forest':/castle|fortress|keep|tower|ruins?|citadel/i.test(entry.name)?'Ruins':/cave|dungeon|underground/i.test(entry.name)?'Underground':/port|sea|ocean|bay/i.test(entry.name)?'Ocean':/town|city|market|tavern|village|inn/i.test(entry.name)?'City':'Plains'):entry.loc_type==='province'?(/forest|grove|woodland/i.test(entry.name)?'Forest':/mountain|highland|peak|range/i.test(entry.name)?'Mountains':/coast|bay|sea|lake/i.test(entry.name)?'Ocean':/desert|arid|sand/i.test(entry.name)?'Desert':/marsh|swamp|fen/i.test(entry.name)?'Wetlands':'Plains'):'Plains';
+    const t=entry.loc_type==='local'?(/forest|grove|jungle/i.test(entry.name)?'Forest':/castle|fortress|keep|tower|ruins?|citadel/i.test(entry.name)?'Ruins':/cave|dungeon|underground/i.test(entry.name)?'Underground':/port|sea|ocean|bay/i.test(entry.name)?'Ocean':/beach|shore/i.test(entry.name)?'Ocean':'City'):entry.loc_type==='country'?(/forest|grove|woodland/i.test(entry.name)?'Forest':/mountain|highland|peak|range/i.test(entry.name)?'Mountains':/coast|bay|sea|lake/i.test(entry.name)?'Ocean':/desert|arid|sand/i.test(entry.name)?'Desert':/marsh|swamp|fen/i.test(entry.name)?'Wetlands':'Plains'):'Plains';
     const x=15+Math.random()*70,y=15+Math.random()*70;
     try{
       const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:entry.name,terrain:t,x,y,description:`Mentioned in story`,loc_type:entry.loc_type})});
       if(loc&&loc.id){
         state.locations.push(loc);
-        toast(`📍 ${entry.name} → ${entry.loc_type} map`);
+        const mapLabel={local:'Local',country:'Country',continent:'Continent'}[entry.loc_type]||entry.loc_type;
+        toast(`📍 ${entry.name} → ${mapLabel} map`);
         // Fire background thumbnail generation
         _genLocationThumbnail(loc,world,t).catch(()=>{});
       }
     }catch{}
   }
   renderMapNodes();
+}
+
+// ═══ Seed Local map from scenario backstory ═══
+// Called once when a new game starts with no existing local locations.
+// Extracts building/place names from opening text and adds them to the Local map.
+async function seedLocalFromBackstory(text){
+  const world=state.worlds[state.worldIndex];
+  if(!world||!text)return;
+  const existing=new Set(state.locations.map(l=>l.name.toLowerCase()));
+  const BT='home|house|manor|mansion|penthouse|office|shop|store|market|cafe|restaurant|tavern|inn|pub|bar|academy|school|library|dungeon|cave|garden|palace|temple|church|castle|fortress|tower|beach|hotel|arena|dojo|gym|barn|port|hallway|hall|courtyard|grove|jungle|forest|warehouse|vault|clinic|hospital|workshop|laboratory|lab|dormitory|dorm|bedroom|kitchen|ballroom|plaza';
+  const toSeed=[];let m;
+  // Pattern: "[the] CapName BuildingType"
+  const re1=new RegExp(`\\b(?:the\\s+)?([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?)\\s+(${BT})\\b`,'g');
+  while((m=re1.exec(text))!==null){
+    const name=(m[1]+' '+m[2]).replace(/^the\s+/i,'').trim();
+    if(name.length>=4&&name.length<=50&&!existing.has(name.toLowerCase())){toSeed.push(name);existing.add(name.toLowerCase());}
+  }
+  // Pattern: "BuildingType of [the] CapName"
+  const re2=new RegExp(`\\b(${BT})\\s+of\\s+(?:the\\s+)?([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?)\\b`,'g');
+  while((m=re2.exec(text))!==null){
+    const name=(m[2]+' '+m[1]).trim();
+    if(name.length>=4&&name.length<=50&&!existing.has(name.toLowerCase())){toSeed.push(name);existing.add(name.toLowerCase());}
+  }
+  const limited=toSeed.slice(0,8);
+  if(!limited.length)return;
+  for(let i=0;i<limited.length;i++){
+    const name=limited[i];
+    const angle=(i/limited.length)*2*Math.PI;
+    const r=22+Math.random()*28;
+    const x=Math.max(10,Math.min(90,Math.round(50+r*Math.cos(angle))));
+    const y=Math.max(10,Math.min(90,Math.round(50+r*Math.sin(angle))));
+    try{
+      const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,terrain:'City',x,y,description:'Location from scenario backstory',loc_type:'local'})});
+      if(loc&&loc.id)state.locations.push(loc);
+    }catch{}
+  }
+  renderMapNodes();
+  if(limited.length)toast(`📍 ${limited.length} locations seeded from backstory`);
 }
 
 async function _genLocationThumbnail(loc,world,terrain){
