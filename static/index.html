@@ -153,9 +153,11 @@
           <div class="fog fog-one"></div><div class="fog fog-two"></div>
           <div class="road road-a"></div><div class="road road-b"></div>
           <div id="mapNodes"></div>
+          <div id="mapNodePreview" class="map-node-preview hidden"></div>
+          <div id="mapMoveRipple"></div>
           <button id="portal" class="portal" style="--x:84%;--y:50%" title="Reality portal"><span></span></button>
           <div id="playerToken" class="player-token" style="--x:42%;--y:52%"><span>AS</span><i></i></div>
-          <div class="map-hint">WASD / ARROWS TO MOVE · CLICK A LOCATION TO ENTER</div>
+          <div class="map-hint">CLICK TO MOVE · CLICK LOCATION TO EXPLORE · WASD TO WALK</div>
           <div id="mapLocationPanel" class="map-location-panel" hidden>
             <div class="map-loc-img-wrap">
               <div id="mapLocLoading" class="map-loc-loading">Generating scene…</div>
@@ -591,6 +593,30 @@
 .chat-action{font-style:italic;color:#9a8fb0;letter-spacing:.01em}
 .chat-dialogue{color:#e8d5a3}
 .chat-speaker{color:var(--gold);font-weight:bold;font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+/* ── Interactive map ── */
+.map-node{transition:transform .15s,box-shadow .2s,opacity .3s!important}
+.map-node:hover{transform:translate(-50%,-50%) scale(1.2)!important;box-shadow:0 0 0 7px #0005,0 0 20px var(--gold)88!important;z-index:5!important}
+.map-node.nearby::before{content:'';position:absolute;inset:-7px;border-radius:50%;border:2px solid var(--gold);animation:nearby-ping 1.1s ease-out infinite;pointer-events:none}
+@keyframes nearby-ping{0%{opacity:.7;transform:scale(.85)}100%{opacity:0;transform:scale(1.7)}}
+.map-node.preview-active{transform:translate(-50%,-50%) scale(1.25)!important;box-shadow:0 0 0 7px #0005,0 0 24px var(--gold)!important;z-index:6!important}
+.player-token{transition:left .35s cubic-bezier(.4,0,.2,1),top .35s cubic-bezier(.4,0,.2,1)!important}
+.map-node-preview{position:absolute;z-index:9;background:#0d1217f2;border:1px solid var(--gold);border-radius:4px;overflow:hidden;min-width:170px;max-width:215px;box-shadow:0 12px 40px #000c,0 0 0 1px #0003;pointer-events:auto;animation:preview-in .18s ease-out}
+@keyframes preview-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.map-node-preview.hidden{display:none!important}
+.mnp-img-wrap{width:100%;height:90px;overflow:hidden;position:relative;background:#111820;flex-shrink:0}
+.mnp-img-wrap img{width:100%;height:100%;object-fit:cover;display:block;transition:opacity .4s}
+.mnp-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted);letter-spacing:1px;background:#0d1217cc}
+.mnp-body{padding:9px 11px 6px}
+.mnp-name{font:14px/1.3 Georgia,serif;color:#e9ecf1;display:block;margin-bottom:3px}
+.mnp-sub{font-size:9px;color:var(--gold);letter-spacing:.5px;text-transform:uppercase}
+.mnp-desc{font-size:9px;color:#87909d;margin:5px 0 0;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.mnp-actions{display:flex;gap:6px;padding:7px 10px;border-top:1px solid var(--line)}
+.mnp-enter{flex:1;background:var(--gold);color:#000;border:0;font-weight:700;font-size:10px;padding:7px;cursor:pointer;letter-spacing:.4px}
+.mnp-enter:hover{background:#f0c060}
+.mnp-close{background:#1c252e;border:1px solid #35414c;color:#87909d;font-size:13px;padding:7px 10px;cursor:pointer;line-height:1}
+#mapMoveRipple{position:absolute;pointer-events:none;z-index:3;width:22px;height:22px;border-radius:50%;border:2px solid var(--gold);transform:translate(-50%,-50%);opacity:0}
+#mapMoveRipple.ripple-active{animation:map-ripple .5s ease-out forwards}
+@keyframes map-ripple{0%{opacity:.85;transform:translate(-50%,-50%) scale(.4)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.6)}}
   </style>
   <script src="/game.js"></script>
 </body>
