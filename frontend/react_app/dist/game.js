@@ -859,6 +859,7 @@ async function updateClock(){
   const mapEl=$('#map');if(mapEl){mapEl.classList.toggle('map-night',(h<6||h>=21));mapEl.classList.toggle('map-dawn',h>=6&&h<9);}
  }catch{}
 }
+$('#genLocBtn').onclick=()=>generateMapLocations(state.scale||'local');
 $('#advanceTimeBtn').onclick=async()=>{
  try{
   await api(`/api/world/clock/advance?session_id=${encodeURIComponent(state.sessionId||'default')}&minutes=30`,{method:'POST'});
@@ -2851,35 +2852,128 @@ async function addLocationsFromChat(text){
   if(!world||state.scale==='universe')return;
   const existing=new Set(state.locations.map(l=>l.name.toLowerCase()));
   const toAdd=[];let m;
-  // *add location: NAME, MAP* command in AI response
+  // *add location: NAME, MAP* explicit command
   const addRe=/\*add\s+location\s*:\s*([^,*\n]+),\s*(local|country|continent|universe)\s*\*/gi;
   while((m=addRe.exec(text))!==null){const n=m[1].trim(),lt=m[2].toLowerCase()==='continent'?'continent':m[2].toLowerCase()==='country'?'country':'local';if(n.length>=2&&n.length<=50&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:lt,terrain:'Plains'});existing.add(n.toLowerCase());}}
-  // Continent/Kingdom level: "Kingdom of X", "X Empire", "X Islands" etc.
-  const cRe=/\b(?:Kingdom|Empire|Republic|Duchy|Federation|Nation|Realm|Dominion|Commonwealth|Sultanate|Territory|Confederation)\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})|([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Kingdom|Empire|Republic|Duchy|Federation|Islands?|Nation|Realm|Territory|Lands)\b/g;
-  while((m=cRe.exec(text))!==null){const n=(m[1]||m[2]||'').trim();if(n.length>=3&&n.length<=40&&!existing.has(n.toLowerCase())){const ct=/island|isle/i.test(n)?'Ocean':/mount|peak|highland|ridge/i.test(n)?'Mountains':/forest|wood|grove/i.test(n)?'Forest':'Plains';toAdd.push({name:n,loc_type:'continent',terrain:ct});existing.add(n.toLowerCase());}}
-  // Country/region level: "X Province", "X District", "X County" etc.
-  const pRe=/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Province|District|County|Shire|Region|March|Canton|Prefecture)\b/g;
-  while((m=pRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){const pt=/mountain|highland|peak|vale|hill|ridge/i.test(n)?'Mountains':/forest|wood|grove|thicket/i.test(n)?'Forest':/swamp|marsh|bog|fen/i.test(n)?'Swamp':/coast|bay|shore|sea|port/i.test(n)?'Ocean':'Plains';toAdd.push({name:n,loc_type:'country',terrain:pt});existing.add(n.toLowerCase());}}
-  // Local/building level: "X tavern", "X castle", "X library" etc.
-  const lRe=/\b(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:district|village|town|city|temple|forest|castle|ruins|cave|dungeon|tavern|market|inn|port|keep|tower|manor|shrine|gate|bridge|outpost|citadel|settlement|encampment|camp|hall|arena|palace|sanctuary|spire|grove|crossing|waypoint|fortress|barracks|library|academy|school|cafe|restaurant|shop|office|garden|beach|hotel|dojo|gym|hospital|workshop|barn|stable|dormitory|dorm)\b/g;
+  // Continent level: kingdoms, empires, island chains, etc.
+  const cRe=/\b(?:Kingdom|Empire|Republic|Duchy|Federation|Nation|Realm|Dominion|Commonwealth|Sultanate|Territory|Confederation|Principality|Queendom)\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})|([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Kingdom|Empire|Republic|Duchy|Federation|Islands?|Archipelago|Nation|Realm|Territory|Lands|Continent|Peninsula|Steppes|Wastes|Expanse)\b/g;
+  while((m=cRe.exec(text))!==null){const n=(m[1]||m[2]||'').trim();if(n.length>=3&&n.length<=40&&!existing.has(n.toLowerCase())){const ct=/island|isle|archipe/i.test(n)?'Ocean':/mount|peak|highland|ridge/i.test(n)?'Mountains':/forest|wood|grove/i.test(n)?'Forest':/desert|arid|waste|sand/i.test(n)?'Desert':/swamp|marsh|bog|fen/i.test(n)?'Wetlands':'Plains';toAdd.push({name:n,loc_type:'continent',terrain:ct});existing.add(n.toLowerCase());}}
+  // Country/region level: provinces, districts, counties, valleys, etc.
+  const pRe=/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:Province|District|County|Shire|Region|March|Canton|Prefecture|Valley|Pass|Coast|Highlands?|Lowlands?|Borderlands?|Foothills?)\b/g;
+  while((m=pRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){const pt=/mountain|highland|peak|vale|hill|ridge/i.test(n)?'Mountains':/forest|wood|grove|thicket/i.test(n)?'Forest':/swamp|marsh|bog|fen/i.test(n)?'Wetlands':/coast|bay|shore|sea|port/i.test(n)?'Ocean':/desert|arid|sand/i.test(n)?'Desert':'Plains';toAdd.push({name:n,loc_type:'country',terrain:pt});existing.add(n.toLowerCase());}}
+  // Local terrain features: "the Ancient Forest", "Crystal Desert", "Dark Dungeon" etc.
+  const terrainWords='forest|jungle|woodland|woods|dungeon|cavern|cave|crypt|tomb|ruins?|ruin|desert|wasteland|badlands|swamp|marsh|bog|mire|fen|island|isle|islet|sea|ocean|lake|river|bay|cove|harbor|harbour|beach|shore|coast|volcano|crater|glacier|tundra|canyon|gorge|cliff|valley|dale|glen|meadow|moor|heath|plain|steppe|mountain|peak|summit|ridge|plateau';
+  const terrRe=new RegExp(`\\b(?:the\\s+)?([A-Z][a-z]+(?:\\s+(?:of\\s+the\\s+)?[A-Z][a-z]+)?(?:\\s+[A-Z][a-z]+)?)\\s+(${terrainWords})s?\\b|\\b(${terrainWords})s?\\s+of\\s+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?)\\b`,'gi');
+  while((m=terrRe.exec(text))!==null){
+    const raw=m[1]?`${m[1]} ${m[2]}`:`${m[4]} ${m[3]}`;
+    const n=raw.replace(/^(the|a|an)\s+/i,'').trim();
+    if(n.length>=4&&n.length<=45&&!existing.has(n.toLowerCase())){
+      const lc=n.toLowerCase();
+      const terr=/forest|jungle|wood|grove/i.test(lc)?'Forest':/dungeon|cave|cavern|crypt|tomb|underground/i.test(lc)?'Underground':/ruins?/i.test(lc)?'Ruins':/desert|waste|badland/i.test(lc)?'Desert':/swamp|marsh|bog|mire|fen/i.test(lc)?'Wetlands':/island|isle|sea|ocean|bay|cove|harbor|beach|shore|coast/i.test(lc)?'Ocean':/volcano|crater/i.test(lc)?'Volcano':/glacier|tundra/i.test(lc)?'Tundra':/mountain|peak|summit|ridge|cliff|canyon/i.test(lc)?'Mountains':/valley|dale|glen|meadow|moor|plain/i.test(lc)?'Plains':'Plains';
+      const lt=state.scale==='continent'?'continent':state.scale==='country'?'country':'local';
+      toAdd.push({name:n,loc_type:lt,terrain:terr});existing.add(lc);
+    }
+  }
+  // Local/building level: "X Tavern", "X Castle", "X Library" etc.
+  const lRe=/\b(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s+(?:district|village|hamlet|town|city|temple|shrine|altar|castle|ruins|cave|dungeon|tavern|market|inn|pub|port|keep|tower|manor|gate|bridge|outpost|citadel|settlement|encampment|camp|hall|arena|palace|sanctuary|spire|grove|crossing|waypoint|fortress|barracks|library|academy|school|cafe|restaurant|shop|office|garden|beach|hotel|dojo|gym|hospital|workshop|barn|stable|dormitory|dorm|lighthouse|lighthouse|pier|dock|mill|forge|blacksmith|bakery|cathedral|chapel|monastery|abbey|cloister|graveyard|cemetery|necropolis|vault|catacombs?|labyrinth|maze|colosseum|amphitheater|bazaar|souq|emporium)\b/gi;
   while((m=lRe.exec(text))!==null){const n=m[1].trim();if(n.length>=3&&n.length<=35&&!existing.has(n.toLowerCase())){toAdd.push({name:n,loc_type:'local',terrain:'City'});existing.add(n.toLowerCase());}}
-  const deduped=toAdd.slice(0,5);
+  const deduped=toAdd.slice(0,6);
   if(!deduped.length)return;
   for(const entry of deduped){
-    const t=entry.loc_type==='local'?(/forest|grove|jungle/i.test(entry.name)?'Forest':/castle|fortress|keep|tower|ruins?|citadel/i.test(entry.name)?'Ruins':/cave|dungeon|underground/i.test(entry.name)?'Underground':/port|sea|ocean|bay/i.test(entry.name)?'Ocean':/beach|shore/i.test(entry.name)?'Ocean':'City'):entry.loc_type==='country'?(/forest|grove|woodland/i.test(entry.name)?'Forest':/mountain|highland|peak|range/i.test(entry.name)?'Mountains':/coast|bay|sea|lake/i.test(entry.name)?'Ocean':/desert|arid|sand/i.test(entry.name)?'Desert':/marsh|swamp|fen/i.test(entry.name)?'Wetlands':'Plains'):'Plains';
+    const lc=(entry.name+' '+entry.terrain).toLowerCase();
+    const t=entry.terrain!=='Plains'?entry.terrain:entry.loc_type==='local'?(/forest|grove|jungle/i.test(lc)?'Forest':/cave|dungeon|crypt|underground/i.test(lc)?'Underground':/ruins?/i.test(lc)?'Ruins':/port|sea|ocean|bay|harbor|beach/i.test(lc)?'Ocean':'City'):(/forest|wood/i.test(lc)?'Forest':/mountain|peak|highland/i.test(lc)?'Mountains':/desert|arid/i.test(lc)?'Desert':/swamp|marsh/i.test(lc)?'Wetlands':/coast|sea|ocean/i.test(lc)?'Ocean':'Plains');
     const x=15+Math.random()*70,y=15+Math.random()*70;
     try{
-      const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:entry.name,terrain:t,x,y,description:`Mentioned in story`,loc_type:entry.loc_type})});
+      const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:entry.name,terrain:t,x,y,description:'Mentioned in story',loc_type:entry.loc_type})});
       if(loc&&loc.id){
         state.locations.push(loc);
         const mapLabel={local:'Local',country:'Country',continent:'Continent'}[entry.loc_type]||entry.loc_type;
         toast(`📍 ${entry.name} → ${mapLabel} map`);
-        // Fire background thumbnail generation
         _genLocationThumbnail(loc,world,t).catch(()=>{});
       }
     }catch{}
   }
   renderMapNodes();
+}
+
+// ═══ Random location generator ═══
+async function generateMapLocations(scale){
+  const world=state.worlds[state.worldIndex];
+  if(!world){toast('No world selected');return;}
+  const existing=new Set(state.locations.filter(l=>(l.loc_type||'local')===scale||(scale==='local'&&!l.loc_type)).map(l=>l.name.toLowerCase()));
+  // Word banks per scale
+  const ADJ_FANTASY=['Ancient','Broken','Crystal','Cursed','Dark','Dead','Dread','Ember','Eternal','Fading','Fallen','Forsaken','Frozen','Ghost','Golden','Hidden','Hollow','Iron','Jade','Lost','Mystic','Obsidian','Sacred','Shadow','Silver','Silent','Shattered','Sunken','Twilight','Wandering','Whispering','Wild','Withered','Wraithborn'];
+  const ADJ_NATURE=['Ash','Birch','Blackwood','Briar','Cedar','Crimson','Dusty','Fernwood','Grey','Misty','Mossy','Muddy','Oak','Pine','Red','Rocky','Rusty','Sandy','Scarlet','Stony','Verdant','Vine','Willowy'];
+  function pick(arr){return arr[Math.floor(Math.random()*arr.length)];}
+  function adjName(){return Math.random()<0.6?pick(ADJ_FANTASY)+' ':pick(ADJ_NATURE)+' ';}
+  const localTemplates=[
+    ()=>({name:adjName()+pick(['Dungeon','Catacombs','Vault','Crypt','Tomb']),terrain:'Underground'}),
+    ()=>({name:adjName()+pick(['Forest','Grove','Jungle','Thicket','Woodland']),terrain:'Forest'}),
+    ()=>({name:adjName()+pick(['Village','Hamlet','Settlement','Outpost']),terrain:'Plains'}),
+    ()=>({name:adjName()+pick(['Ruins','Keep','Citadel','Fortress','Watchtower']),terrain:'Ruins'}),
+    ()=>({name:adjName()+pick(['Desert','Dunes','Wasteland','Badlands','Sands']),terrain:'Desert'}),
+    ()=>({name:pick(['Sea of','Bay of','Cove of','Isle of','Shores of'])+' '+pick(['Storms','Silence','Shadows','Echoes','Fate','Mist','Sorrow','Whispers']),terrain:'Ocean'}),
+    ()=>({name:adjName()+pick(['Island','Islet','Atoll']),terrain:'Ocean'}),
+    ()=>({name:adjName()+pick(['Swamp','Marshland','Bog','Mire','Fens']),terrain:'Wetlands'}),
+    ()=>({name:adjName()+pick(['Peak','Summit','Ridge','Cliffs','Highlands']),terrain:'Mountains'}),
+    ()=>({name:adjName()+pick(['Shrine','Temple','Altar','Sanctum','Chapel']),terrain:'City'}),
+    ()=>({name:adjName()+pick(['Tavern','Inn','Hall','Market','Bazaar']),terrain:'City'}),
+    ()=>({name:adjName()+pick(['Cave','Cavern','Grotto','Hollow']),terrain:'Underground'}),
+    ()=>({name:adjName()+pick(['Tower','Spire','Lighthouse','Beacon']),terrain:'Ruins'}),
+    ()=>({name:adjName()+pick(['Valley','Dale','Glen','Ravine']),terrain:'Plains'}),
+    ()=>({name:adjName()+pick(['Volcano','Crater','Caldera']),terrain:'Volcano'}),
+    ()=>({name:adjName()+pick(['Glacier','Icefield','Tundra','Frostlands']),terrain:'Tundra'}),
+    ()=>({name:adjName()+pick(['Graveyard','Cemetery','Necropolis']),terrain:'Ruins'}),
+    ()=>({name:adjName()+pick(['Port','Harbor','Docks','Wharf']),terrain:'Ocean'}),
+  ];
+  const countryTemplates=[
+    ()=>({name:adjName()+pick(['Valley','Vale','Dale','Basin','Glen']),terrain:'Plains'}),
+    ()=>({name:adjName()+pick(['Forest','Woodlands','Greenwood','Wildwood']),terrain:'Forest'}),
+    ()=>({name:adjName()+pick(['Highlands','Mountains','Range','Peaks']),terrain:'Mountains'}),
+    ()=>({name:adjName()+pick(['Coast','Shores','Seaboard','Strand']),terrain:'Ocean'}),
+    ()=>({name:adjName()+pick(['Desert','Wastelands','Barrens','Dunes']),terrain:'Desert'}),
+    ()=>({name:adjName()+pick(['Marshes','Wetlands','Fens','Moors']),terrain:'Wetlands'}),
+    ()=>({name:adjName()+pick(['Province','County','Shire','District','Region']),terrain:'Plains'}),
+    ()=>({name:adjName()+pick(['Borderlands','Marches','Frontier','Outlands']),terrain:'Plains'}),
+    ()=>({name:adjName()+pick(['Foothills','Lowlands','Flats','Plains']),terrain:'Plains'}),
+    ()=>({name:adjName()+pick(['Archipelago','Islands','Isle Chain']),terrain:'Ocean'}),
+  ];
+  const continentTemplates=[
+    ()=>({name:adjName()+pick(['Kingdom','Realm','Dominion','Sovereignty']),terrain:'Plains'}),
+    ()=>({name:adjName()+pick(['Empire','Imperium','Confederation','Federation']),terrain:'Plains'}),
+    ()=>({name:adjName()+pick(['Republic','Nation','Commonwealth','Alliance']),terrain:'Plains'}),
+    ()=>({name:adjName()+pick(['Lands','Territories','Wilds','Expanse']),terrain:'Plains'}),
+    ()=>({name:pick(['The','Great','Grand'])+' '+pick(['Desert','Sea','Ocean','Forest','Steppe','Tundra','Glacier','Void','Abyss','Rift']),terrain:'Desert'}),
+    ()=>({name:adjName()+pick(['Continent','Peninsula','Subcontinent','Landmass']),terrain:'Plains'}),
+    ()=>({name:adjName()+pick(['Archipelago','Island Chain','Sea Islands']),terrain:'Ocean'}),
+    ()=>({name:adjName()+pick(['Wastes','Barrens','Desolation','Expanse']),terrain:'Desert'}),
+  ];
+  const templates=scale==='continent'?continentTemplates:scale==='country'?countryTemplates:localTemplates;
+  const count=scale==='continent'?5:scale==='country'?6:8;
+  const toAdd=[];
+  let tries=0;
+  while(toAdd.length<count&&tries<count*5){
+    tries++;
+    const tpl=templates[Math.floor(Math.random()*templates.length)];
+    const entry=tpl();
+    if(!existing.has(entry.name.toLowerCase())){toAdd.push({...entry,loc_type:scale});existing.add(entry.name.toLowerCase());}
+  }
+  if(!toAdd.length){toast('No new locations to add');return;}
+  toast(`Generating ${toAdd.length} locations…`);
+  let added=0;
+  for(let i=0;i<toAdd.length;i++){
+    const entry=toAdd[i];
+    const angle=(i/toAdd.length)*2*Math.PI;
+    const r=15+Math.random()*50;
+    const x=Math.max(8,Math.min(92,Math.round(50+r*Math.cos(angle))));
+    const y=Math.max(8,Math.min(92,Math.round(50+r*Math.sin(angle))));
+    try{
+      const loc=await api(`/api/worlds/${world.id}/locations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:entry.name,terrain:entry.terrain,x,y,description:`Generated ${scale} location`,loc_type:scale})});
+      if(loc&&loc.id){state.locations.push(loc);added++;_genLocationThumbnail(loc,world,entry.terrain).catch(()=>{});}
+    }catch{}
+  }
+  renderMapNodes();
+  if(added)toast(`✦ ${added} locations added to ${scale} map`);
 }
 
 // ═══ Seed Local map from scenario backstory ═══
