@@ -207,7 +207,20 @@ _MIGRATIONS = [
     ("characters", "origin", "TEXT DEFAULT 'Original fantasy world'"),
     ("characters", "secondary_ancestry", "TEXT DEFAULT ''"),
     ("characters", "values_json", "TEXT DEFAULT '{}'"),
+    # Quest reward tracking: type and actual payload granted
+    ("quests", "reward_type", "TEXT DEFAULT 'gold'"),
+    ("quests", "reward_payload", "TEXT DEFAULT '{}'"),
 ]
+
+# Level-up pending choices table (append-only, claimed flag)
+_TABLES.append("""CREATE TABLE IF NOT EXISTS level_up_pending (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id INTEGER NOT NULL,
+    new_level INTEGER NOT NULL,
+    choices_json TEXT DEFAULT '{}',
+    claimed INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL
+)""")
 
 def _create_tables(conn):
     """Create all tables that don't already exist. Pure CREATE TABLE IF NOT EXISTS,

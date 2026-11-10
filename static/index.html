@@ -188,7 +188,7 @@
 
     <aside class="panel detail-panel">
       <nav class="detail-tabs">
-        <button class="active" data-panel="character">Character</button><button data-panel="inventory">Inventory</button><button data-panel="spells">Spellbook</button><button data-panel="skills">Skills</button>
+        <button class="active" data-panel="character">Character</button><button data-panel="inventory">Inventory</button><button data-panel="spells">Spellbook</button><button data-panel="skills">Skills</button><button data-panel="progression">Progress</button>
       </nav>
       <div id="detailContent"></div>
     </aside>
@@ -218,6 +218,36 @@
   </div>
 
   <!-- Recruit companion modal -->
+  <!-- ══ Level-Up Modal ══ -->
+  <div id="levelUpModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:950;display:flex;align-items:center;justify-content:center">
+    <div style="background:var(--panel);border:2px solid var(--gold);border-radius:12px;width:min(560px,96vw);max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 0 40px rgba(212,175,55,.3)">
+      <div style="text-align:center;padding:20px 16px 10px;border-bottom:1px solid var(--line)">
+        <div style="font-size:28px;margin-bottom:4px">⬆</div>
+        <h2 id="lvlUpTitle" style="color:var(--gold);font-size:20px;margin:0 0 4px;letter-spacing:1px">LEVEL UP!</h2>
+        <p id="lvlUpSub" style="font-size:12px;color:var(--muted);margin:0">Choose your rewards</p>
+      </div>
+      <div id="lvlUpBody" style="overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px"></div>
+      <div style="padding:12px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px">
+        <button id="lvlUpClaimBtn" class="gold" style="font-size:12px;padding:8px 20px">✓ Claim Rewards</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Quest Reward Modal ══ -->
+  <div id="questRewardModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:940;display:flex;align-items:center;justify-content:center">
+    <div style="background:var(--panel);border:1px solid var(--gold);border-radius:10px;width:min(440px,94vw);overflow:hidden">
+      <div style="text-align:center;padding:16px 16px 10px;border-bottom:1px solid var(--line)">
+        <div id="qrIcon" style="font-size:32px;margin-bottom:6px">✦</div>
+        <h2 id="qrTitle" style="color:var(--gold);font-size:16px;margin:0 0 2px">Quest Complete!</h2>
+        <p id="qrSub" style="font-size:11px;color:var(--muted);margin:0"></p>
+      </div>
+      <div id="qrBody" style="padding:14px 16px"></div>
+      <div style="padding:10px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end">
+        <button id="qrClose" class="ghost" style="font-size:11px;padding:6px 16px">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="recruitModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:900;display:flex;align-items:center;justify-content:center">
     <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;width:min(520px,95vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)">
@@ -685,6 +715,10 @@
 .lcp-empty{text-align:center;padding:20px;color:var(--muted,#6b7a99);font-size:11px}
 .lcp-take-all-row{display:flex;justify-content:flex-end;margin-top:4px}
 .lcp-refresh-row{display:flex;justify-content:flex-end;padding:6px 0 2px;border-top:1px solid var(--line,#2a3348)}
+/* Level-up modal active-choice button */
+button.active-choice{background:var(--gold,#c9a84c)!important;color:#0d0d0d!important;border-color:var(--gold,#c9a84c)!important;font-weight:700}
+/* Quest reward type badge colors */
+.qr-feat{color:var(--gold,#c9a84c)}.qr-spell{color:var(--purple,#9c27b0)}.qr-companion{color:#4caf50}.qr-title{color:var(--gold,#c9a84c)}.qr-ally{color:#2196f3}.qr-stat_point{color:#ff9800}.qr-plot_item{color:#e91e63}.qr-skill{color:#00bcd4}
   </style>
   <script src="/game.js"></script>
 </body>

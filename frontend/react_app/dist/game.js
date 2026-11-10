@@ -238,30 +238,44 @@ function renderQuests(){
 }
 async function completeQuest(idx){
  const q=state.quests[idx];if(!q)return;
- const xpReward=q.xp_reward||50;
- const chatLog=$('#chatLog');
- chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">✦ Quest Complete: "${safe(q.title)}"</em>${q.reward?` <span style="color:var(--gold)">Reward: ${safe(q.reward)}</span>`:''}${xpReward?` <span style="color:var(--green,#4caf50)">+${xpReward} XP</span>`:''}</div>`));
- chatLog.scrollTop=chatLog.scrollHeight;
- if(state.characterId&&xpReward){
-  try{const result=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:xpReward,reason:`Quest: ${q.title}`})});state.sheet=result.sheet;renderParty();toast(result.leveled_up?`Quest complete! Level up — now level ${result.sheet?.calc_lv}`:`Quest complete! +${xpReward} XP`);}catch{toast('Quest complete!');}
- }else toast('Quest complete!');
- // Deliver tangible rewards from the quest reward string
- if(state.characterId&&q.reward){
-  const goldMatch=/(\d+)\s*(?:gold|gp|g\.p\.|coins?|pieces?)/i.exec(q.reward);
-  if(goldMatch){
-   const amount=parseInt(goldMatch[1],10);
-   let goldOk=false;
-   for(let attempt=0;attempt<3&&!goldOk;attempt++){
-    try{await api(`/api/characters/${state.characterId}/economy/add`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gold:amount})});await refreshCharacterState();toast(`💰 +${amount} gold from quest`);goldOk=true;}
-    catch{if(attempt<2)await new Promise(r=>setTimeout(r,500));}
-   }
-   if(!goldOk)toast(`Could not deliver gold reward — try claiming manually`);
-  }
-  const hasLoot=/\b(?:weapon|item|potion|ring|sword|staff|scroll|artifact|armor|armour|shield|dagger|bow|relic|gem)\b/i.test(q.reward);
-  if(hasLoot)lootItem().catch(()=>{});
- }
- if(q.id){try{await api(`/api/quests/${q.id}/complete`,{method:'POST'});}catch{}}
  state.quests.splice(idx,1);renderQuests();
+ let result={};
+ if(q.id){
+  try{result=await api(`/api/quests/${q.id}/complete?character_id=${state.characterId||0}`,{method:'POST'});}catch{}
+ }
+ const xpAwarded=result.xp_awarded||q.xp_reward||40;
+ const reward=result.reward||null;
+ // Log to chat
+ const chatLog=$('#chatLog');
+ const rewardLine=reward?`<span style="color:var(--gold)">${safe(reward.icon||'✦')} ${safe(reward.label)}</span>`:`<span style="color:var(--gold)">${safe(q.reward||'Reward')}</span>`;
+ chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">✦ Quest Complete: "${safe(q.title)}"</em> ${rewardLine} <span style="color:var(--green,#4caf50)">+${xpAwarded} XP</span></div>`));
+ chatLog.scrollTop=chatLog.scrollHeight;
+ if(result.sheet){state.sheet=result.sheet;renderParty();}
+ // Show quest reward modal
+ if(reward)showQuestRewardModal(q.title,xpAwarded,reward);
+ else toast(`Quest complete! +${xpAwarded} XP`);
+ // Level-up check
+ if(result.levelled_up&&result.new_level){
+  await levelUp(result.new_level,result.level_up_choices);
+ }else if(result.sheet&&state.sheet){
+  const newLv=result.sheet.calc_lv||result.sheet.level||1;
+  const prevLv=(state.sheet?.calc_lv||state.sheet?.level||1);
+  if(newLv>prevLv)await levelUp(newLv);
+ }
+ sfx('loot');
+}
+function showQuestRewardModal(questTitle,xp,reward){
+ const modal=$('#questRewardModal');if(!modal)return;
+ const icon=reward.icon||'✦';
+ $('#qrIcon').textContent=icon;
+ $('#qrTitle').textContent=`Quest Complete!`;
+ $('#qrSub').textContent=questTitle;
+ const typeColors={feat:'var(--gold)',spell:'var(--purple)',companion:'#4caf50',title:'var(--gold)',ally:'#2196f3',stat_point:'#ff9800',plot_item:'#e91e63',gold:'var(--gold)',skill:'#00bcd4',item:'var(--muted)'};
+ const col=typeColors[reward.type]||'var(--gold)';
+ $('#qrBody').innerHTML=`<div style="text-align:center;padding:8px 0 12px"><div style="font-size:36px;margin-bottom:8px">${safe(icon)}</div><div style="font-size:18px;font-weight:bold;color:${col}">${safe(reward.label)}</div>${reward.desc?`<div style="font-size:11px;color:var(--muted);margin-top:4px">${safe(reward.desc)}</div>`:''}<div style="margin-top:12px;font-size:13px;color:var(--green,#4caf50)">+${xp} XP earned</div></div>`;
+ modal.hidden=false;
+ const close=$('#qrClose');if(close)close.onclick=()=>{modal.hidden=true;};
+ modal.onclick=e=>{if(e.target===modal)modal.hidden=true;};
 }
 async function abandonQuest(idx){
  const q=state.quests[idx];if(!q)return;
@@ -417,6 +431,35 @@ const panels={
   const s=state.sheet; if(!s) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
   const learned=[...(s.skills||[]),...(s.traits||[])]; const available=(s.available_feats||[]).slice(0,6);
   return `<div class="panel-title"><span>SKILL TREE</span><small>${safe(s.skill_points_available||0)} points</small></div><div class="tree">${learned.map(sk=>`<button class="skill-node unlocked"><b>${safe(sk)}</b><small>Unlocked</small></button>`).join('')||'<p class="empty-state">No skills or feats learned yet.</p>'}${available.map(f=>`<button class="skill-node" data-feat="${safe(f)}"><b>${safe(f)}</b><small>Learn feat</small></button>`).join('')}</div>`;
+ },
+ progression:()=>{
+  const s=state.sheet;
+  if(!s) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
+  const xp=s.xp_progress||{into:0,need:1,fraction:0};
+  const lv=s.calc_lv||s.level||1;
+  const xpPct=Math.round((xp.fraction||0)*100);
+  const feats=s.traits||[]; const spells=s.spells||[]; const skills=s.skills||[];
+  const statPts=s.stat_points_available||0; const skillPts=s.skill_points_available||0;
+  const STAT_LABELS={strength:'STR',dexterity:'DEX',intelligence:'INT',wisdom:'WIS',constitution:'CON',speed:'SPD',luck:'LCK',charisma_stat:'CHA'};
+  const stats=s.total_stats||{};
+  const statRows=Object.entries(STAT_LABELS).map(([k,abbr])=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0"><span style="color:var(--muted)">${abbr}</span><b>${(stats[k]||{}).total??s[k]??10}</b></div>`).join('');
+  const nextLvXp=xp.need+xp.into;
+  const pendingBanner=statPts>0||skillPts>0?`<div style="background:#1a1a00;border:1px solid var(--gold);border-radius:5px;padding:8px 10px;font-size:11px;color:var(--gold);margin-bottom:10px">⭐ ${statPts} attribute point${statPts!==1?'s':''} & ${skillPts} skill point${skillPts!==1?'s':''} pending — open Level-Up to claim</div>`:'';
+  return `<div class="panel-title"><span>PROGRESSION</span><small>Level ${lv}</small></div>
+${pendingBanner}
+<div style="margin-bottom:10px">
+ <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--muted)">XP</span><span>${safe(s.xp||0)} / ${nextLvXp} (Lv ${lv+1})</span></div>
+ <div class="meter" style="height:8px;border-radius:4px"><i style="width:${xpPct}%;background:linear-gradient(90deg,var(--gold),#ff9800);border-radius:4px"></i></div>
+ <div style="font-size:9px;color:var(--muted);margin-top:2px">${xp.into} / ${xp.need} XP to next level</div>
+</div>
+<div class="panel-title" style="margin-top:8px"><span>STATS</span></div>
+<div style="column-count:2;column-gap:12px">${statRows}</div>
+<div class="panel-title" style="margin-top:8px"><span>FEATS</span><small>${feats.length}</small></div>
+<div>${feats.length?feats.map(f=>`<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--line)">⭐ ${safe(f)}</div>`).join(''):'<div style="font-size:11px;color:var(--muted)">No feats yet</div>'}</div>
+<div class="panel-title" style="margin-top:8px"><span>SPELLS</span><small>${spells.length}</small></div>
+<div>${spells.length?spells.map(sp=>`<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--line)">✨ ${safe(sp)}</div>`).join(''):'<div style="font-size:11px;color:var(--muted)">No spells yet</div>'}</div>
+<div class="panel-title" style="margin-top:8px"><span>SKILLS</span><small>${skills.length}</small></div>
+<div>${skills.length?skills.map(sk=>`<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--line)">🔮 ${safe(sk)}</div>`).join(''):'<div style="font-size:11px;color:var(--muted)">No skills yet</div>'}</div>`;
  },
 };
 function showPanel(name){
@@ -2018,13 +2061,16 @@ async function awardXP(amount,reason=''){
  const prevLv=state.sheet?.calc_lv||1;
  try{
   const result=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount,reason})});
-  state.sheet=result.sheet;renderParty();
-  const newLv=result.sheet?.calc_lv||prevLv;
-  if(result.leveled_up||newLv>prevLv)levelUp(newLv);
-  else toast(`+${amount} XP`);
+  if(result.sheet){state.sheet=result.sheet;renderParty();}
+  const newLv=result.sheet?.calc_lv||result.new_level||prevLv;
+  if(result.levelled_up||result.leveled_up||newLv>prevLv){
+   await levelUp(newLv,result.level_up_choices);
+  }else{
+   toast(`+${amount} XP`);
+  }
  }catch{}
 }
-function levelUp(newLevel){
+async function levelUp(newLevel, inlineChoices){
  const s=state.sheet;
  const {maxHp,maxMana}=derivedResources(s||{});
  if(state.characterId)setHpState(state.characterId,maxHp,maxMana,maxHp,maxMana);
@@ -2035,6 +2081,66 @@ function levelUp(newLevel){
  toast(`Level up! Now level ${newLevel}`);
  renderParty();
  if($('#detailContent').innerHTML.includes('EXPERIENCE'))showPanel('character');
+ // Fetch or use inline choices for the level-up modal
+ let choices=inlineChoices;
+ if(!choices&&state.characterId){
+  try{const r=await api(`/api/characters/${state.characterId}/level-up/pending`);if(r.has_pending)choices=r.choices;}catch{}
+ }
+ if(choices)showLevelUpModal(newLevel,choices);
+}
+function showLevelUpModal(newLevel,choices){
+ const modal=$('#levelUpModal');if(!modal)return;
+ const s=state.sheet||{};
+ $('#lvlUpTitle').textContent=`LEVEL ${newLevel}!`;
+ $('#lvlUpSub').textContent=`${safe(s.name||'Adventurer')} · ${safe(s.race||'')} ${safe(s.profession||'Adventurer')}`;
+ const STAT_LABELS={strength:'Strength',dexterity:'Dexterity',intelligence:'Intelligence',wisdom:'Wisdom',constitution:'Constitution',speed:'Speed',luck:'Luck',charisma_stat:'Charisma'};
+ let html='';
+ // Stat boost (always)
+ const statOpts=(choices.stat_options||Object.keys(STAT_LABELS));
+ html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:var(--gold);text-transform:uppercase;margin-bottom:8px">⬆ Attribute Point <small style="color:var(--muted)">(choose 1)</small></div><div style="display:flex;flex-wrap:wrap;gap:6px">${statOpts.map(s=>`<button class="ghost lvl-stat-pick" data-stat="${safe(s)}" style="font-size:10px;padding:4px 10px">${safe(STAT_LABELS[s]||s)}</button>`).join('')}</div></div>`;
+ // Feat choices (every 3 levels)
+ if(choices.feat_choices?.length){
+  html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:var(--gold);text-transform:uppercase;margin-bottom:8px">⭐ Feat <small style="color:var(--muted)">(choose 1 or skip)</small></div><div style="display:flex;flex-direction:column;gap:6px">${choices.feat_choices.map(f=>`<button class="ghost lvl-feat-pick" data-feat="${safe(f)}" style="font-size:10px;padding:5px 10px;text-align:left"><b>${safe(f)}</b></button>`).join('')}</div></div>`;
+ }
+ // Spell choices (every 5 levels)
+ if(choices.spell_choices?.length){
+  html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:var(--purple,#9c27b0);text-transform:uppercase;margin-bottom:8px">✨ Spell <small style="color:var(--muted)">(choose 1 or skip)</small></div><div style="display:flex;flex-direction:column;gap:6px">${choices.spell_choices.map(sp=>`<button class="ghost lvl-spell-pick" data-spell="${safe(sp)}" style="font-size:10px;padding:5px 10px;text-align:left"><b>${safe(sp)}</b></button>`).join('')}</div></div>`;
+ }
+ // Skill choices (every 2 levels)
+ if(choices.skill_choices?.length){
+  html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:#00bcd4;text-transform:uppercase;margin-bottom:8px">🔮 Skill <small style="color:var(--muted)">(choose 1 or skip)</small></div><div style="display:flex;flex-direction:column;gap:6px">${choices.skill_choices.map(sc=>`<button class="ghost lvl-skill-pick" data-skill="${safe(sc.skill)}" data-cat="${safe(sc.category)}" style="font-size:10px;padding:5px 10px;text-align:left"><b>${safe(sc.skill)}</b> <small style="color:var(--muted)">${safe(sc.category)}</small></button>`).join('')}</div></div>`;
+ }
+ // Profession choices (every 5 levels)
+ if(choices.profession_choices?.length){
+  html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:var(--gold);text-transform:uppercase;margin-bottom:8px">👑 Profession <small style="color:var(--muted)">(choose 1 or keep current)</small></div><div style="display:flex;flex-wrap:wrap;gap:6px">${choices.profession_choices.map(p=>`<button class="ghost lvl-prof-pick" data-prof="${safe(p)}" style="font-size:10px;padding:4px 10px">${safe(p)}</button>`).join('')}</div></div>`;
+ }
+ const body=$('#lvlUpBody');body.innerHTML=html;
+ // Track selections
+ const picked={stat:'',feat:'',spell:'',skill:'',profession:''};
+ function markSelected(cls,btn){$$('.'+cls).forEach(b=>b.classList.remove('active-choice'));btn.classList.add('active-choice');}
+ $$('.lvl-stat-pick').forEach(b=>b.onclick=()=>{picked.stat=b.dataset.stat;markSelected('lvl-stat-pick',b);});
+ $$('.lvl-feat-pick').forEach(b=>b.onclick=()=>{picked.feat=b.dataset.feat;markSelected('lvl-feat-pick',b);});
+ $$('.lvl-spell-pick').forEach(b=>b.onclick=()=>{picked.spell=b.dataset.spell;markSelected('lvl-spell-pick',b);});
+ $$('.lvl-skill-pick').forEach(b=>b.onclick=()=>{picked.skill=b.dataset.skill;markSelected('lvl-skill-pick',b);});
+ $$('.lvl-prof-pick').forEach(b=>b.onclick=()=>{picked.profession=b.dataset.prof;markSelected('lvl-prof-pick',b);});
+ modal.hidden=false;
+ const claimBtn=$('#lvlUpClaimBtn');
+ if(claimBtn)claimBtn.onclick=async()=>{
+  if(!picked.stat){toast('Pick an attribute to boost first');return;}
+  try{
+   const payload={stat:picked.stat};
+   if(picked.feat)payload.feat=picked.feat;
+   if(picked.spell)payload.spell=picked.spell;
+   if(picked.skill)payload.skill=picked.skill;
+   if(picked.profession)payload.profession=picked.profession;
+   const r=await api(`/api/characters/${state.characterId}/level-up/claim`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+   if(r.sheet){state.sheet=r.sheet;renderParty();if($('#detailContent').innerHTML.includes('EXPERIENCE'))showPanel('character');}
+   const applied=r.applied||[];
+   toast(`Level-up claimed! ${applied.join(', ')}`);
+   modal.hidden=true;
+  }catch(e){toast(e.message);}
+ };
+ modal.onclick=e=>{if(e.target===modal)modal.hidden=true;};
 }
 function renderInventory(){
  const dc=$('#detailContent');
@@ -2392,6 +2498,23 @@ Click a party member card — Speak as that character<br>
     $('#aiStatus').textContent=sp?`${sp.name} · ${sp.race||sp.profession||''}`.trim():'LM Studio connected';
     if(fullReply){speakReply(fullReply);detectStoryChars(fullReply);const _ds=detectScaleFromChat(fullReply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(fullReply);addLocationsFromChat(msg);loadNpcMemories().catch(()=>{});}
     saveSessionToStorage();
+    // Auto-generate story quest every 8 AI replies if character active
+    state._chatReplyCount=(state._chatReplyCount||0)+1;
+    if(state.characterId&&state._chatReplyCount%8===0&&state.quests.length<4){
+      try{
+        const w=state.worlds[state.worldIndex];
+        const r=await api('/api/quests/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character_name:state.sheet?.name,character_id:state.characterId,world_id:w?.id,session_id:state.sessionId,quest_type:'story'})});
+        if(r.quest&&r.quest.id){
+          const q=r.quest;
+          state.quests.push({id:q.id,title:q.title,description:q.description||'',type:q.type,xp_reward:q.xp,reward:q.reward_data?.label||q.reward||'',progress:0,status:'active'});
+          renderQuests();
+          const cl=$('#chatLog');
+          const qIcon=q.reward_data?.icon||'📜';
+          cl.insertAdjacentHTML('beforeend',chatMsg('gm',`<b>WORLDWEAVER</b><div class="chat-line"><em class="chat-action">${qIcon} New Story Quest: "<b>${safe(q.title)}</b>"</em> <span style="color:var(--muted);font-size:10px">Reward: ${safe(q.reward_data?.label||q.reward||'—')}</span></div>`));
+          cl.scrollTop=cl.scrollHeight;
+        }
+      }catch{}
+    }
     (async()=>{const _ap=$('.detail-tabs button.active')?.dataset?.panel;if(_ap==='character'||_ap==='inventory'){try{await refreshCharacterState();if(_ap==='inventory')renderInventory();else showPanel('character');}catch{}}})();
   }catch(error){
     const typingEl=document.getElementById(typingId);if(typingEl)typingEl.remove();

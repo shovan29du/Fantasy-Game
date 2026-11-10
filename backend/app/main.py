@@ -90,6 +90,8 @@ from core.levelling import (
     get_full_sheet,
     increase_stat,
     xp_progress,
+    get_pending_level_up,
+    claim_level_up,
 )
 from core.media_pipeline import (
     ANIMATION_EFFECTS,
@@ -2131,10 +2133,10 @@ def progress_quest(quest_id: int, payload: QuestProgressIn) -> dict:
 
 @app.post("/api/quests/{quest_id}/complete")
 def finish_quest(quest_id: int, character_id: int | None = None) -> dict:
-    complete_quest(quest_id)
+    result = complete_quest(quest_id, character_id=character_id)
     if character_id:
-        award_xp(character_id, 50, "quest")
-    return {"completed": True}
+        result["sheet"] = get_full_sheet(character_id)
+    return {"completed": True, **result}
 
 
 @app.delete("/api/quests/{quest_id}")
@@ -2156,8 +2158,35 @@ def character_sheet(character_id: int) -> dict:
 
 @app.post("/api/characters/{character_id}/xp")
 def add_character_xp(character_id: int, payload: XpIn) -> dict:
-    award_xp(character_id, payload.amount, payload.reason)
-    return {"sheet": get_full_sheet(character_id)}
+    result = award_xp(character_id, payload.amount, payload.reason)
+    return {"sheet": get_full_sheet(character_id), **result}
+
+
+@app.get("/api/characters/{character_id}/level-up/pending")
+def get_level_up_pending_endpoint(character_id: int) -> dict:
+    pending = get_pending_level_up(character_id)
+    if not pending:
+        return {"has_pending": False}
+    try:
+        choices = json.loads(pending["choices_json"] or "{}")
+    except Exception:
+        choices = {}
+    return {"has_pending": True, "new_level": pending["new_level"], "choices": choices}
+
+
+class LevelUpClaimIn(BaseModel):
+    stat: str = ""
+    feat: str = ""
+    spell: str = ""
+    skill: str = ""
+    profession: str = ""
+
+
+@app.post("/api/characters/{character_id}/level-up/claim")
+def claim_level_up_endpoint(character_id: int, payload: LevelUpClaimIn) -> dict:
+    choices_made = {k: v for k, v in payload.model_dump().items() if v}
+    result = claim_level_up(character_id, choices_made)
+    return result
 
 
 class HpChangeIn(BaseModel):

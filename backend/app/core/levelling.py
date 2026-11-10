@@ -125,21 +125,154 @@ def get_character_by_name(name):
     conn=get_conn(); row=conn.execute("SELECT * FROM characters WHERE name=? ORDER BY id DESC LIMIT 1",(name,)).fetchone(); conn.close()
     return dict(row) if row else None
 
+def _generate_level_up_choices(cid: int, new_level: int) -> dict:
+    """Build the choice menu shown to the player when they level up."""
+    ch = get_character(cid)
+    known_traits = []
+    try: known_traits = json.loads(ch.get("traits","[]") or "[]")
+    except Exception: pass
+
+    choices: dict = {
+        "stat_points": STAT_PTS_PER_LV,  # always 1 free stat point
+        "ability_points": OTHER_PTS_PER_LV,
+    }
+    # Every level: pick a stat to boost
+    choices["stat_options"] = STAT_NAMES[:]
+
+    # Every 3 levels: feat choice (pick 1 of 3 random feats)
+    if new_level % 3 == 0:
+        available = [f for f in DND_FEATS if f not in known_traits]
+        random.shuffle(available)
+        choices["feat_choices"] = available[:3]
+
+    # Every 5 levels: spell choice
+    if new_level % 5 == 0:
+        try:
+            from backend.app.domain import spells as _sp
+            known_spells = []
+            try: known_spells = json.loads(ch.get("spells","[]") or "[]")
+            except Exception: pass
+            avail_spells = [s for s in list(_sp.SPELLS.keys()) if s not in known_spells]
+            random.shuffle(avail_spells)
+            choices["spell_choices"] = avail_spells[:3]
+        except Exception:
+            pass
+
+    # Every 2 levels: skill choice
+    if new_level % 2 == 0:
+        known_skills = []
+        try: known_skills = json.loads(ch.get("skills","[]") or "[]")
+        except Exception: pass
+        all_skills = []
+        for cat, tiers in SKILL_TREES.items():
+            tier = "tier1" if new_level < 5 else "tier2" if new_level < 10 else "tier3" if new_level < 20 else "tier4"
+            all_skills += [(s, cat) for s in tiers.get(tier, tiers["tier1"])]
+        avail = [(s,c) for s,c in all_skills if s not in known_skills]
+        random.shuffle(avail)
+        choices["skill_choices"] = [{"skill":s,"category":c} for s,c in avail[:3]]
+
+    # Every 5 levels: profession change option
+    if can_change_profession(new_level):
+        choices["profession_choices"] = get_available_professions(new_level)
+
+    return choices
+
+
+def _store_level_up_pending(cid: int, new_level: int, choices: dict):
+    """Persist level-up choices so the client can claim them later."""
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO level_up_pending (character_id,new_level,choices_json,claimed,created_at) VALUES (?,?,?,?,?)",
+            (cid, new_level, json.dumps(choices), 0, now_iso()))
+        conn.commit()
+    except Exception:
+        log.debug("Could not store level_up_pending", exc_info=True)
+    finally:
+        conn.close()
+
+
+def get_pending_level_up(cid: int) -> dict | None:
+    """Return the most recent unclaimed level-up for this character, or None."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM level_up_pending WHERE character_id=? AND claimed=0 ORDER BY id DESC LIMIT 1",
+            (cid,)).fetchone()
+        return dict(row) if row else None
+    except Exception:
+        log.debug("level_up_pending query failed", exc_info=True)
+        return None
+    finally:
+        conn.close()
+
+
+def claim_level_up(cid: int, choices_made: dict) -> dict:
+    """Apply the player's level-up choices and mark pending as claimed."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id FROM level_up_pending WHERE character_id=? AND claimed=0 ORDER BY id DESC LIMIT 1",
+            (cid,)).fetchone()
+        if not row:
+            return {"ok": False, "error": "No pending level-up"}
+        pending_id = row["id"]
+        conn.execute("UPDATE level_up_pending SET claimed=1 WHERE id=?", (pending_id,))
+        conn.commit()
+    except Exception:
+        log.debug("claim level up mark failed", exc_info=True)
+        conn.close()
+        return {"ok": False, "error": "DB error"}
+    finally:
+        conn.close()
+
+    results = []
+    if "stat" in choices_made:
+        ok = increase_stat(cid, choices_made["stat"])
+        if ok: results.append(f"+1 {choices_made['stat']}")
+
+    if "feat" in choices_made:
+        ok = add_feat_to_character(cid, choices_made["feat"])
+        if ok: results.append(f"Feat: {choices_made['feat']}")
+
+    if "spell" in choices_made:
+        ok = add_spell_to_character(cid, choices_made["spell"])
+        if ok: results.append(f"Spell: {choices_made['spell']}")
+
+    if "skill" in choices_made:
+        ok = add_skill_to_character(cid, choices_made["skill"])
+        if ok: results.append(f"Skill: {choices_made['skill']}")
+
+    if "profession" in choices_made:
+        ok = change_profession(cid, choices_made["profession"])
+        if ok: results.append(f"Profession: {choices_made['profession']}")
+
+    return {"ok": True, "applied": results, "sheet": get_full_sheet(cid)}
+
+
 def award_xp(cid, amount, reason=""):
-    conn=get_conn()
-    row=conn.execute("SELECT xp, level FROM characters WHERE id=?",(cid,)).fetchone()
+    conn = get_conn()
+    row = conn.execute("SELECT xp, level FROM characters WHERE id=?", (cid,)).fetchone()
     if not row: conn.close(); return {}
-    old_xp=row["xp"] or 0; old_lv=row["level"] or 1
-    new_xp=old_xp+amount; new_lv=level_from_xp(new_xp)
-    levelled=new_lv>old_lv; pts=(new_lv-old_lv)*STAT_PTS_PER_LV if levelled else 0
-    conn.execute("UPDATE characters SET xp=?, level=? WHERE id=?",(new_xp,new_lv,cid))
+    old_xp = row["xp"] or 0; old_lv = row["level"] or 1
+    new_xp = old_xp + amount; new_lv = level_from_xp(new_xp)
+    levelled = new_lv > old_lv; pts = (new_lv - old_lv) * STAT_PTS_PER_LV if levelled else 0
+    conn.execute("UPDATE characters SET xp=?, level=? WHERE id=?", (new_xp, new_lv, cid))
     conn.commit(); conn.close()
-    return {"char_id":cid,"old_xp":old_xp,"new_xp":new_xp,"old_level":old_lv,"new_level":new_lv,
-            "levelled_up":levelled,"stat_points":pts,"can_change_profession":can_change_profession(new_lv)}
+
+    result = {"char_id": cid, "old_xp": old_xp, "new_xp": new_xp, "old_level": old_lv, "new_level": new_lv,
+              "levelled_up": levelled, "stat_points": pts, "can_change_profession": can_change_profession(new_lv)}
+
+    if levelled:
+        choices = _generate_level_up_choices(cid, new_lv)
+        _store_level_up_pending(cid, new_lv, choices)
+        result["level_up_choices"] = choices
+
+    return result
 
 def award_xp_by_name(name, amount, reason=""):
-    ch=get_character_by_name(name)
-    return award_xp(ch["id"],amount,reason) if ch else {}
+    ch = get_character_by_name(name)
+    return award_xp(ch["id"], amount, reason) if ch else {}
 
 def increase_stat(cid, stat, amount=1):
     if stat not in STAT_NAMES: return False
