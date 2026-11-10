@@ -1367,13 +1367,26 @@ async def chat_attach_file(file: UploadFile = File(...)) -> dict:
 
 
 @app.get("/api/chat/export/zip")
-async def export_session_zip(session_id: str = "default", character_name: str = "") -> StreamingResponse:
-    import zipfile, io as _io
+async def export_session_zip(session_id: str = "default", character_name: str = "", character_id: int = 0) -> StreamingResponse:
+    import zipfile, io as _io, json as _json
     buf = _io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("chat.txt", export_chat_txt(session_id))
         zf.writestr("chat.json", export_chat_json(session_id, character_name))
         zf.writestr("chat.html", export_chat_html(session_id))
+        if character_id:
+            conn = get_conn()
+            try:
+                sheet_row = conn.execute("SELECT * FROM characters WHERE id=?", (character_id,)).fetchone()
+                if sheet_row:
+                    zf.writestr("character_sheet.json", _json.dumps(dict(sheet_row), indent=2, default=str))
+                inv_rows = conn.execute(
+                    "SELECT * FROM inventory WHERE character_id=?", (character_id,)
+                ).fetchall()
+                if inv_rows:
+                    zf.writestr("inventory.json", _json.dumps([dict(r) for r in inv_rows], indent=2, default=str))
+            finally:
+                conn.close()
     buf.seek(0)
     safe_sid = session_id[:12].replace("/", "-").replace("\\", "-")
     return StreamingResponse(

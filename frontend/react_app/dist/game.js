@@ -25,6 +25,8 @@ const actions=[
  {name:'Guard',icon:'◈',kind:'defence',cost:'1 AP'}, {name:'Aegis',icon:'⬡',kind:'defence',cost:'3 mana'},
  {name:'Blink',icon:'⌁',kind:'utility',cost:'2 mana'}, {name:'Inspect',icon:'⌕',kind:'utility',cost:'Free'},
  {name:'Loot',icon:'⚗',kind:'utility',cost:'Free'},
+ {name:'Short Rest',icon:'🌙',kind:'rest',cost:'1 hr'},
+ {name:'Long Rest',icon:'💤',kind:'rest',cost:'8 hrs'},
 ];
 
 // ─── Persistent image cache (survives page reload) ────────────────────────────
@@ -35,6 +37,7 @@ function _saveImgCache(cache){try{localStorage.setItem(IMG_CACHE_KEY,JSON.string
 // ─── Thumbnail generation queue (serialise to respect Pollinations rate limit) ─
 const _thumbQueue=[];let _thumbRunning=false;
 function _enqueueThumb(fn){
+  if(_thumbQueue.length>=20)return;
   _thumbQueue.push(fn);
   if(!_thumbRunning)_drainThumbQueue();
 }
@@ -47,7 +50,10 @@ async function _drainThumbQueue(){
   _thumbRunning=false;
 }
 
-let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:_loadImgCache(),pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[],npcMemories:{},visitedWorldIds:new Set(),pendingGamePayload:null};
+let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:_loadImgCache(),pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[],npcMemories:{},visitedWorldIds:new Set(),pendingGamePayload:null,spellSlots:null};
+// 5e spell slot table per caster level (simplified; covers lv 1-20)
+const _5E_SLOTS=[[],[2],[3],[4,2],[4,3],[4,3,2],[4,3,3],[4,3,3,1],[4,3,3,2],[4,3,3,3,1],[4,3,3,3,2],[4,3,3,3,2,1],[4,3,3,3,2,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1,1],[4,3,3,3,3,1,1,1,1],[4,3,3,3,3,2,1,1,1],[4,3,3,3,3,2,2,1,1]];
+function _initSpellSlots(lv){const row=_5E_SLOTS[Math.min(20,Math.max(1,lv))]||_5E_SLOTS[1];return row.map((max,i)=>({level:i+1,max,current:max}));}
 const SESSION_KEY='worldweaver-session';
 const TERRAIN_ICONS={Forest:'♣',Desert:'▲',Mountain:'⛰',Ocean:'≈',Swamp:'♨',Volcano:'▲',Plains:'❦',City:'⌂',Ruins:'⌂',Space:'✦',Underground:'▼',Tundra:'❄',Jungle:'♣',Savanna:'❦',Canyon:'▲'};
 const BUILDING_ICONS={home:'🏠',house:'🏠',cottage:'🏡',hut:'🏠',manor:'🏡',mansion:'🏰',penthouse:'🏙',villa:'🏡',apartment:'🏢',office:'🏢',headquarters:'🏢',shop:'🛍',store:'🛒',market:'🏪',stall:'🏪',boutique:'🛍',cafe:'☕',coffee:'☕',bistro:'☕',restaurant:'🍽',diner:'🍽',dining:'🍽',eatery:'🍽',tavern:'🍺',inn:'🍺',pub:'🍺',bar:'🍺',alehouse:'🍺',academy:'🎓',university:'🎓',college:'🎓',school:'🏫',classroom:'🏫',hallway:'🏫',library:'📚',archive:'📚',dungeon:'⚔',crypt:'💀',tomb:'💀',vault:'💀',jungle:'🌿',grove:'🌿',garden:'🌸',park:'🌳',courtyard:'🌳',orchard:'🌳',forest:'🌲',wood:'🌲',beach:'🏖',shore:'🏖',hotel:'🏨',lodge:'🏨',resort:'🏨',palace:'🏛',court:'🏛',throne:'👑',temple:'⛩',church:'⛪',shrine:'⛩',chapel:'⛪',castle:'🏰',fortress:'🏰',citadel:'🏰',keep:'🏰',tower:'🗼',lighthouse:'🗼',spire:'🗼',arena:'⚔',ring:'⚔',pit:'⚔',hospital:'🏥',clinic:'🏥',infirmary:'🏥',dojo:'🥋',training:'🥋',gym:'🏋',stable:'🐴',barn:'🐮',farm:'🌾',port:'⚓',dock:'⚓',harbor:'⚓',pier:'⚓',cave:'🌑',cavern:'🌑',mine:'⛏',square:'🏪',plaza:'🏛',hall:'🏛',ballroom:'🎭',dormitory:'🛏',dorm:'🛏',kitchen:'🍳',workshop:'🔧',lab:'🔬',laboratory:'🔬',party:'🎉'};
@@ -77,6 +83,7 @@ async function refreshCharacterState(){
   api(`/api/quests/active?character_name=${encodeURIComponent(sheet.name||'')}`).catch(()=>[]),
  ]);
  state.sheet=sheet; state.inventory=inventory; state.quests=quests||[];
+ if(!state.spellSlots){state.spellSlots=_initSpellSlots(sheet.calc_lv||1);}
 }
 function statMod(v){return Math.floor(((v||10)-10)/2)}
 function derivedResources(sheet){
@@ -215,7 +222,7 @@ function renderParty(){
     const i=+btn.dataset.removeParty,ch=state.partyChars[i];
     if(!ch)return;
     if(state.activeSpeaker?.id===ch.id){state.activeSpeaker=null;updateSpeakerUI();}
-    state.partyChars.splice(i,1);savePartyToStorage();renderParty();
+    state.partyChars.splice(i,1);delete state.partySheets[ch.id];savePartyToStorage();renderParty();
     toast(`${ch.name} left the party`);
   });
 }
@@ -243,7 +250,12 @@ async function completeQuest(idx){
   const goldMatch=/(\d+)\s*(?:gold|gp|g\.p\.|coins?|pieces?)/i.exec(q.reward);
   if(goldMatch){
    const amount=parseInt(goldMatch[1],10);
-   try{await api(`/api/characters/${state.characterId}/economy/add`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gold:amount})});await refreshCharacterState();toast(`+${amount} gold`);}catch{}
+   let goldOk=false;
+   for(let attempt=0;attempt<3&&!goldOk;attempt++){
+    try{await api(`/api/characters/${state.characterId}/economy/add`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gold:amount})});await refreshCharacterState();toast(`💰 +${amount} gold from quest`);goldOk=true;}
+    catch{if(attempt<2)await new Promise(r=>setTimeout(r,500));}
+   }
+   if(!goldOk)toast(`Could not deliver gold reward — try claiming manually`);
   }
   const hasLoot=/\b(?:weapon|item|potion|ring|sword|staff|scroll|artifact|armor|armour|shield|dagger|bow|relic|gem)\b/i.test(q.reward);
   if(hasLoot)lootItem().catch(()=>{});
@@ -269,9 +281,18 @@ async function generateQuest(){
  try{const world=state.worlds[state.worldIndex];await api('/api/quests/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character_name:state.sheet?.name,character_id:state.characterId,world_id:world?.id})});await refreshCharacterState();renderQuests();toast('New quest generated')}catch(error){toast(error.message)}
 }
 function goCreateCharacter(){toast('Create your adventurer in the Characters tab first');openView('characters');const nameField=$('#characterFormV6')?.elements?.name;if(nameField){nameField.scrollIntoView({behavior:'smooth'});nameField.focus();}}
-function renderActions(filter='all'){
- const visible=actions.filter(a=>filter==='all'||a.kind===filter);
- $('#actionBar').innerHTML=visible.map((a,i)=>`<button class="action" data-action="${a.name}"><kbd>${i+1}</kbd><span class="icon">${a.icon}</span><b>${a.name}</b><small>${a.cost}</small></button>`).join('');
+function getContextFilter(){
+ if(combatState&&combatState.status==='active')return 'combat';
+ if(state.activeSpeaker)return 'social';
+ return 'explore';
+}
+function renderActions(filter){
+ if(filter===undefined)filter=getContextFilter();
+ let visible;
+ if(filter==='combat') visible=actions.filter(a=>a.kind==='attack'||a.kind==='defence');
+ else if(filter==='social') visible=actions.filter(a=>a.kind==='utility'||a.kind==='rest');
+ else visible=actions.filter(a=>a.kind!=='defence'||a.name==='Guard');
+ $('#actionBar').innerHTML=visible.map((a,i)=>`<button class="action" data-action="${safe(a.name)}"><kbd>${i+1}</kbd><span class="icon">${a.icon}</span><b>${a.name}</b><small>${a.cost}</small></button>`).join('');
  $$('[data-action]').forEach(el=>el.onclick=()=>runAction(el.dataset.action));
 }
 async function runAction(name){
@@ -290,7 +311,42 @@ async function runAction(name){
   return;
  }
  if(name==='Loot'){await lootItem();return}
+ if(name==='Short Rest'||name==='Long Rest'){await doRest(name==='Long Rest');return}
  toast(`${name} readied`);
+}
+async function doRest(isLong){
+ if(!state.characterId){goCreateCharacter();return}
+ const {maxHp,maxMana}=derivedResources(state.sheet||{});
+ const hpSt=getHpState(state.characterId,maxHp,maxMana);
+ const healAmount=isLong?maxHp:Math.max(1,Math.floor(maxHp*0.25));
+ const mpAmount=isLong?maxMana:Math.max(1,Math.floor(maxMana*0.25));
+ const newHp=Math.min(maxHp,hpSt.currentHp+healAmount);
+ const newMp=Math.min(maxMana,hpSt.currentMp+mpAmount);
+ setHpState(state.characterId,newHp,newMp,maxHp,maxMana);
+ // Heal party members too
+ state.partyChars.forEach(pc=>{
+  const pSheet=state.partySheets[pc.id];
+  if(!pSheet)return;
+  const {maxHp:ph,maxMana:pm}=derivedResources(pSheet);
+  const pSt=getHpState(pc.id,ph,pm);
+  const pHeal=isLong?ph:Math.max(1,Math.floor(ph*0.25));
+  const pMpHeal=isLong?pm:Math.max(1,Math.floor(pm*0.25));
+  setHpState(pc.id,Math.min(ph,pSt.currentHp+pHeal),Math.min(pm,pSt.currentMp+pMpHeal),ph,pm);
+ });
+ renderParty();
+ if($('#detailContent').innerHTML.includes('Health'))showPanel('character');
+ const hours=isLong?8:1;
+ try{
+  await api(`/api/world/clock/advance?session_id=${encodeURIComponent(state.sessionId||'default')}&minutes=${hours*60}`,{method:'POST'});
+  await updateClock();
+  if(Math.random()<0.25)triggerRandomEvent();
+ }catch{}
+ // Restore spell slots on long rest
+ if(isLong&&state.spellSlots){
+  const lv=state.sheet?.calc_lv||1;
+  state.spellSlots=_initSpellSlots(lv);
+ }
+ toast(isLong?`Long rest complete — fully restored after ${hours} hrs`:`Short rest — healed ${healAmount} HP after 1 hr`);
 }
 async function lootItem(){
  const world=state.worlds[state.worldIndex];
@@ -314,7 +370,12 @@ const panels={
   const hpSt=state.characterId?getHpState(state.characterId,maxHp,maxMana):{currentHp:maxHp,currentMp:maxMana};
   const curHp=hpSt.currentHp;const curMp=hpSt.currentMp;
   const sig=s.reality_signature||{}; const tier=s.power_tier_info||{name:'Heroic'};
-  return `<div class="character-hero"><div class="hero-portrait">${safe((s.name||'?').slice(0,2).toUpperCase())}</div><h2>${safe(s.name)}</h2><p>${safe(s.race||'Unknown')} · Level ${safe(s.calc_lv||s.level||1)} ${safe(s.profession||'Adventurer')}</p><p>${safe(tier.name)} tier · ${safe(sig.reality_type||'Prime Reality')} (${safe(sig.universe_tag||'—')})</p></div><div class="xp-row"><div><span>EXPERIENCE</span><span>${safe(s.xp||0)} XP (${xp.into}/${xp.need} to next)</span></div><div class="meter"><i style="width:${Math.round((xp.fraction||0)*100)}%"></i></div></div><div class="stats">${rows.map(([label,key])=>`<div class="stat"><b>${(stats[key]||{}).total ?? 10}</b><small>${label} · +${statMod((stats[key]||{}).total)}</small></div>`).join('')}</div><div class="resource"><div><span>Health</span><b>${curHp} / ${maxHp}</b></div><div class="meter"><i style="width:${Math.round(curHp/maxHp*100)}%;background:var(--green)"></i></div></div><div class="resource"><div><span>Mana</span><b>${curMp} / ${maxMana}</b></div><div class="meter"><i style="width:${Math.round(curMp/maxMana*100)}%;background:var(--purple)"></i></div></div>`;
+  const equippedWeapon=(state.inventory.items||[]).find(it=>it.equip_slot==='weapon');
+  const dexMod=statMod((stats.dexterity||{}).total);const strMod=statMod((stats.strength||{}).total);
+  const weaponData=equippedWeapon?state.dndWeapons[equippedWeapon.item_name]:null;
+  const atkBonus=weaponData?(weaponData.properties?.includes('finesse')?Math.max(strMod,dexMod):strMod):strMod;
+  const weaponHtml=equippedWeapon?`<div class="resource"><div><span>⚔ ${safe(equippedWeapon.item_name)}</span><b>${weaponData?weaponData.damage:'—'} ${weaponData?weaponData.damage_type:''} · ATK +${atkBonus>=0?'+':''}${atkBonus}</b></div></div>`:'';
+  return `<div class="character-hero"><div class="hero-portrait">${safe((s.name||'?').slice(0,2).toUpperCase())}</div><h2>${safe(s.name)}</h2><p>${safe(s.race||'Unknown')} · Level ${safe(s.calc_lv||s.level||1)} ${safe(s.profession||'Adventurer')}</p><p>${safe(tier.name)} tier · ${safe(sig.reality_type||'Prime Reality')} (${safe(sig.universe_tag||'—')})</p></div><div class="xp-row"><div><span>EXPERIENCE</span><span>${safe(s.xp||0)} XP (${xp.into}/${xp.need} to next)</span></div><div class="meter"><i style="width:${Math.round((xp.fraction||0)*100)}%"></i></div></div><div class="stats">${rows.map(([label,key])=>`<div class="stat"><b>${(stats[key]||{}).total ?? 10}</b><small>${label} · +${statMod((stats[key]||{}).total)}</small></div>`).join('')}</div><div class="resource"><div><span>Health</span><b>${curHp} / ${maxHp}</b></div><div class="meter"><i style="width:${Math.round(curHp/maxHp*100)}%;background:var(--green)"></i></div></div><div class="resource"><div><span>Mana</span><b>${curMp} / ${maxMana}</b></div><div class="meter"><i style="width:${Math.round(curMp/maxMana*100)}%;background:var(--purple)"></i></div></div>${weaponHtml}`;
  },
  inventory:()=>{
   if(!state.characterId) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
@@ -420,7 +481,10 @@ function renderMapNodes(){
  $('#mapNodes').innerHTML=shown.map(loc=>{
   const tier=_isContinentType(loc.loc_type)?'macro':loc.loc_type==='country'?'mid':'micro';
   const icon=(!loc.loc_type||loc.loc_type==='local'||loc.loc_type==='area')?_buildingIcon(loc.name):(TERRAIN_ICONS[loc.terrain]||'⌂');
-  return `<button class="map-node map-node-${tier}" style="--x:${loc.x}%;--y:${loc.y}%" data-loc-id="${loc.id}" data-label="${safe(loc.name)}" title="${safe(loc.name)}">${icon}</button>`;
+  const visited=state.visitedWorldIds.has(loc.id)||state.visitedWorldIds.has(String(loc.id));
+  const fogStyle=visited?'':'opacity:0.35;filter:grayscale(1)';
+  const label=visited?safe(loc.name):'???';
+  return `<button class="map-node map-node-${tier}" style="--x:${loc.x}%;--y:${loc.y}%;${fogStyle}" data-loc-id="${loc.id}" data-label="${label}" title="${label}">${icon}</button>`;
  }).join('');
  $$('#mapNodes [data-loc-id]').forEach(el=>el.onclick=()=>{const loc=state.locations.find(l=>String(l.id)===el.dataset.locId);if(loc)enterLocation(loc)});
 }
@@ -450,6 +514,8 @@ async function _aiDescribePlace(prompt){
  }catch{}
 }
 async function enterLocation(loc){
+ state.visitedWorldIds.add(loc.id);state.visitedWorldIds.add(String(loc.id));
+ renderMapNodes();
  const world=state.worlds[state.worldIndex];
  const chatLog=$('#chatLog');
  // ── Continent/Kingdom → switch to Country tab and describe ──
@@ -746,8 +812,37 @@ $('#chatLog').addEventListener('click',async e=>{
 async function loadChatHistory(){
  try{
   const history=await api(`/api/chat/history?session_id=${encodeURIComponent(state.sessionId)}&limit=40`);
-  $('#chatLog').innerHTML=history.length?history.map(m=>chatMsg(m.role==='user'?'player':'gm',fmtChat(m.content),m.id)).join(''):'<p class="gm">The portal hums, waiting for your first move.</p>';
-  $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
+  const chatLog=$('#chatLog');
+  chatLog.innerHTML=history.length?history.map(m=>chatMsg(m.role==='user'?'player':'gm',fmtChat(m.content),m.id)).join(''):'<p class="gm">The portal hums, waiting for your first move.</p>';
+  if(history.length>=40){
+   const btn=document.createElement('button');
+   btn.className='ghost';btn.id='loadEarlierBtn';btn.style.cssText='width:100%;font-size:10px;padding:4px;margin-bottom:6px;color:var(--muted)';
+   btn.textContent='⬆ Load earlier messages';
+   chatLog.prepend(btn);
+   btn.onclick=()=>_loadEarlierChat(history[0]?.id);
+  }
+  chatLog.scrollTop=chatLog.scrollHeight;
+ }catch{}
+}
+async function _loadEarlierChat(beforeId){
+ if(!beforeId)return;
+ try{
+  const earlier=await api(`/api/chat/history?session_id=${encodeURIComponent(state.sessionId)}&limit=40&before_id=${beforeId}`);
+  if(!earlier.length){const btn=$('#loadEarlierBtn');if(btn)btn.remove();return;}
+  const chatLog=$('#chatLog');
+  const html=earlier.map(m=>chatMsg(m.role==='user'?'player':'gm',fmtChat(m.content),m.id)).join('');
+  const oldBtn=$('#loadEarlierBtn');
+  if(oldBtn)oldBtn.remove();
+  const prevScroll=chatLog.scrollHeight-chatLog.scrollTop;
+  chatLog.insertAdjacentHTML('afterbegin',html);
+  chatLog.scrollTop=chatLog.scrollHeight-prevScroll;
+  if(earlier.length>=40){
+   const btn=document.createElement('button');
+   btn.className='ghost';btn.id='loadEarlierBtn';btn.style.cssText='width:100%;font-size:10px;padding:4px;margin-bottom:6px;color:var(--muted)';
+   btn.textContent='⬆ Load earlier messages';
+   chatLog.prepend(btn);
+   btn.onclick=()=>_loadEarlierChat(earlier[0]?.id);
+  }
  }catch{}
 }
 
@@ -768,7 +863,7 @@ $('#advanceTimeBtn').onclick=async()=>{
  try{
   await api(`/api/world/clock/advance?session_id=${encodeURIComponent(state.sessionId||'default')}&minutes=30`,{method:'POST'});
   await updateClock();
-  if(Math.random()<0.1) triggerRandomEvent();
+  if(Math.random()<0.25) triggerRandomEvent();
  }catch{}
 };
 async function triggerRandomEvent(){
@@ -1032,12 +1127,14 @@ async function beginGame(payload){
 // ── Scenario cover images ─────────────────────────────────────────────────────
 // _scCovers holds pre-generated persistent covers loaded from /api/scenarios/covers.
 // _scImgCache holds in-session generated fallbacks (not persisted).
-let _scCovers={};
+const _SC_COVERS_KEY='sc-covers-cache';
+let _scCovers=(()=>{try{const r=localStorage.getItem(_SC_COVERS_KEY);return r?JSON.parse(r):{};}catch{return {};}})();
 const _scImgCache={};
 let _scImgQ=[],_scImgBusy=0;
+function _saveScCovers(){try{localStorage.setItem(_SC_COVERS_KEY,JSON.stringify(_scCovers));}catch{}}
 
 async function _loadScenarioCovers(){
- try{const data=await api('/api/scenarios/covers');if(data&&typeof data==='object')_scCovers=data;}
+ try{const data=await api('/api/scenarios/covers');if(data&&typeof data==='object'){Object.assign(_scCovers,data);_saveScCovers();}}
  catch(e){}
 }
 
@@ -1051,7 +1148,7 @@ function _scDrain(){
   body:JSON.stringify({name,opening:opening||'',category:category||'',force:false})})
  .then(r=>{
   const u=r.url;
-  if(u){_scImgCache[name]=u;_scCovers[name]=u;img.src=u;img.onload=()=>img.classList.add('sc-loaded')}
+  if(u){_scImgCache[name]=u;_scCovers[name]=u;_saveScCovers();img.src=u;img.onload=()=>img.classList.add('sc-loaded')}
  })
  .catch(()=>{
   // Fallback: generate ephemeral image via media API
@@ -1757,8 +1854,12 @@ async function speakReply(text){
   $('#chatAvatar').classList.add('speaking');
   chatAudio.onended=chatAudio.onerror=()=>{$('#chatAvatar').classList.remove('speaking');chatAudio=null};
   await chatAudio.play();
- }catch{$('#chatAvatar').classList.remove('speaking')}
+ }catch{
+  $('#chatAvatar').classList.remove('speaking');
+  if(!speakReply._warnedOnce){speakReply._warnedOnce=true;toast('Voice unavailable — check TTS settings');}
+ }
 }
+speakReply._warnedOnce=false;
 $('#voiceToggleBtn').onclick=()=>{
  state.voiceEnabled=!state.voiceEnabled;
  localStorage.setItem('companion-voice',state.voiceEnabled);
@@ -1850,8 +1951,10 @@ $('#chatFileInput').onchange=async()=>{
 // ── Download chat as zip ──
 $('#downloadZipBtn').onclick=()=>{
  const sid=encodeURIComponent(state.sessionId||'default');
+ const cid=state.characterId?`&character_id=${state.characterId}`:'';
+ const cname=state.sheet?.name?`&character_name=${encodeURIComponent(state.sheet.name)}`:'';
  const a=document.createElement('a');
- a.href=`/api/chat/export/zip?session_id=${sid}`;
+ a.href=`/api/chat/export/zip?session_id=${sid}${cid}${cname}`;
  a.download='worldweaver-chat.zip';
  a.click();
 };
@@ -2027,7 +2130,7 @@ Click a party member card — Speak as that character<br>
     // update bubble id with server message id for actions
     if(msgId){const el=document.getElementById(streamBubbleId);if(el)el.dataset.msgId=msgId;}
     $('#aiStatus').textContent=sp?`${sp.name} · ${sp.race||sp.profession||''}`.trim():'LM Studio connected';
-    if(fullReply){speakReply(fullReply);detectStoryChars(fullReply);const _ds=detectScaleFromChat(fullReply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(fullReply);addLocationsFromChat(msg);}
+    if(fullReply){speakReply(fullReply);detectStoryChars(fullReply);const _ds=detectScaleFromChat(fullReply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(fullReply);addLocationsFromChat(msg);loadNpcMemories().catch(()=>{});}
     saveSessionToStorage();
     (async()=>{const _ap=$('.detail-tabs button.active')?.dataset?.panel;if(_ap==='character'||_ap==='inventory'){try{await refreshCharacterState();if(_ap==='inventory')renderInventory();else showPanel('character');}catch{}}})();
   }catch(error){
@@ -2354,6 +2457,19 @@ function showCombatResult(){
   $('#combatResultModal').hidden=false;
   if(state.characterId){refreshCharacterState().then(()=>renderParty()).catch(()=>{});}
   if(won&&reward.xp_awarded){awardXP(reward.xp_awarded,`Combat — Round ${combatState.round_number}`);}
+  // Fix #1: persist HP changes from combat
+  if(state.characterId&&state.sheet){
+   const playerUnit=combatState.units.find(u=>u.stats?.is_human);
+   if(playerUnit){
+    const {maxHp,maxMana}=derivedResources(state.sheet);
+    const hpSt=getHpState(state.characterId,maxHp,maxMana);
+    const finalHp=typeof playerUnit.hp==='number'?playerUnit.hp:hpSt.currentHp;
+    setHpState(state.characterId,finalHp,hpSt.currentMp,maxHp,maxMana);
+    renderParty();
+    if($('#detailContent').innerHTML.includes('Health'))showPanel('character');
+   }
+  }
+  // Restore used spell slots that were spent in combat (tracked optimistically)
 }
 function closeCombat(){stopCombatPlay();$('#combatOverlay').classList.remove('open');combatState=null}
 function computeCombatAffordances(){
