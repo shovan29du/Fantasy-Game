@@ -2147,6 +2147,23 @@ def add_character_xp(character_id: int, payload: XpIn) -> dict:
     return {"sheet": get_full_sheet(character_id)}
 
 
+class HpChangeIn(BaseModel):
+    amount: int
+    reason: str = ""
+
+@app.post("/api/characters/{character_id}/hp")
+def update_character_hp(character_id: int, payload: HpChangeIn) -> dict:
+    # HP is tracked client-side; this endpoint validates the character exists
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT id FROM characters WHERE id=?", (character_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Character not found")
+        return {"ok": True, "character_id": character_id, "hp_change": payload.amount}
+    finally:
+        conn.close()
+
+
 @app.post("/api/characters/{character_id}/stats")
 def spend_character_stat(character_id: int, payload: StatSpendIn) -> dict:
     if payload.stat not in STAT_NAMES:

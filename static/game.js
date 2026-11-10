@@ -86,6 +86,15 @@ function derivedResources(sheet){
  const maxMana=10+lv*4+Math.max(statMod(int),statMod(wis))*lv;
  return {maxHp,maxMana};
 }
+function getHpState(charId,maxHp,maxMana){
+ try{const d=JSON.parse(localStorage.getItem('hpState-'+charId)||'null');if(d&&d.maxHp===maxHp&&d.maxMana===maxMana)return d;}catch{}
+ return {currentHp:maxHp,currentMp:maxMana,maxHp,maxMana};
+}
+function setHpState(charId,curHp,curMp,maxHp,maxMana){
+ const clamped={currentHp:Math.max(0,Math.min(maxHp,curHp)),currentMp:Math.max(0,Math.min(maxMana,curMp)),maxHp,maxMana};
+ try{localStorage.setItem('hpState-'+charId,JSON.stringify(clamped));}catch{}
+ state.currentHp=clamped.currentHp;state.currentMp=clamped.currentMp;
+}
 // ─── Party helpers ───
 function _partyAvatarHtml(ch){
   if(ch.photo_path)return`<img src="${safe(ch.photo_path)}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0">`;
@@ -174,11 +183,17 @@ function renderParty(){
   $('#partyList').innerHTML=state.partyChars.map((ch,i)=>{
     const isSpk=state.activeSpeaker?.id===ch.id;
     const isMain=ch.id===state.characterId;
+    const sh=isMain?state.sheet:state.partySheets[ch.id];
+    const {maxHp:cMax}=sh?derivedResources(sh):{maxHp:ch.level?20+(ch.level||1)*8:28};
+    const hpSt=getHpState(ch.id,cMax,10);
+    const hpPct=Math.round(hpSt.currentHp/cMax*100);
+    const hpColor=hpPct>50?'var(--green)':hpPct>25?'#e8a020':'var(--red,#c0392b)';
     return`<div class="party-card${isSpk?' active':''}" data-party="${i}" style="cursor:pointer;position:relative" title="${isSpk?'Exit '+safe(ch.name)+'\'s view':'Speak as '+safe(ch.name)}">
       ${_partyAvatarHtml(ch)}
       <div style="flex:1;min-width:0">
         <strong style="font-size:11px">${safe(ch.name)}</strong>
         <small style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${safe(ch.race)} · ${safe(ch.profession)}</small>
+        <div style="display:flex;align-items:center;gap:4px;margin-top:2px"><div style="flex:1;height:3px;background:var(--line);border-radius:2px"><div style="width:${hpPct}%;height:100%;background:${hpColor};border-radius:2px;transition:width .3s"></div></div><span style="font-size:8px;color:var(--muted);flex-shrink:0">${hpSt.currentHp}/${cMax}</span></div>
         ${isSpk?'<span style="font-size:9px;color:var(--gold)">● Perspective active</span>':''}
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0">
@@ -296,8 +311,10 @@ const panels={
   const stats=s.total_stats||{}; const xp=s.xp_progress||{into:0,need:1,fraction:0};
   const rows=[['STR','strength'],['DEX','dexterity'],['CON','constitution'],['INT','intelligence'],['WIS','wisdom'],['CHA','charisma_stat']];
   const {maxHp,maxMana}=derivedResources(s);
+  const hpSt=state.characterId?getHpState(state.characterId,maxHp,maxMana):{currentHp:maxHp,currentMp:maxMana};
+  const curHp=hpSt.currentHp;const curMp=hpSt.currentMp;
   const sig=s.reality_signature||{}; const tier=s.power_tier_info||{name:'Heroic'};
-  return `<div class="character-hero"><div class="hero-portrait">${safe((s.name||'?').slice(0,2).toUpperCase())}</div><h2>${safe(s.name)}</h2><p>${safe(s.race||'Unknown')} · Level ${safe(s.calc_lv||s.level||1)} ${safe(s.profession||'Adventurer')}</p><p>${safe(tier.name)} tier · ${safe(sig.reality_type||'Prime Reality')} (${safe(sig.universe_tag||'—')})</p></div><div class="xp-row"><div><span>EXPERIENCE</span><span>${safe(s.xp||0)} XP (${xp.into}/${xp.need} to next)</span></div><div class="meter"><i style="width:${Math.round((xp.fraction||0)*100)}%"></i></div></div><div class="stats">${rows.map(([label,key])=>`<div class="stat"><b>${(stats[key]||{}).total ?? 10}</b><small>${label} · +${statMod((stats[key]||{}).total)}</small></div>`).join('')}</div><div class="resource"><div><span>Health</span><b>${maxHp} / ${maxHp}</b></div><div class="meter"><i style="width:100%;background:var(--green)"></i></div></div><div class="resource"><div><span>Mana</span><b>${maxMana} / ${maxMana}</b></div><div class="meter"><i style="width:100%;background:var(--purple)"></i></div></div>`;
+  return `<div class="character-hero"><div class="hero-portrait">${safe((s.name||'?').slice(0,2).toUpperCase())}</div><h2>${safe(s.name)}</h2><p>${safe(s.race||'Unknown')} · Level ${safe(s.calc_lv||s.level||1)} ${safe(s.profession||'Adventurer')}</p><p>${safe(tier.name)} tier · ${safe(sig.reality_type||'Prime Reality')} (${safe(sig.universe_tag||'—')})</p></div><div class="xp-row"><div><span>EXPERIENCE</span><span>${safe(s.xp||0)} XP (${xp.into}/${xp.need} to next)</span></div><div class="meter"><i style="width:${Math.round((xp.fraction||0)*100)}%"></i></div></div><div class="stats">${rows.map(([label,key])=>`<div class="stat"><b>${(stats[key]||{}).total ?? 10}</b><small>${label} · +${statMod((stats[key]||{}).total)}</small></div>`).join('')}</div><div class="resource"><div><span>Health</span><b>${curHp} / ${maxHp}</b></div><div class="meter"><i style="width:${Math.round(curHp/maxHp*100)}%;background:var(--green)"></i></div></div><div class="resource"><div><span>Mana</span><b>${curMp} / ${maxMana}</b></div><div class="meter"><i style="width:${Math.round(curMp/maxMana*100)}%;background:var(--purple)"></i></div></div>`;
  },
  inventory:()=>{
   if(!state.characterId) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
@@ -364,26 +381,6 @@ function showPanel(name){
 function renderInventory(){
  const dc=$('#detailContent');
  if(dc&&(dc.querySelector('.inventory-grid')||dc.querySelector('.armory-grid')))showPanel('inventory');
-}
-async function awardXP(amount,reason=''){
- if(!state.characterId||!amount)return;
- const prevLv=state.sheet?.calc_lv||1;
- try{
-  const result=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount,reason})});
-  state.sheet=result.sheet;renderParty();
-  const newLv=result.sheet?.calc_lv||prevLv;
-  if(result.leveled_up||newLv>prevLv)levelUp(newLv);
-  else toast(`+${amount} XP`);
- }catch{}
-}
-function levelUp(newLevel){
- const s=state.sheet;
- const {maxHp,maxMana}=derivedResources(s||{});
- const chatLog=$('#chatLog');
- chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<div style="border:1px solid var(--gold);border-radius:6px;padding:10px;margin:4px 0;text-align:center"><div style="font-size:16px;color:var(--gold);font-weight:bold;letter-spacing:1px">⬆ LEVEL UP! ⬆</div><div style="margin:4px 0"><b>${safe(s?.name||'Adventurer')}</b> reached <b>Level ${newLevel}</b></div><div style="font-size:10px;color:var(--muted)">${safe(s?.race||'')} ${safe(s?.profession||'')} · HP ${maxHp} · MP ${maxMana}</div></div>`));
- chatLog.scrollTop=chatLog.scrollHeight;
- toast(`Level up! Now level ${newLevel}`);
- if($('#detailContent').innerHTML.includes('EXPERIENCE'))showPanel('character');
 }
 async function travelToWorld(worldId){
  if(!worldId)return;
@@ -783,7 +780,14 @@ async function triggerRandomEvent(){
    $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
   }
   if(effect&&state.characterId&&state.sheet){
-   if(effect.hp_change&&effect.hp_change!==0){toast(`${effect.hp_change>0?'+':''}${effect.hp_change} HP from event`);try{await api(`/api/characters/${state.characterId}/hp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:effect.hp_change,reason:(event||'event').toString().slice(0,50)})});await refreshCharacterState();renderParty();}catch{}}
+   if(effect.hp_change&&effect.hp_change!==0){
+    const {maxHp,maxMana}=derivedResources(state.sheet);
+    const hpSt=getHpState(state.characterId,maxHp,maxMana);
+    setHpState(state.characterId,hpSt.currentHp+effect.hp_change,hpSt.currentMp,maxHp,maxMana);
+    toast(`${effect.hp_change>0?'+':''}${effect.hp_change} HP from event`);
+    try{await api(`/api/characters/${state.characterId}/hp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:effect.hp_change,reason:(event||'event').toString().slice(0,50)})});}catch{}
+    renderParty();if($('#detailContent').innerHTML.includes('Health'))showPanel('character');
+   }
    if(effect.xp_change&&effect.xp_change>0){try{const r=await api(`/api/characters/${state.characterId}/xp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:effect.xp_change,reason:`Random event: ${(event||'').toString().slice(0,40)}`})});if(r.sheet){state.sheet=r.sheet;renderParty();}toast(`+${effect.xp_change} XP from event`);}catch{}}
   }
  }catch{}
@@ -1630,8 +1634,8 @@ function playerContextLine(){
  const bits=[`World: ${world?.name}`,`Reality: ${world?.reality_type}`,`Location: ${world?.place||'Unknown'}`,`Map scale: ${state.scale}`];
  if(s){
   bits.push(`Player character: ${s.name}, Level ${s.calc_lv||s.level||1} ${s.race||''} ${s.profession||''}`.trim());
-  const {maxHp,maxMana}=derivedResources(s);const curHp=s.current_hp??maxHp;const curMp=s.current_mp??maxMana;
-  bits.push(`HP: ${curHp}/${maxHp}, MP: ${curMp}/${maxMana}`);
+  const {maxHp,maxMana}=derivedResources(s);const hpCtx=state.characterId?getHpState(state.characterId,maxHp,maxMana):{currentHp:maxHp,currentMp:maxMana};
+  bits.push(`HP: ${hpCtx.currentHp}/${maxHp}, MP: ${hpCtx.currentMp}/${maxMana}`);
   const equipped=(state.inventory.items||[]).filter(i=>i.equip_slot).map(i=>i.item_name);
   if(equipped.length)bits.push(`Equipped: ${equipped.join(', ')}`);
   if(s.reality_signature?.universe_tag)bits.push(`Reality signature: ${s.reality_signature.universe_tag} (${s.reality_signature.reality_type})`);
@@ -1640,7 +1644,7 @@ function playerContextLine(){
  if(state.partyChars.length){
   const partyDetail=state.partyChars.map(c=>{
    const sh=state.partySheets[c.id];
-   if(sh){const {maxHp,maxMana}=derivedResources(sh);const curHp=sh.current_hp??maxHp;return `${c.name} (Lv${sh.calc_lv||sh.level||c.level} ${c.race||''} ${c.profession||''}, HP ${curHp}/${maxHp})`;}
+   if(sh){const {maxHp,maxMana}=derivedResources(sh);const hpSt2=getHpState(c.id,maxHp,maxMana);return `${c.name} (Lv${sh.calc_lv||sh.level||c.level} ${c.race||''} ${c.profession||''}, HP ${hpSt2.currentHp}/${maxHp})`;}
    return `${c.name} (Lv${c.level||1} ${c.race||''} ${c.profession||''})`;
   });
   bits.push(`Party: ${partyDetail.join(', ')}`);
@@ -1666,11 +1670,13 @@ async function awardXP(amount,reason=''){
 function levelUp(newLevel){
  const s=state.sheet;
  const {maxHp,maxMana}=derivedResources(s||{});
+ if(state.characterId)setHpState(state.characterId,maxHp,maxMana,maxHp,maxMana);
  sfx('levelup');
  const chatLog=$('#chatLog');
  chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<div style="border:1px solid var(--gold);border-radius:6px;padding:10px;margin:4px 0;text-align:center"><div style="font-size:16px;color:var(--gold);font-weight:bold;letter-spacing:1px">⬆ LEVEL UP! ⬆</div><div style="margin:4px 0"><b>${safe(s?.name||'Adventurer')}</b> reached <b>Level ${newLevel}</b></div><div style="font-size:10px;color:var(--muted)">${safe(s?.race||'')} ${safe(s?.profession||'')} · HP ${maxHp} · MP ${maxMana}</div></div>`));
  chatLog.scrollTop=chatLog.scrollHeight;
  toast(`Level up! Now level ${newLevel}`);
+ renderParty();
  if($('#detailContent').innerHTML.includes('EXPERIENCE'))showPanel('character');
 }
 function renderInventory(){
