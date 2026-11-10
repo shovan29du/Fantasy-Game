@@ -194,6 +194,29 @@
     </aside>
   </main>
 
+  <!-- Location Content Panel (NPCs, Enemies, Loot, Quests) -->
+  <div id="locContentOverlay" class="loc-content-overlay hidden">
+    <div class="loc-content-panel">
+      <div class="lcp-header">
+        <span class="lcp-icon" id="lcpIcon">⌂</span>
+        <div class="lcp-title-block">
+          <strong id="lcpName">Location</strong>
+          <small id="lcpSub">Terrain · World</small>
+        </div>
+        <button id="lcpClose" class="lcp-close">✕</button>
+      </div>
+      <nav class="lcp-tabs">
+        <button class="lcp-tab active" data-lcp-tab="npcs">👥 NPCs</button>
+        <button class="lcp-tab" data-lcp-tab="enemies">⚔ Enemies</button>
+        <button class="lcp-tab" data-lcp-tab="loot">💰 Loot</button>
+        <button class="lcp-tab" data-lcp-tab="quests">📜 Quests</button>
+      </nav>
+      <div id="lcpBody" class="lcp-body">
+        <div class="lcp-loading" id="lcpLoading">Scouting location…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Recruit companion modal -->
   <div id="recruitModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:900;display:flex;align-items:center;justify-content:center">
     <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;width:min(520px,95vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
@@ -617,6 +640,51 @@
 #mapMoveRipple{position:absolute;pointer-events:none;z-index:3;width:22px;height:22px;border-radius:50%;border:2px solid var(--gold);transform:translate(-50%,-50%);opacity:0}
 #mapMoveRipple.ripple-active{animation:map-ripple .5s ease-out forwards}
 @keyframes map-ripple{0%{opacity:.85;transform:translate(-50%,-50%) scale(.4)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.6)}}
+/* ── Location Content Panel ── */
+.loc-content-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:800;display:flex;align-items:center;justify-content:center;animation:lco-in .18s ease-out}
+.loc-content-overlay.hidden{display:none!important}
+@keyframes lco-in{from{opacity:0}to{opacity:1}}
+.loc-content-panel{background:var(--panel,#141b25);border:1px solid var(--line,#2a3348);border-radius:8px;width:min(620px,96vw);max-height:82vh;display:flex;flex-direction:column;box-shadow:0 24px 80px #000e,0 0 0 1px #0003;overflow:hidden}
+.lcp-header{display:flex;align-items:center;gap:10px;padding:14px 18px 10px;border-bottom:1px solid var(--line,#2a3348);background:#0d1420}
+.lcp-icon{font-size:26px;line-height:1}
+.lcp-title-block{flex:1;min-width:0}
+.lcp-title-block strong{display:block;font-size:15px;color:var(--gold,#c9a84c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lcp-title-block small{color:var(--muted,#6b7a99);font-size:10px}
+.lcp-close{background:none;border:none;color:#e9ecf1;font-size:20px;cursor:pointer;padding:0 2px;line-height:1;opacity:.7}
+.lcp-close:hover{opacity:1}
+.lcp-tabs{display:flex;gap:0;border-bottom:1px solid var(--line,#2a3348);background:#0f1821}
+.lcp-tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted,#6b7a99);font-size:11px;font-weight:600;padding:8px 14px;cursor:pointer;transition:color .15s,border-color .15s}
+.lcp-tab:hover{color:#e9ecf1}
+.lcp-tab.active{color:var(--gold,#c9a84c);border-bottom-color:var(--gold,#c9a84c)}
+.lcp-body{overflow-y:auto;flex:1;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.lcp-loading{text-align:center;padding:28px;color:var(--muted,#6b7a99);font-size:12px}
+.lcp-card{background:#0d1420;border:1px solid var(--line,#2a3348);border-radius:6px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px}
+.lcp-card:hover{border-color:#3a4a6a}
+.lcp-card-icon{font-size:22px;flex-shrink:0;margin-top:1px}
+.lcp-card-body{flex:1;min-width:0}
+.lcp-card-name{font-size:13px;font-weight:600;color:#e9ecf1;margin:0 0 2px}
+.lcp-card-sub{font-size:10px;color:var(--muted,#6b7a99);margin:0 0 6px}
+.lcp-card-desc{font-size:10px;color:#9eabc2;margin:0 0 7px;line-height:1.4}
+.lcp-card-actions{display:flex;gap:5px;flex-wrap:wrap}
+.lcp-btn{font-size:10px;padding:3px 10px;border-radius:3px;border:1px solid;cursor:pointer;font-weight:600;transition:background .12s,color .12s}
+.lcp-btn-talk{background:#1a2d1a;color:#5ecf8a;border-color:#2a5a3a}.lcp-btn-talk:hover{background:#2a4a2a}
+.lcp-btn-fight{background:#2d1a1a;color:#cf5e5e;border-color:#5a2a2a}.lcp-btn-fight:hover{background:#4a2020}
+.lcp-btn-boss{background:#2d1a0a;color:#ff9922;border-color:#8a4a10}.lcp-btn-boss:hover{background:#4a2a05}
+.lcp-btn-take{background:#1a2a1a;color:#5ecf8a;border-color:#2a5020}.lcp-btn-take:hover{background:#1f3a1f}
+.lcp-btn-quest{background:#1a1a2d;color:#9a8aff;border-color:#3a2a7a}.lcp-btn-quest:hover{background:#2a2a4a}
+.lcp-btn-refresh{background:none;color:var(--muted,#6b7a99);border:1px solid var(--line,#2a3348);font-size:10px;padding:3px 8px;border-radius:3px;cursor:pointer}.lcp-btn-refresh:hover{color:#e9ecf1}
+.lcp-rarity-common{color:#9eabc2}.lcp-rarity-uncommon{color:#1cbb4e}.lcp-rarity-rare{color:#5a9fff}.lcp-rarity-legendary{color:#ff9922}
+.lcp-hp-bar{height:5px;background:#1e2a3a;border-radius:2px;margin:4px 0;overflow:hidden}
+.lcp-hp-fill{height:100%;background:var(--red,#c0392b);border-radius:2px;transition:width .3s}
+.lcp-gold-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:#c9a84c;background:#1a1500;border:1px solid #4a3a00;border-radius:3px;padding:1px 7px}
+.lcp-boss-banner{background:linear-gradient(135deg,#200a00 0%,#2d1200 100%);border:1px solid #8a3a00;border-radius:6px;padding:12px;margin-bottom:4px;display:flex;gap:10px;align-items:flex-start}
+.lcp-boss-skull{font-size:32px;animation:skull-pulse 1.5s ease-in-out infinite}
+@keyframes skull-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+.lcp-boss-info strong{color:#ff7700;font-size:14px;display:block;margin-bottom:3px}
+.lcp-boss-info small{color:#cc8830;font-size:10px}
+.lcp-empty{text-align:center;padding:20px;color:var(--muted,#6b7a99);font-size:11px}
+.lcp-take-all-row{display:flex;justify-content:flex-end;margin-top:4px}
+.lcp-refresh-row{display:flex;justify-content:flex-end;padding:6px 0 2px;border-top:1px solid var(--line,#2a3348)}
   </style>
   <script src="/game.js"></script>
 </body>

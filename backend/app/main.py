@@ -2740,6 +2740,324 @@ def generate_npc_session(world_id: int = 0, session_id: str = "default") -> dict
         conn.close()
 
 
+@app.get("/api/locations/{loc_id}/content")
+def get_location_content(loc_id: int, world_id: int = 0) -> dict:
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM location_content WHERE location_id=? AND depleted=0 ORDER BY content_type, id",
+            (loc_id,)
+        ).fetchall()
+        result: dict = {"npcs": [], "enemies": [], "boss": None, "loot": [], "quests": []}
+        for r in rows:
+            d = dict(r)
+            try:
+                d["data"] = json.loads(d.get("data_json") or "{}")
+            except Exception:
+                d["data"] = {}
+            ct = d["content_type"]
+            if ct == "boss":
+                result["boss"] = d
+            elif ct in result:
+                result[ct].append(d)
+        return result
+    finally:
+        conn.close()
+
+
+@app.post("/api/locations/{loc_id}/content/generate")
+def generate_location_content(loc_id: int, world_id: int = 0, terrain: str = "Plains", loc_name: str = "", force: bool = False) -> dict:
+    import random as _rand
+    conn = get_conn()
+    try:
+        # Return cached if exists and not forcing refresh
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM location_content WHERE location_id=?", (loc_id,)
+        ).fetchone()[0]
+        if existing and not force:
+            rows = conn.execute(
+                "SELECT * FROM location_content WHERE location_id=? AND depleted=0 ORDER BY content_type, id",
+                (loc_id,)
+            ).fetchall()
+            result: dict = {"npcs": [], "enemies": [], "boss": None, "loot": [], "quests": []}
+            for r in rows:
+                d = dict(r)
+                try:
+                    d["data"] = json.loads(d.get("data_json") or "{}")
+                except Exception:
+                    d["data"] = {}
+                ct = d["content_type"]
+                if ct == "boss":
+                    result["boss"] = d
+                elif ct in result:
+                    result[ct].append(d)
+            return result
+
+        # Wipe old entries for this location before regenerating
+        conn.execute("DELETE FROM location_content WHERE location_id=?", (loc_id,))
+        conn.commit()
+
+        name = loc_name or f"Location {loc_id}"
+        terrain_lower = terrain.lower()
+
+        # Terrain-based tables
+        NPC_POOLS: dict = {
+            "city": ["Merchant","Innkeeper","Guard Captain","Blacksmith","Alchemist","Herbalist","Noble","Banker","Bard","Scholar","Thief","Healer","Tailor","Baker"],
+            "forest": ["Ranger","Herbalist","Druid","Hunter","Woodcutter","Scout","Hermit","Poacher"],
+            "dungeon": ["Cultist Priest","Torturer","Dark Mage","Dungeon Keeper","Prisoner","Deserter"],
+            "ruins": ["Archaeologist","Treasure Hunter","Undead Historian","Cursed Knight","Relic Dealer"],
+            "mountain": ["Dwarven Miner","Mountain Guide","Goat Herder","Stone Mason","Reclusive Monk"],
+            "ocean": ["Fisherman","Sea Captain","Smuggler","Pearl Diver","Retired Pirate","Harbor Master"],
+            "desert": ["Nomad Elder","Sand Merchant","Water Seller","Desert Mystic","Caravan Guard"],
+            "wetlands": ["Bog Witch","Frog Farmer","Lost Traveler","Swamp Herbalist","Ferryman"],
+        }
+        ENEMY_POOLS: dict = {
+            "city": [("Street Thug","humanoid",25,1),("Corrupt Guard","humanoid",40,2),("Assassin","humanoid",60,4)],
+            "forest": [("Forest Bandit","humanoid",35,2),("Giant Spider","beast",45,3),("Dire Wolf","beast",55,3),("Treant Sapling","elemental",80,5)],
+            "dungeon": [("Skeleton Warrior","undead",50,3),("Dungeon Rat","beast",20,1),("Orc Brute","humanoid",70,4),("Shadow Specter","undead",65,4)],
+            "ruins": [("Cursed Knight","undead",75,4),("Stone Golem","construct",120,6),("Ancient Wraith","undead",90,5)],
+            "mountain": [("Mountain Troll","giant",100,5),("Harpy","beast",50,3),("Ice Elemental","elemental",85,5)],
+            "ocean": [("Sea Raider","humanoid",45,3),("Giant Crab","beast",60,3),("Kraken Tentacle","beast",130,7)],
+            "desert": [("Sandstorm Scorpion","beast",55,3),("Mirage Djinn","elemental",95,6),("Mummy Warrior","undead",70,4)],
+            "wetlands": [("Bog Zombie","undead",45,3),("Giant Leech","beast",30,2),("Will-o'-Wisp","elemental",40,3)],
+        }
+        BOSS_POOL: dict = {
+            "dungeon": [("The Dungeon Overlord","A massive armored tyrant who rules this dungeon with an iron fist",350,9,"Legendary armor set + 200 gold"),("Necromancer Lord","An ancient necromancer who raises the dead to protect his secrets",280,8,"Necromancy tome + 150 gold")],
+            "forest": [("Ancient Forest Guardian","A colossal treant who has watched these woods for centuries",300,8,"Heart of the Forest + 100 gold"),("Alpha Dire Wolf","An enormous wolf the size of a horse, leader of the pack",200,7,"Wolf pelt armor + 80 gold")],
+            "ruins": [("The Forsaken King","A cursed ruler trapped in his own collapsed kingdom",320,9,"Crown of the Forsaken + 180 gold"),("Runic Stone Colossus","An ancient construct built to guard forbidden knowledge",400,10,"Rune core shard + 200 gold")],
+            "mountain": [("Storm Drake","A powerful dragon who guards the mountain peaks",500,10,"Dragon scale + 300 gold"),("Frost Giant Chieftain","Leader of the mountain giants, wielding an icy maul",380,9,"Frost giant maul + 200 gold")],
+            "ocean": [("Sea Serpent","An ancient serpent guarding sunken treasure",420,9,"Serpent fang blade + 250 gold"),("Pirate King","A legendary captain who never lost a sea battle",300,8,"Pirate flagship deed + 200 gold")],
+            "city": [("Thieves Guild Master","The shadowy leader controlling all crime in the city",250,7,"Guild seal + 150 gold"),("Corrupt City Lord","A corrupt noble who answers to no one",280,8,"Noble signet ring + 200 gold")],
+            "desert": [("Sand Dragon","An ancient wyrm buried in the dunes for centuries",450,10,"Desert pearl + 300 gold"),("Djinn Emperor","A powerful djinn whose wishes reshape reality",350,9,"Djinn lamp fragment + 220 gold")],
+            "wetlands": [("Swamp Witch Queen","A powerful hag who controls the entire bog",280,8,"Witch cauldron recipe + 120 gold"),("Black Dragon Hatchling","Young but already deadly, nesting in the deepest swamp",320,9,"Black scale armor + 180 gold")],
+        }
+        MATERIAL_POOL: dict = {
+            "forest": ["Hardwood Log","Medicinal Herb","Spider Silk","Resin Crystal","Rare Mushroom","Feather Bundle"],
+            "dungeon": ["Dark Iron Ore","Bone Fragment","Cursed Gem","Venom Extract","Shadow Dust","Mana Crystal"],
+            "ruins": ["Ancient Stone","Rune Fragment","Lost Coin","Crumbled Script","Artifact Shard","Old Key"],
+            "mountain": ["Iron Ore","Quartz Crystal","Sulfur Rock","Granite Slab","Gold Vein","Frozen Mana Stone"],
+            "ocean": ["Pearl","Sea Salt","Driftwood","Mermaid Scale","Coral Fragment","Sea Glass"],
+            "desert": ["Sand Ruby","Cactus Sap","Desert Rose Crystal","Oasis Water Vial","Scarab Carapace","Mirage Stone"],
+            "wetlands": ["Bog Iron","Lotus Root","Swamp Moss","Frog Toxin","Reed Bundle","Marsh Crystal"],
+            "city": ["Iron Ingot","Leather Scrap","Glass Vial","Paper Bundle","Copper Wire","Wool Cloth"],
+        }
+        EQUIPMENT_POOL: dict = {
+            "forest": ["Hunter's Shortbow","Ranger Cloak","Leather Bracers","Nature's Staff","Vine Whip"],
+            "dungeon": ["Cursed Blade","Shadow Dagger","Dark Shield","Bone Armor","Soul Chain"],
+            "ruins": ["Runic Sword","Ancient Shield","Scholar's Robes","Lost Amulet","Forsaken Crown"],
+            "mountain": ["Dwarven Axe","Stone Shield","Mountain Boots","Iron Plate Helm","Pick of Ages"],
+            "ocean": ["Trident","Sailor's Coat","Wave Shield","Deep Sea Ring","Captain's Hat"],
+            "desert": ["Scimitar","Sand Cloak","Mirage Veil","Desert Walker Boots","Djinn's Bracelet"],
+            "wetlands": ["Bog Staff","Swamp Leather Armor","Toxic Dagger","Mushroom Shield","Hag's Necklace"],
+            "city": ["Iron Sword","Chain Mail","Merchant's Ring","Guard Shield","Noble's Rapier"],
+        }
+        LUXURY_POOL = ["Fine Wine Bottle","Silk Handkerchief","Golden Pocket Watch","Ivory Statuette","Jeweled Brooch","Rare Spice Pouch","Silver Mirror","Crystal Goblet","Embroidered Tapestry","Perfume Vial","Velvet Pouch","Ornate Music Box"]
+        CONSUMABLE_POOL = ["Health Potion","Mana Potion","Antidote","Stamina Elixir","Fire Resistance Potion","Invisibility Draught","Strength Tonic","Speed Boost Vial"]
+
+        # Determine terrain key
+        tkey = "city"
+        for k in ENEMY_POOLS:
+            if k in terrain_lower or (k == "dungeon" and any(x in name.lower() for x in ["dungeon","crypt","catacomb","cave","mine","vault"])):
+                tkey = k
+                break
+        # Also check name
+        if "ruin" in name.lower() or "ancient" in name.lower():
+            tkey = "ruins"
+        elif "forest" in name.lower() or "wood" in name.lower() or "grove" in name.lower():
+            tkey = "forest"
+        elif "dungeon" in name.lower() or "crypt" in name.lower() or "cave" in name.lower():
+            tkey = "dungeon"
+
+        now = now_iso()
+        inserted: dict = {"npcs": [], "enemies": [], "boss": None, "loot": [], "quests": []}
+
+        # Generate NPCs (2-4)
+        npc_profs = NPC_POOLS.get(tkey, NPC_POOLS["city"])
+        chosen_profs = _rand.sample(npc_profs, min(_rand.randint(2, 4), len(npc_profs)))
+        MOODS = ["friendly","neutral","suspicious","cautious","cheerful","weary","desperate","mysterious"]
+        npc_names_used = []
+        FNAME = ["Aldric","Mira","Theron","Lysa","Oren","Vex","Sera","Dain","Kyra","Brynn","Tomas","Elara","Gareth","Niara","Corvin","Faye","Soren","Yuna","Holt","Rinna"]
+        LNAME = ["the Bold","Ironhand","Swiftfoot","Moonwhisper","Stoneback","of the North","Ashwood","Blackthorn","Goldenrod","Frostborn","the Wanderer","Shadowstep","the Ancient","Brightblade"]
+        for prof in chosen_profs:
+            fname = _rand.choice(FNAME)
+            while fname in npc_names_used:
+                fname = _rand.choice(FNAME)
+            npc_names_used.append(fname)
+            lname = _rand.choice(LNAME)
+            npc_name = f"{fname} {lname}"
+            mood = _rand.choice(MOODS)
+            data = {"profession": prof, "mood": mood, "has_quest": _rand.random() < 0.5}
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "npc", npc_name, f"A {mood} {prof} you encounter here.", json.dumps(data), 1, 0, "common", now)
+            )
+            inserted["npcs"].append({"id": cur.lastrowid, "name": npc_name, "data": data, "description": f"A {mood} {prof}"})
+
+        # Generate enemies (1-3 types)
+        enemy_pool = ENEMY_POOLS.get(tkey, ENEMY_POOLS["city"])
+        num_etypes = _rand.randint(1, min(3, len(enemy_pool)))
+        chosen_enemies = _rand.sample(enemy_pool, num_etypes)
+        for (ename, etype, hp, lvl) in chosen_enemies:
+            count = _rand.randint(1, 4)
+            gold_drop = _rand.randint(lvl * 2, lvl * 8)
+            data = {"type": etype, "hp": hp, "level": lvl, "count": count, "gold_drop": gold_drop}
+            rarity = "uncommon" if lvl >= 4 else "common"
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "enemy", ename, f"Level {lvl} {etype}, {hp} HP", json.dumps(data), count, gold_drop, rarity, now)
+            )
+            inserted["enemies"].append({"id": cur.lastrowid, "name": ename, "data": data})
+
+        # Maybe spawn a boss (40% chance for dungeons/ruins, 15% otherwise)
+        boss_chance = 0.4 if tkey in ("dungeon","ruins","mountain","ocean","desert") else 0.15
+        boss_pool = BOSS_POOL.get(tkey, BOSS_POOL.get("city", []))
+        if boss_pool and _rand.random() < boss_chance:
+            (bname, bdesc, bhp, blvl, breward) = _rand.choice(boss_pool)
+            data = {"hp": bhp, "level": blvl, "reward": breward, "type": "boss"}
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "boss", bname, bdesc, json.dumps(data), 1, blvl * 50, "legendary", now)
+            )
+            boss_dict = {"id": cur.lastrowid, "name": bname, "description": bdesc, "data": data}
+            inserted["boss"] = boss_dict
+
+        # Generate loot (3-6 items)
+        # Gold
+        gold_amt = _rand.randint(10, 80) + (20 if tkey in ("ruins","dungeon") else 0)
+        cur = conn.execute(
+            "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (loc_id, world_id, "loot", "Gold Coins", "Scattered gold coins", json.dumps({"item_type":"currency","currency":"gold"}), gold_amt, gold_amt, "common", now)
+        )
+        inserted["loot"].append({"id": cur.lastrowid, "name": "Gold Coins", "quantity": gold_amt, "rarity": "common", "data": {"item_type":"currency"}})
+
+        # Materials (1-3)
+        mat_pool = MATERIAL_POOL.get(tkey, MATERIAL_POOL["city"])
+        for mat in _rand.sample(mat_pool, min(_rand.randint(1, 3), len(mat_pool))):
+            qty = _rand.randint(1, 5)
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "loot", mat, f"Raw material found in {name}", json.dumps({"item_type":"material"}), qty, _rand.randint(2,15)*qty, "common", now)
+            )
+            inserted["loot"].append({"id": cur.lastrowid, "name": mat, "quantity": qty, "rarity": "common", "data": {"item_type":"material"}})
+
+        # Maybe equipment (30% chance)
+        eq_pool = EQUIPMENT_POOL.get(tkey, EQUIPMENT_POOL["city"])
+        if _rand.random() < 0.3:
+            eq = _rand.choice(eq_pool)
+            rarity = _rand.choice(["common","uncommon","rare"])
+            val = {"common":25,"uncommon":75,"rare":200}[rarity]
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "loot", eq, f"Equipment found in {name}", json.dumps({"item_type":"equipment"}), 1, val, rarity, now)
+            )
+            inserted["loot"].append({"id": cur.lastrowid, "name": eq, "quantity": 1, "rarity": rarity, "data": {"item_type":"equipment"}})
+
+        # Consumables (0-2)
+        for _ in range(_rand.randint(0, 2)):
+            con = _rand.choice(CONSUMABLE_POOL)
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "loot", con, "A useful consumable", json.dumps({"item_type":"consumable"}), _rand.randint(1,3), _rand.randint(10,30), "common", now)
+            )
+            inserted["loot"].append({"id": cur.lastrowid, "name": con, "quantity": _rand.randint(1,3), "rarity": "common", "data": {"item_type":"consumable"}})
+
+        # Luxury (10% chance)
+        if _rand.random() < 0.1:
+            lux = _rand.choice(LUXURY_POOL)
+            val = _rand.randint(50, 300)
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "loot", lux, "A valuable luxury item", json.dumps({"item_type":"luxury"}), 1, val, "rare", now)
+            )
+            inserted["loot"].append({"id": cur.lastrowid, "name": lux, "quantity": 1, "rarity": "rare", "data": {"item_type":"luxury"}})
+
+        # Generate quests from NPCs with has_quest flag (1-2 quests)
+        quest_givers = [n for n in inserted["npcs"] if n["data"].get("has_quest")]
+        QUEST_TYPES: dict = {
+            "forest": [("Clear the Bandit Camp","Bandits are terrorizing the roads. Clear them out.","50 gold + equipment"),("Find the Lost Herb","Gather rare herbs deep in the forest.","Healing potion x3 + 20 gold"),("Hunt the Alpha Wolf","A massive wolf is terrorizing hunters.","Wolf pelt armor + 60 gold")],
+            "dungeon": [("Retrieve the Lost Relic","A precious relic was taken into the dungeon.","100 gold + rune fragment"),("Survive the Depths","Explore as deep as you can and return.","Dark iron armor + 80 gold"),("Slay the Dungeon Master","Defeat whatever lurks at the bottom.","Legendary weapon + 150 gold")],
+            "ruins": [("Decipher the Ancient Tablets","Find and copy the inscriptions.","Scholar's robes + 60 gold"),("Recover the Lost Crown","A king's crown is hidden in these ruins.","150 gold + noble title"),("Destroy the Cursed Seal","Break the curse binding this place.","Runic blade + 90 gold")],
+            "city": [("Collect a Debt","Retrieve payment from a reluctant merchant.","30 gold + ring"),("Root Out the Spy","Find the informant leaking city secrets.","50 gold + guard armor"),("Win the Tournament","Enter and win the city's fighting contest.","100 gold + champion's belt")],
+            "mountain": [("Mine the Deep Vein","Extract rare ore from the mountain heart.","Dwarven axe + 70 gold"),("Guard the Mountain Pass","Protect a caravan through the pass.","60 gold + mountain boots"),("Slay the Stone Troll","A troll blocks the only mountain road.","Troll club + 80 gold")],
+            "ocean": [("Recover Sunken Treasure","Dive for a chest lost in the deep.","100 gold + sea captain's coat"),("Defeat the Corsairs","Pirates have been raiding fishing boats.","Trident + 70 gold"),("Find the Missing Ship","A merchant vessel vanished three days ago.","50 gold + trade contract")],
+            "desert": [("Guide Through the Sands","Lead a caravan safely through the desert.","70 gold + desert cloak"),("Find the Hidden Oasis","Locate a secret water source.","Djinn's bracelet + 50 gold"),("Break the Sandstorm Curse","Destroy the relic causing endless storms.","90 gold + mirage veil")],
+            "wetlands": [("Collect the Bog Ingredients","Gather rare swamp plants for a healer.","30 gold + potions x4"),("Drive Out the Bog Zombies","Undead have overrun the southern fen.","60 gold + enchanted cloak"),("Find the Lost Child","A child wandered into the swamp yesterday.","Gratitude + 40 gold + lucky charm")],
+        }
+        qt_pool = QUEST_TYPES.get(tkey, QUEST_TYPES["city"])
+        num_quests = min(len(quest_givers), 2, len(qt_pool))
+        if num_quests > 0:
+            chosen_quests = _rand.sample(qt_pool, num_quests)
+            for i, (qtitle, qdesc, qreward) in enumerate(chosen_quests):
+                giver_name = quest_givers[i]["name"] if i < len(quest_givers) else "Unknown"
+                data = {"giver": giver_name, "reward_desc": qreward, "terrain": tkey}
+                cur = conn.execute(
+                    "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (loc_id, world_id, "quest", qtitle, qdesc, json.dumps(data), 1, 0, "common", now)
+                )
+                inserted["quests"].append({"id": cur.lastrowid, "name": qtitle, "description": qdesc, "data": data})
+
+        conn.commit()
+        return inserted
+    finally:
+        conn.close()
+
+
+@app.post("/api/locations/{loc_id}/loot/collect")
+def collect_loot(loc_id: int, loot_id: int, character_id: int = 0) -> dict:
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM location_content WHERE id=? AND location_id=? AND content_type='loot' AND depleted=0", (loot_id, loc_id)).fetchone()
+        if not row:
+            return {"error": "Item not found or already taken"}
+        item = dict(row)
+        data = json.loads(item.get("data_json") or "{}")
+        item_type = data.get("item_type","misc")
+        name = item["name"]
+        qty = item["quantity"]
+        val = item["value"]
+
+        if character_id:
+            if item_type == "currency":
+                conn.execute(
+                    "INSERT INTO economy (character_id, gold, credits, tokens) VALUES (?,?,0,0) ON CONFLICT(character_id) DO UPDATE SET gold=gold+excluded.gold",
+                    (character_id, qty)
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO inventory (character_id,item_name,item_type,quantity,value,description,source,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (character_id, name, item_type, qty, val, f"Found in location {loc_id}", "loot", now_iso())
+                )
+
+        conn.execute("UPDATE location_content SET depleted=1 WHERE id=?", (loot_id,))
+        conn.commit()
+        return {"collected": True, "name": name, "quantity": qty, "item_type": item_type, "gold": qty if item_type == "currency" else 0}
+    finally:
+        conn.close()
+
+
+@app.post("/api/locations/{loc_id}/quests/accept")
+def accept_location_quest(loc_id: int, quest_id: int, character_name: str = "", character_id: int = 0) -> dict:
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM location_content WHERE id=? AND location_id=? AND content_type='quest' AND depleted=0", (quest_id, loc_id)).fetchone()
+        if not row:
+            return {"error": "Quest not found or already taken"}
+        item = dict(row)
+        data = json.loads(item.get("data_json") or "{}")
+
+        if character_name:
+            conn.execute(
+                "INSERT INTO quests (character_name,quest_type,title,description,reward,hint,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (character_name, "location", item["name"], item["description"], data.get("reward_desc","Unknown reward"), f"Given by {data.get('giver','someone')} in location {loc_id}", 0, "active", now_iso())
+            )
+            conn.execute("UPDATE location_content SET depleted=1 WHERE id=?", (quest_id,))
+
+        conn.commit()
+        return {"accepted": True, "title": item["name"], "reward": data.get("reward_desc","")}
+    finally:
+        conn.close()
+
+
 ASSETS_DIR = REACT_DIST / "assets"
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")

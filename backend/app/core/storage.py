@@ -404,3 +404,18 @@ _TABLES.append("""CREATE TABLE IF NOT EXISTS game_saves (
     notes TEXT DEFAULT '',
     created_at TEXT NOT NULL
 )""")
+
+_TABLES.append("""CREATE TABLE IF NOT EXISTS location_content (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    location_id INTEGER NOT NULL,
+    world_id INTEGER,
+    content_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    data_json TEXT DEFAULT '{}',
+    quantity INTEGER DEFAULT 1,
+    value INTEGER DEFAULT 0,
+    rarity TEXT DEFAULT 'common',
+    depleted INTEGER DEFAULT 0,
+    spawned_at TEXT NOT NULL
+)""")

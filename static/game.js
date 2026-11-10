@@ -537,11 +537,13 @@ async function enterLocation(loc){
   await _aiDescribePlace(`Describe the region/area of "${loc.name}" in ${world?.name||'this world'}. What towns, villages, or notable buildings does it contain? What is everyday life like here? 1-2 paragraphs.`);
   return;
  }
- // ── Local location → scene image + immersive description ──
+ // ── Local location → scene image + content panel ──
  const panel=$('#mapLocationPanel'),img=$('#mapLocImg'),loading=$('#mapLocLoading');
  $('#mapLocName').textContent=loc.name;
  $('#mapLocSub').textContent=`${loc.terrain} · ${world?.name||''}`;
  panel.hidden=false;loading.style.display='flex';
+ // Open location content overlay
+ openLocContent(loc);
  if(state.locationImageCache[loc.id]){
   const cached=state.locationImageCache[loc.id];
   img.src=cached;img.style.opacity='1';loading.style.display='none';
@@ -573,6 +575,191 @@ async function enterLocation(loc){
 }
 $('#exitSceneBtn').onclick=()=>$('#sceneOverlay').classList.remove('open');
 $('#mapLocCloseBtn').onclick=()=>{$('#mapLocationPanel').hidden=true};
+
+// ── Location Content Panel ──────────────────────────────────────────────────
+let _lcpActiveLoc=null;
+let _lcpContent=null;
+let _lcpTab='npcs';
+const LOC_CONTENT_RARITY_ICONS={common:'',uncommon:'🟢',rare:'🔵',legendary:'🟠'};
+const ITEM_TYPE_ICONS={currency:'💰',material:'🪨',equipment:'⚔',consumable:'🧪',luxury:'💎',misc:'📦'};
+const NPC_MOOD_ICONS={friendly:'😊',neutral:'😐',suspicious:'🤨',cautious:'😟',cheerful:'😄',weary:'😩',desperate:'😰',mysterious:'🎭'};
+
+function openLocContent(loc){
+ _lcpActiveLoc=loc;_lcpContent=null;_lcpTab='npcs';
+ const ov=$('#locContentOverlay');if(!ov)return;
+ ov.classList.remove('hidden');
+ const icon=_buildingIcon(loc.name)||(TERRAIN_ICONS[loc.terrain]||'⌂');
+ $('#lcpIcon').textContent=icon;
+ $('#lcpName').textContent=loc.name;
+ $('#lcpSub').textContent=`${loc.terrain||'Unknown'} · ${(state.worlds[state.worldIndex]||{}).name||'World'}`;
+ $$('.lcp-tab').forEach(t=>t.classList.toggle('active',t.dataset.lcpTab==='npcs'));
+ _renderLcpLoading('Scouting location…');
+ const world=state.worlds[state.worldIndex];
+ const wid=world?.id||0;
+ api(`/api/locations/${loc.id}/content/generate?world_id=${wid}&terrain=${encodeURIComponent(loc.terrain||'Plains')}&loc_name=${encodeURIComponent(loc.name)}`,{method:'POST'})
+  .then(content=>{_lcpContent=content;_renderLcpTab(_lcpTab);})
+  .catch(()=>{const b=$('#lcpBody');if(b)b.innerHTML=`<div class="lcp-empty">⚠ Could not load location content.</div>`;});
+}
+function _renderLcpLoading(msg){const b=$('#lcpBody');if(b)b.innerHTML=`<div class="lcp-loading">${safe(msg)}</div>`;}
+function _renderLcpTab(tab){
+ _lcpTab=tab;
+ $$('.lcp-tab').forEach(t=>t.classList.toggle('active',t.dataset.lcpTab===tab));
+ if(!_lcpContent){_renderLcpLoading('Loading…');return;}
+ const body=$('#lcpBody');if(!body)return;
+ const loc=_lcpActiveLoc;
+ const world=state.worlds[state.worldIndex];
+ const wid=world?.id||0;
+ let html='';
+ if(tab==='npcs'){
+  const npcs=_lcpContent.npcs||[];
+  if(!npcs.length){html=`<div class="lcp-empty">👤 No notable NPCs in this area.</div>`;}
+  else html=npcs.map(n=>{
+   const d=n.data||{};const mood=d.mood||'neutral';const prof=d.profession||'Wanderer';
+   const moodIcon=NPC_MOOD_ICONS[mood]||'😐';
+   return `<div class="lcp-card">
+    <div class="lcp-card-icon">${moodIcon}</div>
+    <div class="lcp-card-body">
+     <div class="lcp-card-name">${safe(n.name)}</div>
+     <div class="lcp-card-sub">${safe(prof)} · <span style="text-transform:capitalize">${safe(mood)}</span></div>
+     ${n.description?`<div class="lcp-card-desc">${safe(n.description)}</div>`:''}
+     <div class="lcp-card-actions">
+      <button class="lcp-btn lcp-btn-talk" onclick="lcpTalkNpc(${JSON.stringify(n.name)},${JSON.stringify(prof)})">💬 Talk</button>
+      ${d.has_quest?`<button class="lcp-btn lcp-btn-quest" onclick="_lcpOpenTab('quests')">📜 Has Quest</button>`:''}
+     </div>
+    </div>
+   </div>`;
+  }).join('');
+ }
+ else if(tab==='enemies'){
+  const enemies=_lcpContent.enemies||[];const boss=_lcpContent.boss;
+  if(boss){const bd=boss.data||{};const pct=Math.min(100,Math.round((bd.hp||100)/5));
+   html+=`<div class="lcp-boss-banner"><div class="lcp-boss-skull">💀</div><div class="lcp-boss-info">
+    <strong>${safe(boss.name)}</strong><small>${safe(boss.description||'')}</small>
+    <div class="lcp-hp-bar" style="margin:5px 0 4px"><div class="lcp-hp-fill" style="width:${pct}%;background:#ff7700"></div></div>
+    <small style="color:#cc8830">Level ${bd.level||'?'} · ${bd.hp||'?'} HP · Reward: ${safe(bd.reward||'')}</small><br>
+    <button class="lcp-btn lcp-btn-boss" style="margin-top:6px" onclick="lcpFightEnemy(${JSON.stringify(boss.name)},${bd.level||5},${bd.hp||200},true)">💀 Challenge Boss</button>
+   </div></div>`;}
+  if(!enemies.length&&!boss)html+=`<div class="lcp-empty">🕊 No enemies detected.</div>`;
+  else html+=enemies.map(e=>{const d=e.data||{};const pct=Math.min(100,Math.round((d.hp||50)/2));
+   const tIcons={humanoid:'🗡',beast:'🐺',undead:'💀',elemental:'⚡',construct:'🤖',giant:'👹'};
+   return `<div class="lcp-card">
+    <div class="lcp-card-icon">${tIcons[d.type]||'👾'}</div>
+    <div class="lcp-card-body">
+     <div class="lcp-card-name">${safe(e.name)} <small style="color:var(--muted)">×${d.count||1}</small></div>
+     <div class="lcp-card-sub">Level ${d.level||1} ${d.type||'creature'} · ${d.hp||'?'} HP</div>
+     <div class="lcp-hp-bar"><div class="lcp-hp-fill" style="width:${pct}%"></div></div>
+     <div class="lcp-card-actions" style="margin-top:5px">
+      <button class="lcp-btn lcp-btn-fight" onclick="lcpFightEnemy(${JSON.stringify(e.name)},${d.level||1},${d.hp||40},false)">⚔ Fight</button>
+      <span class="lcp-gold-badge">💰 ${d.gold_drop||0}g drop</span>
+     </div>
+    </div>
+   </div>`;
+  }).join('');
+ }
+ else if(tab==='loot'){
+  const loot=_lcpContent.loot||[];
+  if(!loot.length)html=`<div class="lcp-empty">📦 Nothing of value here.</div>`;
+  else{
+   html=loot.map(l=>{const d=l.data||{};const itype=d.item_type||'misc';
+    const icon=ITEM_TYPE_ICONS[itype]||'📦';const rarity=l.rarity||'common';
+    return `<div class="lcp-card" id="loot-card-${l.id}">
+     <div class="lcp-card-icon">${icon}</div>
+     <div class="lcp-card-body">
+      <div class="lcp-card-name">${safe(l.name)} <span class="lcp-rarity-${rarity}">${LOC_CONTENT_RARITY_ICONS[rarity]||''} ${rarity}</span></div>
+      <div class="lcp-card-sub">${itype.charAt(0).toUpperCase()+itype.slice(1)} · Qty:${l.quantity||1} · ${l.value||0}g</div>
+      <div class="lcp-card-actions"><button class="lcp-btn lcp-btn-take" onclick="lcpCollectLoot(${l.id},${loc.id},${wid})">✋ Take</button></div>
+     </div>
+    </div>`;
+   }).join('');
+   html+=`<div class="lcp-take-all-row"><button class="lcp-btn lcp-btn-take" onclick="lcpCollectAllLoot(${loc.id},${wid})">✋ Take All</button></div>`;
+  }
+ }
+ else if(tab==='quests'){
+  const quests=_lcpContent.quests||[];
+  if(!quests.length)html=`<div class="lcp-empty">📜 No quests available here.</div>`;
+  else html=quests.map(q=>{const d=q.data||{};
+   return `<div class="lcp-card" id="quest-card-${q.id}">
+    <div class="lcp-card-icon">📜</div>
+    <div class="lcp-card-body">
+     <div class="lcp-card-name">${safe(q.name)}</div>
+     <div class="lcp-card-sub">Given by: ${safe(d.giver||'Unknown')}</div>
+     <div class="lcp-card-desc">${safe(q.description||'')}</div>
+     <div class="lcp-card-sub" style="color:#c9a84c">🏆 Reward: ${safe(d.reward_desc||'Unknown')}</div>
+     <div class="lcp-card-actions" style="margin-top:5px">
+      <button class="lcp-btn lcp-btn-quest" onclick="lcpAcceptQuest(${q.id},${loc.id})">✦ Accept Quest</button>
+     </div>
+    </div>
+   </div>`;
+  }).join('');
+ }
+ html+=`<div class="lcp-refresh-row"><button class="lcp-btn-refresh" onclick="lcpRefreshContent()">↺ Refresh Location</button></div>`;
+ body.innerHTML=html;
+}
+function _lcpOpenTab(tab){_renderLcpTab(tab);}
+function lcpTalkNpc(name,profession){
+ const ci=$('#chatInput');if(ci){ci.value=`[Talking to ${name}, a ${profession}] `;ci.focus();}
+ $('#locContentOverlay')?.classList.add('hidden');toast(`💬 Speaking with ${name}`);
+}
+function lcpFightEnemy(name,level,hp,isBoss){
+ const ci=$('#chatInput');
+ if(ci){ci.value=`[${isBoss?'Boss fight':'Combat'}: ${name} — Level ${level}, ${hp} HP] I draw my weapon and attack!`;ci.focus();}
+ $('#locContentOverlay')?.classList.add('hidden');toast(`⚔ Engaging ${name}!`);sfx('combat');
+}
+async function lcpCollectLoot(lootId,locId,worldId){
+ const charId=state.sheet?.id||0;
+ const btn=document.querySelector(`#loot-card-${lootId} .lcp-btn-take`);
+ if(btn){btn.disabled=true;btn.textContent='…';}
+ try{
+  const result=await api(`/api/locations/${locId}/loot/collect?loot_id=${lootId}&character_id=${charId}`,{method:'POST'});
+  if(result.collected){
+   const card=document.getElementById(`loot-card-${lootId}`);
+   if(card){card.style.opacity='0.4';card.querySelector('.lcp-card-actions').innerHTML=`<span style="color:var(--muted);font-size:10px">✓ Collected</span>`;}
+   if(result.item_type==='currency'&&result.gold>0){
+    if(state.inventory?.economy)state.inventory.economy.gold=(state.inventory.economy.gold||0)+result.gold;
+    toast(`💰 Collected ${result.gold} gold!`);
+   }else toast(`✋ Took ${result.name}${result.quantity>1?' ×'+result.quantity:''}!`);
+   sfx('loot');
+   if(_lcpContent?.loot){const item=_lcpContent.loot.find(l=>l.id===lootId);if(item)item._depleted=true;}
+  }
+ }catch(e){toast('Failed to collect item');if(btn){btn.disabled=false;btn.textContent='✋ Take';}}
+}
+async function lcpCollectAllLoot(locId,worldId){
+ const loot=(_lcpContent?.loot||[]).filter(l=>!l._depleted);
+ for(const l of loot)await lcpCollectLoot(l.id,locId,worldId);
+}
+async function lcpAcceptQuest(questId,locId){
+ const charName=state.sheet?.name||'';
+ const btn=document.querySelector(`#quest-card-${questId} .lcp-btn-quest`);
+ if(btn){btn.disabled=true;btn.textContent='…';}
+ try{
+  const result=await api(`/api/locations/${locId}/quests/accept?quest_id=${questId}&character_name=${encodeURIComponent(charName)}`,{method:'POST'});
+  if(result.accepted){
+   const card=document.getElementById(`quest-card-${questId}`);
+   if(card){card.querySelector('.lcp-card-actions').innerHTML=`<span style="color:var(--gold);font-size:10px">✦ Quest accepted!</span>`;}
+   toast(`📜 Quest accepted: ${result.title}`);
+   try{const q=await api(`/api/quests/active?character_name=${encodeURIComponent(charName)}`);state.quests=q||[];renderQuests();}catch{}
+   if(_lcpContent?.quests){const q=_lcpContent.quests.find(q=>q.id===questId);if(q)q._accepted=true;}
+  }
+ }catch(e){toast('Failed to accept quest');if(btn){btn.disabled=false;btn.textContent='✦ Accept Quest';}}
+}
+async function lcpRefreshContent(){
+ if(!_lcpActiveLoc)return;
+ _lcpContent=null;_renderLcpLoading('Refreshing location…');
+ const world=state.worlds[state.worldIndex];const wid=world?.id||0;const loc=_lcpActiveLoc;
+ try{
+  const content=await api(`/api/locations/${loc.id}/content/generate?world_id=${wid}&terrain=${encodeURIComponent(loc.terrain||'Plains')}&loc_name=${encodeURIComponent(loc.name)}&force=true`,{method:'POST'});
+  _lcpContent=content;_renderLcpTab(_lcpTab);toast('↺ Location content refreshed!');
+ }catch(e){const b=$('#lcpBody');if(b)b.innerHTML=`<div class="lcp-empty">⚠ Refresh failed.</div>`;}
+}
+document.addEventListener('click',e=>{
+ const t=e.target.closest('.lcp-tab');
+ if(t&&t.dataset.lcpTab)_renderLcpTab(t.dataset.lcpTab);
+});
+document.getElementById('lcpClose')?.addEventListener('click',()=>$('#locContentOverlay')?.classList.add('hidden'));
+document.getElementById('locContentOverlay')?.addEventListener('click',e=>{
+ if(e.target.id==='locContentOverlay')$('#locContentOverlay')?.classList.add('hidden');
+});
+
 // ── Web Audio ambient sound helper ──
 let _audioCtx=null;
 function _getAudioCtx(){if(!_audioCtx){try{_audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch{}}return _audioCtx;}
