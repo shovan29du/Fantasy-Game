@@ -137,3 +137,6 @@ input[type=range]{width:100%;accent-color:var(--gold);height:4px;cursor:pointer;
 /* ── Org / World panels ── */
 .detail-tabs button{font-size:8px;padding:11px 2px}
 
+/* ── Level Up button glow animation ── */
+@keyframes glowPulse{0%,100%{box-shadow:0 0 6px rgba(212,175,55,.4)}50%{box-shadow:0 0 18px rgba(212,175,55,.9),0 0 30px rgba(212,175,55,.4)}}
+.active-choice{background:#2a1e0a!important;border-color:var(--gold)!important;color:var(--gold)!important;font-weight:700}

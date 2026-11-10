@@ -2174,12 +2174,53 @@ def get_level_up_pending_endpoint(character_id: int) -> dict:
     return {"has_pending": True, "new_level": pending["new_level"], "choices": choices}
 
 
+@app.get("/api/characters/{character_id}/level-up/open")
+def open_level_up(character_id: int) -> dict:
+    from core.levelling import get_pending_level_up, _generate_level_up_choices, get_character, level_from_xp
+    pending = get_pending_level_up(character_id)
+    if pending:
+        try:
+            choices = json.loads(pending["choices_json"] or "{}")
+        except Exception:
+            choices = {}
+        return {"has_pending": True, "new_level": pending["new_level"], "choices": choices}
+    # No pending — check if character is at a level with unclaimed up choices
+    ch = get_character(character_id)
+    if not ch:
+        return {"has_pending": False}
+    return {"has_pending": False, "message": "No level-up available yet. Earn XP to level up!"}
+
+
+class StoryGiftsIn(BaseModel):
+    pass
+
+
+@app.post("/api/characters/{character_id}/level-up/story-gifts")
+def get_story_gifts(character_id: int) -> dict:
+    from core.levelling import get_pending_level_up, generate_story_gifts, get_character, level_from_xp
+    pending = get_pending_level_up(character_id)
+    if pending:
+        new_level = pending["new_level"]
+    else:
+        ch = get_character(character_id)
+        if not ch:
+            return {"gifts": []}
+        new_level = level_from_xp(ch.get("xp", 0) or 0)
+    gifts = generate_story_gifts(character_id, new_level)
+    return {"gifts": gifts}
+
+
 class LevelUpClaimIn(BaseModel):
     stat: str = ""
+    stat_asi: str = ""   # ASI: +2 to one stat
+    stat_a: str = ""     # ASI split: +1 to first stat
+    stat_b: str = ""     # ASI split: +1 to second stat
     feat: str = ""
     spell: str = ""
     skill: str = ""
     profession: str = ""
+    tree_node: str = ""         # Skill tree node ID to unlock
+    story_ability: str = ""     # JSON string: {name, desc, bonus}
 
 
 @app.post("/api/characters/{character_id}/level-up/claim")

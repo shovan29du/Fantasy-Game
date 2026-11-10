@@ -51,7 +51,7 @@ async function _drainThumbQueue(){
 }
 
 let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:_loadImgCache(),pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[],npcMemories:{},visitedWorldIds:new Set(),pendingGamePayload:null,spellSlots:null,
- allSkillNodes:{},skillTreeData:{},skillTreeCat:'combat',worldOrgs:[],charMemberships:[],customSpells:[],worldSystems:{economy:{},diplomacy:{}}};
+ allSkillNodes:{},skillTreeData:{},skillTreeCat:'combat',worldOrgs:[],charMemberships:[],customSpells:[],worldSystems:{economy:{},diplomacy:{}},pendingLevelUp:false};
 // 5e spell slot table per caster level (simplified; covers lv 1-20)
 const _5E_SLOTS=[[],[2],[3],[4,2],[4,3],[4,3,2],[4,3,3],[4,3,3,1],[4,3,3,2],[4,3,3,3,1],[4,3,3,3,2],[4,3,3,3,2,1],[4,3,3,3,2,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1,1],[4,3,3,3,3,1,1,1,1],[4,3,3,3,3,2,1,1,1],[4,3,3,3,3,2,2,1,1]];
 function _initSpellSlots(lv){const row=_5E_SLOTS[Math.min(20,Math.max(1,lv))]||_5E_SLOTS[1];return row.map((max,i)=>({level:i+1,max,current:max}));}
@@ -85,6 +85,8 @@ async function refreshCharacterState(){
  ]);
  state.sheet=sheet; state.inventory=inventory; state.quests=quests||[];
  if(!state.spellSlots){state.spellSlots=_initSpellSlots(sheet.calc_lv||1);}
+ // Check for any pending level-up
+ try{const pend=await api(`/api/characters/${state.characterId}/level-up/pending`);if(pend.has_pending)state.pendingLevelUp=true;}catch{}
 }
 function statMod(v){return Math.floor(((v||10)-10)/2)}
 function derivedResources(sheet){
@@ -466,7 +468,9 @@ const panels={
   const weaponData=equippedWeapon?state.dndWeapons[equippedWeapon.item_name]:null;
   const atkBonus=weaponData?(weaponData.properties?.includes('finesse')?Math.max(strMod,dexMod):strMod):strMod;
   const weaponHtml=equippedWeapon?`<div class="resource"><div><span>⚔ ${safe(equippedWeapon.item_name)}</span><b>${weaponData?weaponData.damage:'—'} ${weaponData?weaponData.damage_type:''} · ATK +${atkBonus>=0?'+':''}${atkBonus}</b></div></div>`:'';
-  return `<div class="character-hero"><div class="hero-portrait">${safe((s.name||'?').slice(0,2).toUpperCase())}</div><h2>${safe(s.name)}</h2><p>${safe(s.race||'Unknown')} · Level ${safe(s.calc_lv||s.level||1)} ${safe(s.profession||'Adventurer')}</p><p>${safe(tier.name)} tier · ${safe(sig.reality_type||'Prime Reality')} (${safe(sig.universe_tag||'—')})</p></div><div class="xp-row"><div><span>EXPERIENCE</span><span>${safe(s.xp||0)} XP (${xp.into}/${xp.need} to next)</span></div><div class="meter"><i style="width:${Math.round((xp.fraction||0)*100)}%"></i></div></div><div class="stats">${rows.map(([label,key])=>`<div class="stat"><b>${(stats[key]||{}).total ?? 10}</b><small>${label} · +${statMod((stats[key]||{}).total)}</small></div>`).join('')}</div><div class="resource"><div><span>Health</span><b>${curHp} / ${maxHp}</b></div><div class="meter"><i style="width:${Math.round(curHp/maxHp*100)}%;background:var(--green)"></i></div></div><div class="resource"><div><span>Mana</span><b>${curMp} / ${maxMana}</b></div><div class="meter"><i style="width:${Math.round(curMp/maxMana*100)}%;background:var(--purple)"></i></div></div>${weaponHtml}`;
+  const pendingLvl=state.pendingLevelUp;
+  const lvlBtnStyle=pendingLvl?'background:linear-gradient(135deg,#c8a93e,#e6c35a);color:#000;font-weight:900;animation:glowPulse 1.8s infinite;':'background:var(--panel);color:var(--gold);border-color:var(--gold);';
+  return `<div class="character-hero"><div class="hero-portrait">${safe((s.name||'?').slice(0,2).toUpperCase())}</div><h2>${safe(s.name)}</h2><p>${safe(s.race||'Unknown')} · Level ${safe(s.calc_lv||s.level||1)} ${safe(s.profession||'Adventurer')}</p><p>${safe(tier.name)} tier · ${safe(sig.reality_type||'Prime Reality')} (${safe(sig.universe_tag||'—')})</p></div><div class="xp-row"><div><span>EXPERIENCE</span><span>${safe(s.xp||0)} XP (${xp.into}/${xp.need} to next)</span></div><div class="meter"><i style="width:${Math.round((xp.fraction||0)*100)}%"></i></div></div><div class="stats">${rows.map(([label,key])=>`<div class="stat"><b>${(stats[key]||{}).total ?? 10}</b><small>${label} · +${statMod((stats[key]||{}).total)}</small></div>`).join('')}</div><div class="resource"><div><span>Health</span><b>${curHp} / ${maxHp}</b></div><div class="meter"><i style="width:${Math.round(curHp/maxHp*100)}%;background:var(--green)"></i></div></div><div class="resource"><div><span>Mana</span><b>${curMp} / ${maxMana}</b></div><div class="meter"><i style="width:${Math.round(curMp/maxMana*100)}%;background:var(--purple)"></i></div></div>${weaponHtml}<button onclick="openLevelUpModal()" style="${lvlBtnStyle}width:100%;margin-top:10px;padding:9px 0;border:1px solid var(--gold);border-radius:6px;cursor:pointer;font-size:12px;letter-spacing:1px;transition:all .2s">${pendingLvl?'🌟 LEVEL UP READY!':'⬆ Level Up'}</button>`;
  },
  inventory:()=>{
   if(!state.characterId) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
@@ -2317,10 +2321,19 @@ async function awardXP(amount,reason=''){
   }
  }catch{}
 }
+async function openLevelUpModal(){
+ if(!state.characterId){toast('No character selected');return;}
+ try{
+  const r=await api(`/api/characters/${state.characterId}/level-up/open`);
+  if(!r.has_pending){toast(r.message||'No level-up available yet. Earn XP to level up!');return;}
+  showLevelUpModal(r.new_level, r.choices);
+ }catch(e){toast(e.message||'Could not open level-up');}
+}
 async function levelUp(newLevel, inlineChoices){
  const s=state.sheet;
  const {maxHp,maxMana}=derivedResources(s||{});
  if(state.characterId)setHpState(state.characterId,maxHp,maxMana,maxHp,maxMana);
+ state.pendingLevelUp=true;
  sfx('levelup');
  const chatLog=$('#chatLog');
  chatLog.insertAdjacentHTML('beforeend',chatMsg('gm',`<div style="border:1px solid var(--gold);border-radius:6px;padding:10px;margin:4px 0;text-align:center"><div style="font-size:16px;color:var(--gold);font-weight:bold;letter-spacing:1px">⬆ LEVEL UP! ⬆</div><div style="margin:4px 0"><b>${safe(s?.name||'Adventurer')}</b> reached <b>Level ${newLevel}</b></div><div style="font-size:10px;color:var(--muted)">${safe(s?.race||'')} ${safe(s?.profession||'')} · HP ${maxHp} · MP ${maxMana}</div></div>`));
@@ -2338,54 +2351,149 @@ async function levelUp(newLevel, inlineChoices){
 function showLevelUpModal(newLevel,choices){
  const modal=$('#levelUpModal');if(!modal)return;
  const s=state.sheet||{};
+ const STAT_LABELS={strength:'Strength',dexterity:'Dexterity',intelligence:'Intelligence',wisdom:'Wisdom',constitution:'Constitution',speed:'Speed',luck:'Luck',charisma_stat:'Charisma'};
  $('#lvlUpTitle').textContent=`LEVEL ${newLevel}!`;
  $('#lvlUpSub').textContent=`${safe(s.name||'Adventurer')} · ${safe(s.race||'')} ${safe(s.profession||'Adventurer')}`;
- const STAT_LABELS={strength:'Strength',dexterity:'Dexterity',intelligence:'Intelligence',wisdom:'Wisdom',constitution:'Constitution',speed:'Speed',luck:'Luck',charisma_stat:'Charisma'};
- let html='';
- // Stat boost (always)
+
+ const isAsi=choices.is_asi_level;
+ const hitDie=choices.hit_die||8;
+ const conMod=choices.con_mod||0;
+ const profBonus=choices.proficiency_bonus||2;
+ const conModStr=conMod>=0?`+${conMod}`:String(conMod);
  const statOpts=(choices.stat_options||Object.keys(STAT_LABELS));
- html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:var(--gold);text-transform:uppercase;margin-bottom:8px">⬆ Attribute Point <small style="color:var(--muted)">(choose 1)</small></div><div style="display:flex;flex-wrap:wrap;gap:6px">${statOpts.map(s=>`<button class="ghost lvl-stat-pick" data-stat="${safe(s)}" style="font-size:10px;padding:4px 10px">${safe(STAT_LABELS[s]||s)}</button>`).join('')}</div></div>`;
- // Feat choices (every 3 levels)
- if(choices.feat_choices?.length){
-  html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:var(--gold);text-transform:uppercase;margin-bottom:8px">⭐ Feat <small style="color:var(--muted)">(choose 1 or skip)</small></div><div style="display:flex;flex-direction:column;gap:6px">${choices.feat_choices.map(f=>`<button class="ghost lvl-feat-pick" data-feat="${safe(f)}" style="font-size:10px;padding:5px 10px;text-align:left"><b>${safe(f)}</b></button>`).join('')}</div></div>`;
+ const picked={asi_mode:'one',stat_asi:'',stat_a:'',stat_b:'',stat:'',feat:'',spell:'',tree_node:'',story_ability:'',profession:''};
+
+ // ── HP & proficiency info banner ──
+ let html=`<div style="background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:6px;padding:10px;display:flex;gap:12px;flex-wrap:wrap">`;
+ html+=`<div style="flex:1;min-width:120px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase">HP Gain</div><div style="color:var(--green);font-weight:700">d${hitDie} ${conModStr} CON</div><div style="font-size:9px;color:var(--muted)">(${choices.hp_gain_min||1}–${choices.hp_gain_max||hitDie} HP)</div></div>`;
+ html+=`<div style="flex:1;min-width:120px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase">Proficiency Bonus</div><div style="color:var(--gold);font-weight:700">+${profBonus}</div></div>`;
+ if(isAsi) html+=`<div style="flex:1;min-width:120px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase">ASI Level</div><div style="color:#ffd700;font-weight:700">Ability Score Improvement</div></div>`;
+ html+=`</div>`;
+
+ // ── Attribute points ──
+ if(isAsi){
+  html+=`<div style="border:1px solid var(--gold);border-radius:6px;padding:10px" id="asiSection">
+   <div style="font-size:11px;color:var(--gold);text-transform:uppercase;margin-bottom:8px">⬆ Ability Score Improvement <small style="color:var(--muted)">(choose one option)</small></div>
+   <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+    <button class="lvl-asi-mode-btn active-choice" data-mode="one" style="font-size:10px;padding:4px 10px;background:#2a1e0a;border:1px solid var(--gold);border-radius:4px;cursor:pointer;color:var(--gold)">+2 to One Stat</button>
+    <button class="lvl-asi-mode-btn" data-mode="split" style="font-size:10px;padding:4px 10px;background:var(--panel);border:1px solid var(--line);border-radius:4px;cursor:pointer;color:#ccc">+1 to Two Stats</button>
+    <button class="lvl-asi-mode-btn" data-mode="feat" style="font-size:10px;padding:4px 10px;background:var(--panel);border:1px solid var(--line);border-radius:4px;cursor:pointer;color:#ccc">Take a Feat</button>
+   </div>
+   <div id="asiContent">
+    <div style="font-size:10px;color:var(--muted);margin-bottom:6px">Choose one stat to increase by 2:</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${statOpts.map(st=>`<button class="ghost lvl-stat-asi" data-stat="${safe(st)}" style="font-size:10px;padding:4px 10px">${safe(STAT_LABELS[st]||st)}</button>`).join('')}</div>
+   </div>
+  </div>`;
+ } else {
+  html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:var(--gold);text-transform:uppercase;margin-bottom:8px">⬆ Attribute Point <small style="color:var(--muted)">(choose 1 stat +1)</small></div><div style="display:flex;flex-wrap:wrap;gap:6px">${statOpts.map(st=>`<button class="ghost lvl-stat-pick" data-stat="${safe(st)}" style="font-size:10px;padding:4px 10px">${safe(STAT_LABELS[st]||st)}</button>`).join('')}</div></div>`;
  }
- // Spell choices (every 5 levels)
+
+ // ── Feat choices (at ASI levels, as alternative) ──
+ if(!isAsi && choices.feat_choices?.length){
+  html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:var(--gold);text-transform:uppercase;margin-bottom:8px">⭐ Feat <small style="color:var(--muted)">(choose 1 or skip)</small></div><div style="display:flex;flex-direction:column;gap:6px">${(choices.feat_choices||[]).map(f=>{const fn=f.name||f;const fd=(f.desc||'');const fb=f.bonus||{};const bstr=Object.entries(fb).map(([k,v])=>`+${v} ${STAT_LABELS[k]||k}`).join(', ');return`<button class="ghost lvl-feat-pick" data-feat="${safe(fn)}" style="font-size:10px;padding:6px 10px;text-align:left"><b>${safe(fn)}</b>${fd?`<br><span style="color:var(--muted);font-size:9px">${safe(fd)}</span>`:''} ${bstr?`<span style="color:var(--green);font-size:9px"> · ${safe(bstr)}</span>`:''}</button>`}).join('')}</div></div>`;
+ }
+
+ // ── Spell choices ──
  if(choices.spell_choices?.length){
-  html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:var(--purple,#9c27b0);text-transform:uppercase;margin-bottom:8px">✨ Spell <small style="color:var(--muted)">(choose 1 or skip)</small></div><div style="display:flex;flex-direction:column;gap:6px">${choices.spell_choices.map(sp=>`<button class="ghost lvl-spell-pick" data-spell="${safe(sp)}" style="font-size:10px;padding:5px 10px;text-align:left"><b>${safe(sp)}</b></button>`).join('')}</div></div>`;
+  html+=`<div style="border:1px solid #9c27b0;border-radius:6px;padding:10px"><div style="font-size:11px;color:#bb86fc;text-transform:uppercase;margin-bottom:8px">✨ Spell <small style="color:var(--muted)">(choose 1 or skip)</small></div><div style="display:flex;flex-direction:column;gap:6px">${choices.spell_choices.map(sp=>{const spn=sp.name||sp;const spd=sp.desc||'';const spl=sp.level??0;const sps=sp.school||'';return`<button class="ghost lvl-spell-pick" data-spell="${safe(spn)}" style="font-size:10px;padding:6px 10px;text-align:left"><b>${safe(spn)}</b> <span style="color:#bb86fc;font-size:9px">${spl===0?'Cantrip':`Lv${spl}`} ${safe(sps)}</span>${spd?`<br><span style="color:var(--muted);font-size:9px">${safe(spd.substring(0,80))}${spd.length>80?'…':''}</span>`:''}</button>`}).join('')}</div></div>`;
  }
- // Skill choices (every 2 levels)
- if(choices.skill_choices?.length){
-  html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:#00bcd4;text-transform:uppercase;margin-bottom:8px">🔮 Skill <small style="color:var(--muted)">(choose 1 or skip)</small></div><div style="display:flex;flex-direction:column;gap:6px">${choices.skill_choices.map(sc=>`<button class="ghost lvl-skill-pick" data-skill="${safe(sc.skill)}" data-cat="${safe(sc.category)}" style="font-size:10px;padding:5px 10px;text-align:left"><b>${safe(sc.skill)}</b> <small style="color:var(--muted)">${safe(sc.category)}</small></button>`).join('')}</div></div>`;
+
+ // ── Skill tree node choices ──
+ if(choices.tree_node_choices?.length){
+  html+=`<div style="border:1px solid #00bcd4;border-radius:6px;padding:10px"><div style="font-size:11px;color:#00e5ff;text-transform:uppercase;margin-bottom:8px">🌳 Skill Tree <small style="color:var(--muted)">(unlock 1 node or skip)</small></div><div style="display:flex;flex-direction:column;gap:6px">${choices.tree_node_choices.map(n=>`<button class="ghost lvl-tree-pick" data-nodeid="${safe(n.id)}" style="font-size:10px;padding:6px 10px;text-align:left"><b>${safe(n.icon||'')} ${safe(n.name)}</b> <span style="color:#00bcd4;font-size:9px">${safe(n.category)} T${safe(String(n.tier))}</span><br><span style="color:var(--muted);font-size:9px">${safe((n.desc||'').substring(0,80))}</span></button>`).join('')}</div></div>`;
  }
- // Profession choices (every 5 levels)
+
+ // ── Profession choices ──
  if(choices.profession_choices?.length){
   html+=`<div style="border:1px solid var(--line);border-radius:6px;padding:10px"><div style="font-size:11px;color:var(--gold);text-transform:uppercase;margin-bottom:8px">👑 Profession <small style="color:var(--muted)">(choose 1 or keep current)</small></div><div style="display:flex;flex-wrap:wrap;gap:6px">${choices.profession_choices.map(p=>`<button class="ghost lvl-prof-pick" data-prof="${safe(p)}" style="font-size:10px;padding:4px 10px">${safe(p)}</button>`).join('')}</div></div>`;
  }
+
+ // ── Story abilities section (loaded async) ──
+ html+=`<div style="border:1px solid #e91e63;border-radius:6px;padding:10px" id="storyGiftsSection"><div style="font-size:11px;color:#f06292;text-transform:uppercase;margin-bottom:8px">✦ Story Abilities <small style="color:var(--muted)">(choose 1 or skip)</small></div><div id="storyGiftsBody" style="color:var(--muted);font-size:11px;text-align:center;padding:8px">⏳ Generating story abilities…</div></div>`;
+
  const body=$('#lvlUpBody');body.innerHTML=html;
- // Track selections
- const picked={stat:'',feat:'',spell:'',skill:'',profession:''};
- function markSelected(cls,btn){$$('.'+cls).forEach(b=>b.classList.remove('active-choice'));btn.classList.add('active-choice');}
- $$('.lvl-stat-pick').forEach(b=>b.onclick=()=>{picked.stat=b.dataset.stat;markSelected('lvl-stat-pick',b);});
- $$('.lvl-feat-pick').forEach(b=>b.onclick=()=>{picked.feat=b.dataset.feat;markSelected('lvl-feat-pick',b);});
- $$('.lvl-spell-pick').forEach(b=>b.onclick=()=>{picked.spell=b.dataset.spell;markSelected('lvl-spell-pick',b);});
- $$('.lvl-skill-pick').forEach(b=>b.onclick=()=>{picked.skill=b.dataset.skill;markSelected('lvl-skill-pick',b);});
- $$('.lvl-prof-pick').forEach(b=>b.onclick=()=>{picked.profession=b.dataset.prof;markSelected('lvl-prof-pick',b);});
+
+ // Wire up ASI mode toggle
+ if(isAsi){
+  $$('.lvl-asi-mode-btn').forEach(btn=>{
+   btn.onclick=()=>{
+    picked.asi_mode=btn.dataset.mode;
+    $$('.lvl-asi-mode-btn').forEach(b=>{b.classList.remove('active-choice');b.style.background='var(--panel)';b.style.borderColor='var(--line)';b.style.color='#ccc';});
+    btn.classList.add('active-choice');btn.style.background='#2a1e0a';btn.style.borderColor='var(--gold)';btn.style.color='var(--gold)';
+    // Update asiContent
+    const ac=$('#asiContent');if(!ac)return;
+    if(picked.asi_mode==='one'){
+     ac.innerHTML=`<div style="font-size:10px;color:var(--muted);margin-bottom:6px">Choose one stat to increase by 2:</div><div style="display:flex;flex-wrap:wrap;gap:6px">${statOpts.map(st=>`<button class="ghost lvl-stat-asi" data-stat="${safe(st)}" style="font-size:10px;padding:4px 10px">${safe(STAT_LABELS[st]||st)}</button>`).join('')}</div>`;
+     $$('.lvl-stat-asi').forEach(b=>b.onclick=()=>{picked.stat_asi=b.dataset.stat;$$('.lvl-stat-asi').forEach(x=>x.classList.remove('active-choice'));b.classList.add('active-choice');});
+    } else if(picked.asi_mode==='split'){
+     ac.innerHTML=`<div style="font-size:10px;color:var(--muted);margin-bottom:6px">First stat +1:</div><div style="display:flex;flex-wrap:wrap;gap:6px" id="asiSplitA">${statOpts.map(st=>`<button class="ghost lvl-stat-a" data-stat="${safe(st)}" style="font-size:10px;padding:4px 10px">${safe(STAT_LABELS[st]||st)}</button>`).join('')}</div><div style="font-size:10px;color:var(--muted);margin:8px 0 6px">Second stat +1:</div><div style="display:flex;flex-wrap:wrap;gap:6px" id="asiSplitB">${statOpts.map(st=>`<button class="ghost lvl-stat-b" data-stat="${safe(st)}" style="font-size:10px;padding:4px 10px">${safe(STAT_LABELS[st]||st)}</button>`).join('')}</div>`;
+     $$('.lvl-stat-a').forEach(b=>b.onclick=()=>{picked.stat_a=b.dataset.stat;$$('.lvl-stat-a').forEach(x=>x.classList.remove('active-choice'));b.classList.add('active-choice');});
+     $$('.lvl-stat-b').forEach(b=>b.onclick=()=>{picked.stat_b=b.dataset.stat;$$('.lvl-stat-b').forEach(x=>x.classList.remove('active-choice'));b.classList.add('active-choice');});
+    } else {
+     const fcs=choices.feat_choices||[];
+     if(!fcs.length){ac.innerHTML=`<div style="color:var(--muted);font-size:11px">No feats available.</div>`;return;}
+     ac.innerHTML=`<div style="display:flex;flex-direction:column;gap:6px">${fcs.map(f=>{const fn=f.name||f;const fd=f.desc||'';const bstr=Object.entries(f.bonus||{}).map(([k,v])=>`+${v} ${STAT_LABELS[k]||k}`).join(', ');return`<button class="ghost lvl-feat-pick" data-feat="${safe(fn)}" style="font-size:10px;padding:6px 10px;text-align:left"><b>${safe(fn)}</b>${fd?`<br><span style="color:var(--muted);font-size:9px">${safe(fd)}</span>`:''} ${bstr?`<span style="color:var(--green);font-size:9px"> · ${safe(bstr)}</span>`:''}</button>`}).join('')}</div>`;
+     $$('.lvl-feat-pick').forEach(b=>b.onclick=()=>{picked.feat=b.dataset.feat;$$('.lvl-feat-pick').forEach(x=>x.classList.remove('active-choice'));b.classList.add('active-choice');});
+    }
+   };
+  });
+  // Wire initial ASI +2 mode buttons
+  $$('.lvl-stat-asi').forEach(b=>b.onclick=()=>{picked.stat_asi=b.dataset.stat;$$('.lvl-stat-asi').forEach(x=>x.classList.remove('active-choice'));b.classList.add('active-choice');});
+ }
+
+ // Wire non-ASI stat
+ $$('.lvl-stat-pick').forEach(b=>b.onclick=()=>{picked.stat=b.dataset.stat;$$('.lvl-stat-pick').forEach(x=>x.classList.remove('active-choice'));b.classList.add('active-choice');});
+ // Wire non-ASI feat
+ $$('.lvl-feat-pick').forEach(b=>b.onclick=()=>{picked.feat=b.dataset.feat;$$('.lvl-feat-pick').forEach(x=>x.classList.remove('active-choice'));b.classList.add('active-choice');});
+ // Wire spells
+ $$('.lvl-spell-pick').forEach(b=>b.onclick=()=>{picked.spell=b.dataset.spell;$$('.lvl-spell-pick').forEach(x=>x.classList.remove('active-choice'));b.classList.add('active-choice');});
+ // Wire tree nodes
+ $$('.lvl-tree-pick').forEach(b=>b.onclick=()=>{picked.tree_node=b.dataset.nodeid;$$('.lvl-tree-pick').forEach(x=>x.classList.remove('active-choice'));b.classList.add('active-choice');});
+ // Wire professions
+ $$('.lvl-prof-pick').forEach(b=>b.onclick=()=>{picked.profession=b.dataset.prof;$$('.lvl-prof-pick').forEach(x=>x.classList.remove('active-choice'));b.classList.add('active-choice');});
+
  modal.hidden=false;
+
+ // Async load story gifts
+ if(state.characterId){
+  api(`/api/characters/${state.characterId}/level-up/story-gifts`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>{
+   const gb=$('#storyGiftsBody');if(!gb)return;
+   const gifts=(r.gifts||[]);
+   if(!gifts.length){gb.innerHTML='<div style="color:var(--muted);font-size:11px">No story abilities available yet.</div>';return;}
+   gb.innerHTML=`<div style="display:flex;flex-direction:column;gap:6px">${gifts.map(g=>{const bn=Object.entries(g.bonus||{}).map(([k,v])=>`+${v} ${STAT_LABELS[k]||k}`).join(', ');return`<button class="ghost lvl-story-pick" data-ability="${safe(JSON.stringify(g))}" style="font-size:10px;padding:6px 10px;text-align:left"><b>${safe(g.name||'?')}</b> <span style="color:#f06292;font-size:9px">${safe(g.type||'')}</span>${bn?`<span style="color:var(--green);font-size:9px"> · ${safe(bn)}</span>`:''}<br><span style="color:var(--muted);font-size:9px">${safe((g.desc||'').substring(0,100))}</span></button>`}).join('')}</div>`;
+   $$('.lvl-story-pick').forEach(b=>b.onclick=()=>{picked.story_ability=b.dataset.ability;$$('.lvl-story-pick').forEach(x=>x.classList.remove('active-choice'));b.classList.add('active-choice');});
+  }).catch(()=>{const gb=$('#storyGiftsBody');if(gb)gb.innerHTML='<div style="color:var(--muted);font-size:11px">Story abilities unavailable.</div>';});
+ }
+
  const claimBtn=$('#lvlUpClaimBtn');
  if(claimBtn)claimBtn.onclick=async()=>{
-  if(!picked.stat){toast('Pick an attribute to boost first');return;}
+  // Validate the user has made required choices
+  if(isAsi){
+   if(picked.asi_mode==='one'&&!picked.stat_asi){toast('Pick a stat for +2 ASI');return;}
+   if(picked.asi_mode==='split'&&(!picked.stat_a||!picked.stat_b)){toast('Pick two stats for split ASI');return;}
+   if(picked.asi_mode==='feat'&&!picked.feat){toast('Pick a feat');return;}
+  } else {
+   if(!picked.stat){toast('Pick an attribute to boost');return;}
+  }
   try{
-   const payload={stat:picked.stat};
-   if(picked.feat)payload.feat=picked.feat;
-   if(picked.spell)payload.spell=picked.spell;
-   if(picked.skill)payload.skill=picked.skill;
-   if(picked.profession)payload.profession=picked.profession;
+   const payload={};
+   if(isAsi){
+    if(picked.asi_mode==='one') payload.stat_asi=picked.stat_asi;
+    else if(picked.asi_mode==='split'){payload.stat_a=picked.stat_a;payload.stat_b=picked.stat_b;}
+    else if(picked.asi_mode==='feat') payload.feat=picked.feat;
+   } else {
+    payload.stat=picked.stat;
+   }
+   if(!isAsi&&picked.feat) payload.feat=picked.feat;
+   if(picked.spell) payload.spell=picked.spell;
+   if(picked.tree_node) payload.tree_node=picked.tree_node;
+   if(picked.story_ability) payload.story_ability=picked.story_ability;
+   if(picked.profession) payload.profession=picked.profession;
    const r=await api(`/api/characters/${state.characterId}/level-up/claim`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-   if(r.sheet){state.sheet=r.sheet;renderParty();if($('#detailContent').innerHTML.includes('EXPERIENCE'))showPanel('character');}
-   const applied=r.applied||[];
-   toast(`Level-up claimed! ${applied.join(', ')}`);
+   if(r.sheet){state.sheet=r.sheet;state.pendingLevelUp=false;renderParty();showPanel('character');}
+   toast(`Level-up claimed! ${(r.applied||[]).join(' · ')}`);
    modal.hidden=true;
-  }catch(e){toast(e.message);}
+  }catch(e){toast(e.message||'Claim failed');}
  };
  modal.onclick=e=>{if(e.target===modal)modal.hidden=true;};
 }

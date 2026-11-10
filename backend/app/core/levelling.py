@@ -80,6 +80,40 @@ def get_available_professions(level):
 def can_change_profession(level):
     return level >= 5 and level % 5 == 0
 
+# ═══ D&D 5e LEVEL-UP RULES ═══
+ASI_LEVELS = {4, 8, 12, 16, 19}
+
+HIT_DICE = {
+    'barbarian': 12, 'berserker': 12, 'primal titan': 12, 'rage lord': 12,
+    'fighter': 10, 'paladin': 10, 'ranger': 10, 'champion': 10, 'crusader': 10,
+    'holy avenger': 10, 'warlord': 10, 'god knight': 10,
+    'cleric': 8, 'druid': 8, 'monk': 8, 'rogue': 8, 'warlock': 8, 'bard': 8,
+    'artificer': 8, 'war priest': 8, 'archdruid': 8, 'shadow monk': 8,
+    'assassin': 8, 'beast master': 8, 'lore master': 8, 'grand bard': 8,
+    'hexblade': 8, 'pack leader': 8, 'death dealer': 8,
+}
+
+CASTER_PROFESSIONS = {
+    'wizard','archmage','spell weaver','reality shaper','arcane god','sorcerer',
+    'storm sorcerer','chaos mage','cleric','war priest','high priest','divine avatar',
+    'bard','grand bard','cosmic bard','druid','archdruid','warlock','hexblade',
+    'pact lord','soul binder','monk','shadow monk','enlightened one',
+}
+
+def get_hit_die(profession: str) -> int:
+    p = (profession or '').lower()
+    for key, die in HIT_DICE.items():
+        if key in p:
+            return die
+    return 6
+
+def proficiency_bonus(level: int) -> int:
+    return 2 + (level - 1) // 4
+
+def is_caster(profession: str) -> bool:
+    p = (profession or '').lower()
+    return any(c in p for c in CASTER_PROFESSIONS)
+
 SKILL_TREES = {
     "Combat": {
         "tier1": ["Basic Attack","Block","Dodge","Parry"],
@@ -126,52 +160,90 @@ def get_character_by_name(name):
     return dict(row) if row else None
 
 def _generate_level_up_choices(cid: int, new_level: int) -> dict:
-    """Build the choice menu shown to the player when they level up."""
+    """Build D&D 5e level-up choices for the player."""
     ch = get_character(cid)
     known_traits = []
     try: known_traits = json.loads(ch.get("traits","[]") or "[]")
     except Exception: pass
+    known_spells = []
+    try: known_spells = json.loads(ch.get("spells","[]") or "[]")
+    except Exception: pass
+    unlocked_skills = []
+    try: unlocked_skills = json.loads(ch.get("unlocked_skills","[]") or "[]")
+    except Exception: pass
+
+    profession = ch.get("profession","") or ""
+    con_val = ch.get("constitution", 10) or 10
+    con_mod = (con_val - 10) // 2
+    hit_die = get_hit_die(profession)
+    prof_bonus = proficiency_bonus(new_level)
+    is_asi = new_level in ASI_LEVELS
 
     choices: dict = {
-        "stat_points": STAT_PTS_PER_LV,  # always 1 free stat point
-        "ability_points": OTHER_PTS_PER_LV,
+        "stat_options": STAT_NAMES[:],
+        "stat_points": 2 if is_asi else 1,
+        "is_asi_level": is_asi,
+        "hit_die": hit_die,
+        "con_mod": con_mod,
+        "hp_gain_min": 1 + con_mod,
+        "hp_gain_max": hit_die + con_mod,
+        "proficiency_bonus": prof_bonus,
     }
-    # Every level: pick a stat to boost
-    choices["stat_options"] = STAT_NAMES[:]
 
-    # Every 3 levels: feat choice (pick 1 of 3 random feats)
-    if new_level % 3 == 0:
+    # ASI levels: feat list (as alternative to ASI)
+    if is_asi:
         available = [f for f in DND_FEATS if f not in known_traits]
         random.shuffle(available)
-        choices["feat_choices"] = available[:3]
+        choices["feat_choices"] = [
+            {"name": f, "desc": DND_FEATS[f]["desc"],
+             "category": DND_FEATS[f]["category"],
+             "bonus": DND_FEATS[f].get("bonus", {})}
+            for f in available[:4]
+        ]
 
-    # Every 5 levels: spell choice
-    if new_level % 5 == 0:
+    # Spell choices — full casters every 2 levels, others every 4
+    caster = is_caster(profession)
+    spell_every = 2 if caster else 4
+    if new_level == 1 or new_level % spell_every == 0:
         try:
             from backend.app.domain import spells as _sp
-            known_spells = []
-            try: known_spells = json.loads(ch.get("spells","[]") or "[]")
-            except Exception: pass
-            avail_spells = [s for s in list(_sp.SPELLS.keys()) if s not in known_spells]
-            random.shuffle(avail_spells)
-            choices["spell_choices"] = avail_spells[:3]
+            max_spell_lv = min((new_level + 1) // 2, 9)
+            avail = [(k, v) for k, v in _sp.SPELLS.items()
+                     if k not in known_spells and v.get("level", 1) <= max_spell_lv]
+            random.shuffle(avail)
+            choices["spell_choices"] = [
+                {"name": k, "level": v.get("level", 0), "school": v.get("school",""),
+                 "desc": v.get("description", v.get("desc",""))}
+                for k, v in avail[:4]
+            ]
         except Exception:
-            pass
+            log.debug("spell choices generation failed", exc_info=True)
 
-    # Every 2 levels: skill choice
-    if new_level % 2 == 0:
-        known_skills = []
-        try: known_skills = json.loads(ch.get("skills","[]") or "[]")
-        except Exception: pass
-        all_skills = []
-        for cat, tiers in SKILL_TREES.items():
-            tier = "tier1" if new_level < 5 else "tier2" if new_level < 10 else "tier3" if new_level < 20 else "tier4"
-            all_skills += [(s, cat) for s in tiers.get(tier, tiers["tier1"])]
-        avail = [(s,c) for s,c in all_skills if s not in known_skills]
-        random.shuffle(avail)
-        choices["skill_choices"] = [{"skill":s,"category":c} for s,c in avail[:3]]
+    # Skill tree node choices (from visual skill tree)
+    try:
+        from core.skill_tree_data import ALL_NODES, can_unlock
+        total_stats_map = get_total_stats(cid)
+        flat_stats = {s: total_stats_map.get(s, {}).get("total", 10) for s in STAT_NAMES}
+        unlockable = []
+        for node_id, node in ALL_NODES.items():
+            if node_id in unlocked_skills:
+                continue
+            if node.get("level_req", 1) > new_level:
+                continue
+            ok, _ = can_unlock(node_id, unlocked_skills, flat_stats, new_level)
+            if ok:
+                unlockable.append(node)
+        random.shuffle(unlockable)
+        choices["tree_node_choices"] = [
+            {"id": n["id"], "name": n["name"], "desc": n["desc"],
+             "category": n["category"], "tier": n["tier"], "icon": n.get("icon","")}
+            for n in unlockable[:4]
+        ]
+    except Exception:
+        log.debug("tree node choices generation failed", exc_info=True)
+        choices["tree_node_choices"] = []
 
-    # Every 5 levels: profession change option
+    # Every 5 levels: profession change
     if can_change_profession(new_level):
         choices["profession_choices"] = get_available_professions(new_level)
 
@@ -227,25 +299,50 @@ def claim_level_up(cid: int, choices_made: dict) -> dict:
         conn.close()
 
     results = []
-    if "stat" in choices_made:
-        ok = increase_stat(cid, choices_made["stat"])
+    # D&D ASI: +2 to one stat
+    if choices_made.get("stat_asi"):
+        ok = increase_stat(cid, choices_made["stat_asi"], 2)
+        if ok: results.append(f"+2 {choices_made['stat_asi']}")
+    # D&D ASI split: +1 to two different stats
+    elif choices_made.get("stat_a") and choices_made.get("stat_b"):
+        for sk in ("stat_a", "stat_b"):
+            ok = increase_stat(cid, choices_made[sk], 1)
+            if ok: results.append(f"+1 {choices_made[sk]}")
+    # Legacy / non-ASI: +1 to one stat
+    elif choices_made.get("stat"):
+        ok = increase_stat(cid, choices_made["stat"], 1)
         if ok: results.append(f"+1 {choices_made['stat']}")
 
-    if "feat" in choices_made:
+    if choices_made.get("feat"):
         ok = add_feat_to_character(cid, choices_made["feat"])
         if ok: results.append(f"Feat: {choices_made['feat']}")
 
-    if "spell" in choices_made:
+    if choices_made.get("spell"):
         ok = add_spell_to_character(cid, choices_made["spell"])
         if ok: results.append(f"Spell: {choices_made['spell']}")
 
-    if "skill" in choices_made:
+    if choices_made.get("skill"):
         ok = add_skill_to_character(cid, choices_made["skill"])
         if ok: results.append(f"Skill: {choices_made['skill']}")
 
-    if "profession" in choices_made:
+    if choices_made.get("profession"):
         ok = change_profession(cid, choices_made["profession"])
         if ok: results.append(f"Profession: {choices_made['profession']}")
+
+    # Skill tree node unlock
+    if choices_made.get("tree_node"):
+        ok = unlock_tree_node(cid, choices_made["tree_node"])
+        if ok: results.append(f"Unlocked: {choices_made['tree_node']}")
+
+    # Story ability
+    if choices_made.get("story_ability"):
+        try:
+            raw = choices_made["story_ability"]
+            ability = json.loads(raw) if isinstance(raw, str) else raw
+            ok = add_story_ability(cid, ability)
+            if ok: results.append(f"Story Ability: {ability.get('name','?')}")
+        except Exception:
+            log.debug("story ability claim failed", exc_info=True)
 
     return {"ok": True, "applied": results, "sheet": get_full_sheet(cid)}
 
@@ -331,6 +428,98 @@ def change_profession(cid, new_profession):
     conn=get_conn()
     conn.execute("UPDATE characters SET profession=? WHERE id=?",(new_profession,cid))
     conn.commit(); conn.close(); return True
+
+def unlock_tree_node(cid: int, node_id: str) -> bool:
+    try:
+        from core.skill_tree_data import ALL_NODES
+        if node_id not in ALL_NODES:
+            return False
+    except Exception:
+        pass
+    conn = get_conn()
+    row = conn.execute("SELECT unlocked_skills FROM characters WHERE id=?", (cid,)).fetchone()
+    if not row:
+        conn.close(); return False
+    try: unlocked = json.loads(row["unlocked_skills"] or "[]")
+    except Exception: unlocked = []
+    if node_id not in unlocked:
+        unlocked.append(node_id)
+    conn.execute("UPDATE characters SET unlocked_skills=? WHERE id=?", (json.dumps(unlocked), cid))
+    conn.commit(); conn.close(); return True
+
+def add_story_ability(cid: int, ability: dict) -> bool:
+    name = ability.get("name","")
+    if not name: return False
+    ok = add_skill_to_character(cid, name)
+    for stat, bonus in ability.get("bonus",{}).items():
+        if stat in STAT_NAMES and isinstance(bonus, int) and bonus > 0:
+            increase_stat(cid, stat, bonus)
+    return ok
+
+def generate_story_gifts(cid: int, new_level: int) -> list:
+    """LLM-generated plot/class-specific abilities for this character's story."""
+    ch = get_character(cid)
+    if not ch:
+        return _fallback_story_gifts({}, new_level)
+    profession = ch.get("profession","Adventurer") or "Adventurer"
+    race = ch.get("race","Human") or "Human"
+    name = ch.get("name","Hero") or "Hero"
+    backstory = (ch.get("backstory") or "")[:200]
+    goals = (ch.get("goals") or "")[:100]
+    known_skills = []
+    try: known_skills = json.loads(ch.get("skills","[]") or "[]")
+    except Exception: pass
+
+    prompt = (
+        f"Generate exactly 3 unique level-up abilities for a character. "
+        f"Character: {name}, Level {new_level} {race} {profession}. "
+        f"Background: {backstory or 'Unknown'}. Goals: {goals or 'Unknown'}. "
+        f"Known skills: {', '.join(known_skills[:5]) if known_skills else 'none'}. "
+        "Return ONLY a JSON array, no markdown, no explanation:\n"
+        '[{"name":"AbilityName","type":"passive","desc":"What it does in one sentence.","bonus":{"stat":1}},'
+        '{"name":"AbilityName","type":"active","desc":"What it does.","bonus":{}},'
+        '{"name":"AbilityName","type":"passive","desc":"What it does.","bonus":{"stat":1}}]'
+        "\nAbilities must reflect this character's story, class, and current level. Each must be unique."
+    )
+    try:
+        from core.chat_engine import send_to_llm
+        resp = send_to_llm(
+            [{"role":"system","content":"You are a D&D ability generator. Return ONLY valid JSON arrays."},
+             {"role":"user","content":prompt}],
+            temperature=0.8, max_tokens=512)
+        text = resp.strip()
+        # Strip markdown code fences
+        if "```" in text:
+            parts = text.split("```")
+            for p in parts:
+                p = p.strip()
+                if p.startswith("json"): p = p[4:].strip()
+                if p.startswith("["):
+                    text = p; break
+        # Find the JSON array
+        start = text.find("["); end = text.rfind("]")
+        if start != -1 and end != -1:
+            text = text[start:end+1]
+        gifts = json.loads(text)
+        if isinstance(gifts, list) and gifts:
+            return [g for g in gifts if isinstance(g, dict)][:3]
+    except Exception:
+        log.debug("Story gifts LLM generation failed", exc_info=True)
+    return _fallback_story_gifts(ch, new_level)
+
+def _fallback_story_gifts(ch: dict, new_level: int) -> list:
+    profession = ch.get("profession","Adventurer") or "Adventurer"
+    return [
+        {"name": f"Seasoned {profession}", "type": "passive",
+         "desc": f"Your experience as a {profession} sharpens your instincts. +1 to checks in your domain.",
+         "bonus": {"wisdom": 1}},
+        {"name": "Battle-Hardened", "type": "passive",
+         "desc": f"Level {new_level} veterans endure more. Your constitution grows from trials.",
+         "bonus": {"constitution": 1}},
+        {"name": "Moment of Clarity", "type": "active",
+         "desc": "A key moment in your journey unlocked a hidden potential. Once per rest, re-roll any check.",
+         "bonus": {}},
+    ]
 
 # ═══ ACHIEVEMENT BONUSES ═══
 
