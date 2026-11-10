@@ -3087,6 +3087,205 @@ def accept_location_quest(loc_id: int, quest_id: int, character_name: str = "", 
         conn.close()
 
 
+# ═══════════════════════════════════════════════════════════════════
+# SKILL TREE ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════
+from core.skill_tree_data import ALL_NODES, CATEGORIES, CATEGORY_LABELS, CATEGORY_ICONS, can_unlock
+
+@app.get("/api/skill-tree/all")
+def get_all_skill_nodes() -> dict:
+    return {"nodes": ALL_NODES, "categories": CATEGORIES,
+            "labels": CATEGORY_LABELS, "icons": CATEGORY_ICONS}
+
+@app.get("/api/characters/{character_id}/skill-tree")
+def get_char_skill_tree(character_id: int) -> dict:
+    conn = get_conn()
+    try:
+        char = conn.execute("SELECT skill_tree_json, skill_points_available, level, strength, dexterity, constitution, intelligence, wisdom, charisma_stat FROM characters WHERE id=?", (character_id,)).fetchone()
+        if not char:
+            raise HTTPException(404, "Character not found")
+        unlocked_state = json.loads(char["skill_tree_json"] or "{}")
+        unlocked = unlocked_state.get("unlocked", [])
+        stats = {k: char[k] for k in ["strength","dexterity","constitution","intelligence","wisdom","charisma_stat"] if k in char.keys()}
+        level = char["level"] or 1
+        unlockable = []
+        for nid, node in ALL_NODES.items():
+            if nid not in unlocked:
+                ok, _ = can_unlock(nid, unlocked, stats, level)
+                if ok:
+                    unlockable.append(nid)
+        return {
+            "unlocked": unlocked,
+            "unlockable": unlockable,
+            "skill_points": char["skill_points_available"] or 0,
+            "stats": stats,
+            "level": level,
+        }
+    finally:
+        conn.close()
+
+class SkillUnlockIn(BaseModel):
+    node_id: str
+
+@app.post("/api/characters/{character_id}/skill-tree/unlock")
+def unlock_skill_node(character_id: int, body: SkillUnlockIn) -> dict:
+    conn = get_conn()
+    try:
+        char = conn.execute("SELECT skill_tree_json, skill_points_available, level, strength, dexterity, constitution, intelligence, wisdom, charisma_stat FROM characters WHERE id=?", (character_id,)).fetchone()
+        if not char:
+            raise HTTPException(404, "Character not found")
+        unlocked_state = json.loads(char["skill_tree_json"] or "{}")
+        unlocked = unlocked_state.get("unlocked", [])
+        sp = char["skill_points_available"] or 0
+        if sp < 1:
+            return {"ok": False, "error": "No skill points available"}
+        stats = {k: char[k] for k in ["strength","dexterity","constitution","intelligence","wisdom","charisma_stat"] if k in char.keys()}
+        ok, reason = can_unlock(body.node_id, unlocked, stats, char["level"] or 1)
+        if not ok:
+            return {"ok": False, "error": reason}
+        unlocked.append(body.node_id)
+        unlocked_state["unlocked"] = unlocked
+        new_sp = sp - 1
+        conn.execute("UPDATE characters SET skill_tree_json=?, skill_points_available=? WHERE id=?",
+                     (json.dumps(unlocked_state), new_sp, character_id))
+        conn.commit()
+        return {"ok": True, "unlocked": body.node_id, "skill_points_remaining": new_sp, "all_unlocked": unlocked}
+    finally:
+        conn.close()
+
+# ═══════════════════════════════════════════════════════════════════
+# ORGANIZATIONS ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════
+from core.organizations import (
+    get_orgs_for_world, get_character_memberships, join_org, rank_up_member,
+    leave_org, seed_world_orgs, generate_story_org, TEMPLATE_ORGS,
+)
+
+@app.get("/api/worlds/{world_id}/organizations")
+def list_world_organizations(world_id: int) -> dict:
+    seed_world_orgs(world_id)
+    orgs = get_orgs_for_world(world_id)
+    for o in orgs:
+        try: o["ranks"] = json.loads(o.get("ranks_json") or "[]")
+        except: o["ranks"] = []
+        try: o["benefits"] = json.loads(o.get("benefits_json") or "{}")
+        except: o["benefits"] = {}
+    return {"organizations": orgs, "total": len(orgs)}
+
+@app.get("/api/characters/{character_id}/organizations")
+def get_char_organizations(character_id: int) -> dict:
+    memberships = get_character_memberships(character_id)
+    return {"memberships": memberships}
+
+class OrgJoinIn(BaseModel):
+    character_id: int
+
+@app.post("/api/organizations/{org_id}/join")
+def join_organization(org_id: int, body: OrgJoinIn) -> dict:
+    return join_org(org_id, body.character_id)
+
+@app.post("/api/organizations/{org_id}/rank-up")
+def rank_up_organization(org_id: int, body: OrgJoinIn) -> dict:
+    return rank_up_member(org_id, body.character_id)
+
+@app.post("/api/organizations/{org_id}/leave")
+def leave_organization(org_id: int, body: OrgJoinIn) -> dict:
+    return leave_org(org_id, body.character_id)
+
+class OrgGenerateIn(BaseModel):
+    world_id: int
+    world_name: str = ""
+    history: list = []
+
+@app.post("/api/organizations/generate")
+def generate_organization(body: OrgGenerateIn) -> dict:
+    return generate_story_org(body.world_id, body.history, body.world_name)
+
+# ═══════════════════════════════════════════════════════════════════
+# CUSTOM SPELLS (LLM-GENERATED FROM STORY CONTEXT)
+# ═══════════════════════════════════════════════════════════════════
+class CustomSpellIn(BaseModel):
+    character_id: int
+    description: str
+    history: list = []
+
+@app.post("/api/spells/generate")
+def generate_custom_spell(body: CustomSpellIn) -> dict:
+    import re as _re
+    history = body.history[-12:]
+    convo = "\n".join(f"{m.get('role','?')}: {m.get('content','')[:200]}" for m in history) or "(no context)"
+    prompt = (
+        "You are a D&D 5e spell designer. Based on the story context and the player's description, "
+        "create a unique custom spell as a structured D&D stat block.\n\n"
+        f"Recent story:\n{convo}\n\n"
+        f"Player's spell concept: {body.description}\n\n"
+        "Respond ONLY with a valid JSON object (no markdown backticks):\n"
+        '{"name":"Spell Name","school":"Evocation","level":1,"casting_time":"1 action",'
+        '"range":"60 ft","duration":"Instantaneous","components":"V, S",'
+        '"effect_type":"damage","damage":"2d6","damage_type":"fire",'
+        '"description":"Full spell description in D&D style (2-3 sentences).",'
+        '"story_origin":"One sentence tying this spell to the current story."}'
+    )
+    try:
+        raw = send_to_llm([{"role":"system","content":prompt}], temperature=0.7, max_tokens=500)
+        match = _re.search(r"\{.*\}", raw, _re.DOTALL)
+        if not match:
+            raise ValueError("No JSON in LLM response")
+        data = json.loads(match.group(0))
+        conn = get_conn()
+        cur = conn.execute(
+            "INSERT INTO custom_spells (character_id,name,school,level,casting_time,range,duration,"
+            "effect_type,damage,description,story_origin,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (body.character_id, data["name"], data.get("school","Evocation"),
+             int(data.get("level",1)), data.get("casting_time","1 action"),
+             data.get("range","30 ft"), data.get("duration","Instantaneous"),
+             data.get("effect_type","utility"), data.get("damage",""),
+             data.get("description",""), data.get("story_origin",""), now_iso()))
+        spell_id = cur.lastrowid; conn.commit(); conn.close()
+        data["id"] = spell_id
+        data["custom"] = True
+        return {"ok": True, "spell": data}
+    except Exception as exc:
+        log.info("Custom spell gen failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+@app.get("/api/characters/{character_id}/spells/custom")
+def get_custom_spells(character_id: int) -> dict:
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM custom_spells WHERE character_id=? ORDER BY created_at DESC", (character_id,)).fetchall()
+    conn.close()
+    return {"spells": [dict(r) for r in rows]}
+
+# ═══════════════════════════════════════════════════════════════════
+# WORLD SYSTEMS — economy, diplomacy, law
+# ═══════════════════════════════════════════════════════════════════
+@app.get("/api/worlds/{world_id}/economy")
+def get_world_economy(world_id: int) -> dict:
+    conn = get_conn()
+    world = conn.execute("SELECT treasury, law_level, crime_level, population FROM worlds WHERE id=?", (world_id,)).fetchone()
+    prices = conn.execute("SELECT * FROM market_prices WHERE world_id=? LIMIT 20", (world_id,)).fetchall()
+    conn.close()
+    return {
+        "treasury": world["treasury"] if world else 0,
+        "law_level": world["law_level"] if world else 50,
+        "crime_level": world["crime_level"] if world else 10,
+        "population": world["population"] if world else 0,
+        "market_prices": [dict(p) for p in prices],
+    }
+
+@app.get("/api/worlds/{world_id}/diplomacy")
+def get_world_diplomacy(world_id: int) -> dict:
+    conn = get_conn()
+    factions = conn.execute("SELECT name, alignment, reputation, military_strength, treasury, leader FROM factions WHERE world_id=?", (world_id,)).fetchall()
+    relations = conn.execute("SELECT * FROM diplomacy WHERE world_id=?", (world_id,)).fetchall()
+    laws = conn.execute("SELECT * FROM world_laws WHERE world_id=? AND active=1", (world_id,)).fetchall()
+    conn.close()
+    return {
+        "factions": [dict(f) for f in factions],
+        "diplomacy": [dict(r) for r in relations],
+        "laws": [dict(l) for l in laws],
+    }
+
 ASSETS_DIR = REACT_DIST / "assets"
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")

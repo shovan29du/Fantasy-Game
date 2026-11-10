@@ -14,7 +14,7 @@ DB_PATH = DATA_DIR / "aichat_pro.db"
 
 # Bump whenever a new entry is added to _MIGRATIONS or _TABLES so the
 # schema_version table reflects the schema the app expects.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 def get_conn():
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
@@ -219,6 +219,52 @@ _TABLES.append("""CREATE TABLE IF NOT EXISTS level_up_pending (
     new_level INTEGER NOT NULL,
     choices_json TEXT DEFAULT '{}',
     claimed INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL
+)""")
+
+# Organizations (guilds, families, businesses, academies, orders, etc.)
+_TABLES.append("""CREATE TABLE IF NOT EXISTS organizations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    world_id INTEGER,
+    name TEXT NOT NULL,
+    org_type TEXT NOT NULL,
+    focus TEXT DEFAULT '',
+    primary_attr TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    ranks_json TEXT DEFAULT '[]',
+    benefits_json TEXT DEFAULT '{}',
+    join_req_json TEXT DEFAULT '{}',
+    npc_leader TEXT DEFAULT '',
+    location TEXT DEFAULT '',
+    treasury INTEGER DEFAULT 0,
+    reputation INTEGER DEFAULT 50,
+    story_origin TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+)""")
+
+_TABLES.append("""CREATE TABLE IF NOT EXISTS org_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER NOT NULL,
+    character_id INTEGER NOT NULL,
+    rank INTEGER DEFAULT 0,
+    joined_at TEXT NOT NULL,
+    contributions INTEGER DEFAULT 0
+)""")
+
+# Custom spells generated from chat/story context
+_TABLES.append("""CREATE TABLE IF NOT EXISTS custom_spells (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id INTEGER,
+    name TEXT NOT NULL,
+    school TEXT DEFAULT 'Transmutation',
+    level INTEGER DEFAULT 1,
+    casting_time TEXT DEFAULT '1 action',
+    range TEXT DEFAULT '30 ft',
+    duration TEXT DEFAULT 'Instantaneous',
+    effect_type TEXT DEFAULT 'utility',
+    damage TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    story_origin TEXT DEFAULT '',
     created_at TEXT NOT NULL
 )""")
 

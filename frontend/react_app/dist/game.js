@@ -50,7 +50,8 @@ async function _drainThumbQueue(){
   _thumbRunning=false;
 }
 
-let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:_loadImgCache(),pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[],npcMemories:{},visitedWorldIds:new Set(),pendingGamePayload:null,spellSlots:null};
+let state={worldIndex:0,scale:'local',x:42,y:52,zoom:100,selected:0,characterId:null,worlds:[],flavorWorlds:[],sessionId:'default',sheet:null,inventory:{economy:{},items:[]},quests:[],weaponTiers:[],locations:[],locationImageCache:_loadImgCache(),pendingCategory:null,randomScenarioText:'',hasActiveGame:false,allSpells:{},dndWeapons:{},dndWeaponCategories:[],voiceEnabled:localStorage.getItem('companion-voice')==='true',partyChars:[],partySheets:{},activeSpeaker:null,_savedCharCache:[],npcMemories:{},visitedWorldIds:new Set(),pendingGamePayload:null,spellSlots:null,
+ allSkillNodes:{},skillTreeData:{},skillTreeCat:'combat',worldOrgs:[],charMemberships:[],customSpells:[],worldSystems:{economy:{},diplomacy:{}}};
 // 5e spell slot table per caster level (simplified; covers lv 1-20)
 const _5E_SLOTS=[[],[2],[3],[4,2],[4,3],[4,3,2],[4,3,3],[4,3,3,1],[4,3,3,2],[4,3,3,3,1],[4,3,3,3,2],[4,3,3,3,2,1],[4,3,3,3,2,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1,1],[4,3,3,3,3,1,1,1,1],[4,3,3,3,3,2,1,1,1],[4,3,3,3,3,2,2,1,1]];
 function _initSpellSlots(lv){const row=_5E_SLOTS[Math.min(20,Math.max(1,lv))]||_5E_SLOTS[1];return row.map((max,i)=>({level:i+1,max,current:max}));}
@@ -375,6 +376,82 @@ async function lootItem(){
   renderInventory();
  }catch(error){toast(error.message)}
 }
+// ── Skill Tree SVG renderer ────────────────────────────────────────
+const _ATTR_COLORS={strength:'#e53935',dexterity:'#43a047',constitution:'#fb8c00',intelligence:'#7b1fa2',wisdom:'#00838f',charisma_stat:'#d81b60'};
+function _getNodeColor(node){const attrs=Object.keys(node.attr_req||{});return attrs.length?(_ATTR_COLORS[attrs[0]]||'#546e7a'):'#546e7a';}
+function _getAttrReqText(attr_req){const e=Object.entries(attr_req||{});if(!e.length)return '';return e.map(([k,v])=>`${k.replace('_stat','').slice(0,3).toUpperCase()} ${v}`).join(', ');}
+function _renderSkillTreeSVG(catNodes,unlocked,unlockable,stats,charLevel){
+ const tiers={1:[],2:[],3:[],4:[]};
+ catNodes.forEach(n=>{const t=n.tier||1;if(!tiers[t])tiers[t]=[];tiers[t].push(n);});
+ const NW=120,NH=52,TIER_Y={1:30,2:190,3:350,4:510};const SVGW=800;const SVGH=600;
+ const pos={};
+ for(const [tier,nodes] of Object.entries(tiers)){
+  const count=nodes.length;const spacing=Math.min((SVGW-60)/(count+1),140);
+  const totalW=spacing*(count-1);const startX=(SVGW-totalW)/2-(NW/2);
+  nodes.forEach((n,i)=>{pos[n.id]={x:startX+i*spacing,y:TIER_Y[tier]};});
+ }
+ let lines='',nodesSvg='';
+ catNodes.forEach(node=>{
+  const p=pos[node.id];if(!p)return;
+  (node.children||[]).forEach(childId=>{
+   const cp=pos[childId];if(!cp)return;
+   const isUnlocked=unlocked.includes(node.id);
+   lines+=`<line x1="${p.x+NW/2}" y1="${p.y+NH}" x2="${cp.x+NW/2}" y2="${cp.y}" stroke="${isUnlocked?'#4a6080':'#1e2a38'}" stroke-width="1.5" stroke-dasharray="${isUnlocked?'':'4,4'}"/>`;
+  });
+ });
+ catNodes.forEach(node=>{
+  const p=pos[node.id];if(!p)return;
+  const isUnlocked=unlocked.includes(node.id);const canUnlock=unlockable.includes(node.id);
+  const color=_getNodeColor(node);
+  const opacity=isUnlocked?1:canUnlock?0.75:0.35;
+  const fill=isUnlocked?color+'22':canUnlock?color+'12':'#0d1520';
+  const stroke=isUnlocked?color:canUnlock?color+'88':'#2a3545';
+  const sw=isUnlocked?2:canUnlock?1.5:1;
+  const textCol=isUnlocked?'#eee':canUnlock?'#aaa':'#555';
+  const reqText=_getAttrReqText(node.attr_req);
+  const statusIcon=isUnlocked?'✓':canUnlock?'◉':'🔒';
+  const statusCol=isUnlocked?color:canUnlock?color+'cc':'#444';
+  nodesSvg+=`<g class="skill-svg-node" data-nid="${safe(node.id)}" style="cursor:pointer;opacity:${opacity}">
+   <rect x="${p.x}" y="${p.y}" width="${NW}" height="${NH}" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+   <text x="${p.x+NW/2}" y="${p.y+17}" text-anchor="middle" font-size="12" fill="${textCol}" font-family="system-ui">${safe(node.icon||'')} ${safe(node.name)}</text>
+   ${reqText?`<text x="${p.x+NW/2}" y="${p.y+30}" text-anchor="middle" font-size="9" fill="${isUnlocked?color+'cc':'#555'}">${safe(reqText)}</text>`:''}
+   <text x="${p.x+NW/2}" y="${p.y+43}" text-anchor="middle" font-size="9" fill="${isUnlocked?color+'88':'#444'}">Lv${node.level_req||1} req</text>
+   <text x="${p.x+NW-8}" y="${p.y+14}" font-size="10" fill="${statusCol}">${statusIcon}</text>
+  </g>`;
+ });
+ const tierLabels=[1,2,3,4].map(t=>TIER_Y[t]!==undefined?`<text x="8" y="${TIER_Y[t]+28}" font-size="10" fill="#2a4060" font-family="system-ui">T${t}</text>`:''). join('');
+ return `<svg viewBox="0 0 ${SVGW} ${SVGH}" xmlns="http://www.w3.org/2000/svg" style="min-width:${SVGW}px;height:${SVGH}px;display:block"><g>${lines}</g><g>${nodesSvg}</g>${tierLabels}</svg>`;
+}
+async function loadSkillTree(){
+ try{
+  if(!Object.keys(state.allSkillNodes).length){
+   const data=await api('/api/skill-tree/all');
+   state.allSkillNodes=data.nodes||{};
+  }
+  if(state.characterId){
+   const st=await api(`/api/characters/${state.characterId}/skill-tree`);
+   state.skillTreeData={unlocked:st.unlocked||[],unlockable:st.unlockable||[],skill_points:st.skill_points||0,stats:st.stats||{},level:st.level||1};
+  }
+ }catch(e){log('Skill tree load failed',e);}
+}
+async function loadOrganizations(){
+ try{
+  const worldId=(state.worlds[state.worldIndex]||{}).id;
+  if(worldId){const r=await api(`/api/worlds/${worldId}/organizations`);state.worldOrgs=r.organizations||[];}
+  if(state.characterId){const r=await api(`/api/characters/${state.characterId}/organizations`);state.charMemberships=r.memberships||[];}
+ }catch(e){log('Orgs load failed',e);}
+}
+async function loadWorldSystems(){
+ try{
+  const worldId=(state.worlds[state.worldIndex]||{}).id;
+  if(!worldId)return;
+  const[eco,dip]=await Promise.all([api(`/api/worlds/${worldId}/economy`),api(`/api/worlds/${worldId}/diplomacy`)]);
+  state.worldSystems={economy:eco,diplomacy:dip};
+ }catch(e){log('World systems load failed',e);}
+}
+async function loadCustomSpells(){
+ try{if(state.characterId){const r=await api(`/api/characters/${state.characterId}/spells/custom`);state.customSpells=r.spells||[];}}catch(e){}
+}
 const panels={
  character:()=>{
   const s=state.sheet; if(!s) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
@@ -461,6 +538,106 @@ ${pendingBanner}
 <div class="panel-title" style="margin-top:8px"><span>SKILLS</span><small>${skills.length}</small></div>
 <div>${skills.length?skills.map(sk=>`<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--line)">🔮 ${safe(sk)}</div>`).join(''):'<div style="font-size:11px;color:var(--muted)">No skills yet</div>'}</div>`;
  },
+ skillTree:()=>{
+  if(!state.characterId) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
+  const st=state.skillTreeData||{};
+  const unlocked=st.unlocked||[];
+  const unlockable=st.unlockable||[];
+  const sp=st.skill_points||0;
+  const nodes=state.allSkillNodes||{};
+  const activeCat=state.skillTreeCat||'combat';
+  const catIcons={combat:'⚔',defense:'🛡',movement:'💨',magic:'✨',stealth:'👤',social:'💬'};
+  const catTabs=['combat','defense','movement','magic','stealth','social'].map(c=>`<button class="skill-cat-tab${c===activeCat?' active':''}" data-cat="${c}">${catIcons[c]||''} ${c.charAt(0).toUpperCase()+c.slice(1)}</button>`).join('');
+  const catNodes=Object.values(nodes).filter(n=>n.category===activeCat);
+  const svgHtml=catNodes.length?_renderSkillTreeSVG(catNodes,unlocked,unlockable,st.stats||{},st.level||1):'<div class="empty-state">No skills in this category yet. <small>Skill data loading...</small></div>';
+  return `<div class="panel-title"><span>SKILL TREE</span><small>${sp} skill point${sp!==1?'s':''} available</small></div>
+<div class="skill-cat-tabs" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">${catTabs}</div>
+<div id="skillTreeSvgWrap" style="overflow-x:auto;overflow-y:auto;max-height:520px;padding-bottom:8px;border:1px solid var(--line);border-radius:6px;background:#0a0f14">${svgHtml}</div>
+<div id="skillNodeInfo" style="margin-top:8px;min-height:60px;background:#0f1620;border:1px solid var(--line);border-radius:5px;padding:10px;font-size:11px"><span style="color:var(--muted)">Click a node to see details.</span></div>`;
+ },
+ spells:()=>{
+  const known=state.sheet?.spells||[];
+  const profession=state.sheet?.profession||'';
+  const knownHtml=known.length?known.map(name=>{
+   const sp=state.allSpells[name];
+   if(!sp)return `<div class="spell-row"><span class="rune">✦</span><span><b>${safe(name)}</b></span></div>`;
+   const level=sp.level===0?'Cantrip':`Level ${sp.level}`;
+   return `<div class="spell-row"><span class="rune">✦</span><span><b>${safe(name)}</b><small>${level} · ${safe(sp.school)} — ${safe(sp.description?.slice(0,80))}...</small></span></div>`;
+  }).join(''):'<div class="empty-state">No spells learned yet.</div>';
+  const customSpells=state.customSpells||[];
+  const customHtml=customSpells.length?`<div class="panel-title" style="margin-top:8px"><span>CUSTOM SPELLS</span><small>${customSpells.length} story spells</small></div>${customSpells.map(sp=>`<div class="spell-row"><span class="rune">🌟</span><span><b>${safe(sp.name)}</b><small>Lv ${sp.level} ${safe(sp.school)} — ${safe(sp.description?.slice(0,80))}...</small></span></div>`).join('')}`:'';
+  const learnable=Object.entries(state.allSpells).filter(([name,sp])=>!known.includes(name)&&(!profession||sp.classes.includes(profession))).slice(0,30);
+  const learnHtml=learnable.length?learnable.map(([name,sp])=>{
+   const level=sp.level===0?'Cantrip':`Level ${sp.level}`;
+   return `<button class="spell-row learnable" data-learn-spell="${safe(name)}"><span class="rune">＋</span><span><b>${safe(name)}</b><small>${level} · ${safe(sp.school)} — ${safe(sp.description?.slice(0,70))}...</small></span></button>`;
+  }).join(''):'<div class="empty-state">No more spells for this class.</div>';
+  return `<div class="panel-title"><span>SPELLBOOK</span><small>${known.length} prepared</small></div>${knownHtml}${customHtml}<div class="panel-title" style="margin-top:8px"><span>FORGE SPELL</span><small style="color:var(--gold)">✨ from story context</small></div><div style="display:flex;gap:6px;margin-bottom:8px"><input id="customSpellInput" type="text" placeholder='e.g. "Shadow ice that slows enemies"...' style="flex:1;background:#141c24;border:1px solid var(--line);color:#e9ecf1;padding:6px 8px;border-radius:4px;font-size:11px"><button id="forgeSpellBtn" class="gold" style="font-size:11px;padding:4px 10px">Forge</button></div><div class="panel-title"><span>LEARN A SPELL</span><small>${safe(profession||'Any class')}</small></div>${learnHtml}`;
+ },
+ organizations:()=>{
+  if(!state.characterId) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
+  const orgs=state.worldOrgs||[];
+  const memberships=state.charMemberships||[];
+  const memberIds=new Set(memberships.map(m=>m.id));
+  const memberMap={};memberships.forEach(m=>{memberMap[m.id]=m;});
+  const worldId=(state.worlds[state.worldIndex]||{}).id;
+  const memberHtml=memberships.length?memberships.map(o=>{
+   const ranks=o.ranks||[];const rk=o.member_rank||0;
+   const rankName=ranks[rk]||`Rank ${rk}`;const nextRank=ranks[rk+1]||null;
+   const benefits=o.benefits||{};const myBenefit=benefits[String(rk)]||'';
+   return `<div style="background:#0d1520;border:1px solid var(--gold);border-radius:6px;padding:10px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:12px">${safe(o.name)}</b><span style="font-size:9px;background:#1a2a00;color:var(--gold);padding:2px 6px;border-radius:10px">${safe(rankName)}</span></div>
+    <div style="font-size:10px;color:var(--muted);margin:4px 0">${safe(o.org_type)} · ${safe(o.focus)}</div>
+    ${myBenefit?`<div style="font-size:10px;color:#7ecf7e;padding:3px 0">✓ ${safe(myBenefit)}</div>`:''}
+    ${nextRank?`<button class="ghost" data-rankup-org="${o.id}" style="font-size:9px;padding:2px 8px;margin-top:4px">↑ Rank up to ${safe(nextRank)}</button>`:`<div style="font-size:9px;color:var(--gold);padding:3px 0">★ Max rank achieved</div>`}
+    <button class="ghost" data-leave-org="${o.id}" style="font-size:9px;padding:2px 8px;color:var(--muted);margin-top:4px">Leave</button>
+   </div>`;
+  }).join(''):'';
+  const availableOrgs=orgs.filter(o=>!memberIds.has(o.id));
+  const availHtml=availableOrgs.map(o=>{
+   const ranks=o.ranks||[];
+   return `<div style="background:#0a0f14;border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:6px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:12px">${safe(o.name)}</b><span style="font-size:9px;color:var(--muted);border:1px solid var(--line);padding:2px 6px;border-radius:10px">${safe(o.org_type)}</span></div>
+    <div style="font-size:10px;color:var(--muted);margin:4px 0">${safe(o.description?.slice(0,80))}...</div>
+    <div style="font-size:9px;color:var(--gold);margin-bottom:6px">Ranks: ${ranks.slice(0,3).join(' → ')}${ranks.length>3?' → ...':''}</div>
+    <button class="gold" data-join-org="${o.id}" style="font-size:10px;padding:3px 10px">Join</button>
+   </div>`;
+  }).join('');
+  return `<div class="panel-title"><span>MY MEMBERSHIPS</span><small>${memberships.length} organizations</small></div>
+${memberHtml||'<div style="font-size:11px;color:var(--muted);padding:4px 0">Not a member of any organization yet.</div>'}
+<div class="panel-title" style="margin-top:10px"><span>AVAILABLE ORGANIZATIONS</span><small>${availableOrgs.length}</small></div>
+${availHtml||'<div style="font-size:11px;color:var(--muted)">Loading...</div>'}
+${worldId?`<div style="margin-top:10px"><button id="generateOrgBtn" class="ghost" style="font-size:10px;padding:4px 12px;width:100%">✨ Generate story organization</button></div>`:''}`;
+ },
+ worldSystems:()=>{
+  const ws=state.worldSystems||{};
+  const eco=ws.economy||{};
+  const dip=ws.diplomacy||{};
+  const factions=dip.factions||[];
+  const diplomacy=dip.diplomacy||[];
+  const laws=dip.laws||[];
+  const prices=eco.market_prices||[];
+  const relColor={'war':'#e53935','hostile':'#ef6c00','cold':'#9e9e9e','neutral':'#546e7a','friendly':'#43a047','allied':'#1565c0'};
+  const factionsHtml=factions.map(f=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--line)"><span><b>${safe(f.name)}</b>${f.leader?` · ${safe(f.leader)}`:''}</span><span style="color:var(--gold)">${f.military_strength||0}⚔ ${f.treasury||0}💰</span></div>`).join('')||'<div style="color:var(--muted);font-size:11px">No factions active</div>';
+  const dipHtml=diplomacy.map(r=>`<div style="font-size:10px;padding:3px 0"><span>${safe(r.faction_a)}</span><span style="color:${relColor[r.relation]||'#aaa'};margin:0 6px">— ${safe(r.relation)} —</span><span>${safe(r.faction_b)}</span></div>`).join('')||'<div style="color:var(--muted);font-size:11px">No diplomatic records</div>';
+  const lawsHtml=laws.map(l=>`<div style="font-size:10px;padding:3px 0;border-bottom:1px solid var(--line)"><b>${safe(l.law_name)}</b>${l.penalty?` · Penalty: ${safe(l.penalty)}`:''}</div>`).join('')||'<div style="color:var(--muted);font-size:11px">No active laws</div>';
+  const pricesHtml=prices.map(p=>`<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0"><span>${safe(p.item)}</span><span style="color:var(--gold)">${p.current_price}gp</span></div>`).join('')||'<div style="color:var(--muted);font-size:11px">No market data</div>';
+  return `<div class="panel-title"><span>ECONOMY</span></div>
+<div style="display:flex;gap:12px;padding:4px 0 10px;font-size:11px">
+ <span>🏛 Treasury: <b>${eco.treasury||0}gp</b></span>
+ <span>⚖ Law: <b>${eco.law_level||50}/100</b></span>
+ <span>🗡 Crime: <b>${eco.crime_level||0}/100</b></span>
+ <span>👥 Pop: <b>${eco.population||0}</b></span>
+</div>
+<div class="panel-title"><span>MARKET PRICES</span></div>
+<div style="max-height:120px;overflow-y:auto">${pricesHtml}</div>
+<div class="panel-title" style="margin-top:8px"><span>FACTIONS</span><small>${factions.length}</small></div>
+<div>${factionsHtml}</div>
+<div class="panel-title" style="margin-top:8px"><span>DIPLOMACY</span></div>
+<div>${dipHtml}</div>
+<div class="panel-title" style="margin-top:8px"><span>ACTIVE LAWS</span><small>${laws.length}</small></div>
+<div>${lawsHtml}</div>
+<div style="margin-top:10px"><button id="refreshWorldSystemsBtn" class="ghost" style="font-size:10px;padding:4px 12px;width:100%">↻ Refresh world data</button></div>`;
+ },
 };
 function showPanel(name){
  $('#detailContent').innerHTML=panels[name]();
@@ -480,7 +657,77 @@ function showPanel(name){
   if(craftBtn)craftBtn.onclick=()=>_openCraftModal();
  }
  if(name==='skills')$$('[data-feat]').forEach(el=>el.onclick=async()=>{try{const result=await api(`/api/characters/${state.characterId}/feats`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feat:el.dataset.feat})});state.sheet=result.sheet;toast(`${el.dataset.feat} learned`);showPanel('skills')}catch(error){toast(error.message)}});
- if(name==='spells')$$('[data-learn-spell]').forEach(el=>el.onclick=async()=>{try{const result=await api(`/api/characters/${state.characterId}/spells`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spell:el.dataset.learnSpell})});state.sheet=result.sheet;toast(`${el.dataset.learnSpell} learned`);showPanel('spells')}catch(error){toast(error.message)}});
+ if(name==='spells'){
+  $$('[data-learn-spell]').forEach(el=>el.onclick=async()=>{try{const result=await api(`/api/characters/${state.characterId}/spells`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spell:el.dataset.learnSpell})});state.sheet=result.sheet;toast(`${el.dataset.learnSpell} learned`);showPanel('spells')}catch(error){toast(error.message)}});
+  const forgeBtn=$('#forgeSpellBtn');
+  if(forgeBtn)forgeBtn.onclick=async()=>{
+   const inp=$('#customSpellInput');const desc=inp?inp.value.trim():'';
+   if(!desc){toast('Describe your spell first');return;}
+   forgeBtn.disabled=true;forgeBtn.textContent='Forging…';
+   try{
+    const result=await api('/api/spells/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character_id:state.characterId,description:desc,history:state.chatHistory||[]})});
+    if(result.name){toast(`✨ ${result.name} forged!`);if(inp)inp.value='';state.customSpells=null;await loadCustomSpells();showPanel('spells');}
+    else toast(result.error||'Forge failed');
+   }catch(e){toast(e.message);}finally{forgeBtn.disabled=false;forgeBtn.textContent='Forge';}
+  };
+ }
+ if(name==='skillTree'){
+  loadSkillTree().then(()=>showPanel('skillTree'));
+  $$('.skill-cat-tab').forEach(el=>el.onclick=()=>{state.skillTreeCat=el.dataset.cat;showPanel('skillTree');});
+  $$('.skill-svg-node').forEach(el=>el.onclick=()=>{
+   const nid=el.dataset.nodeId;const nodes=state.allSkillNodes||{};const node=nodes[nid];
+   const info=$('#skillNodeInfo');if(!info||!node)return;
+   const st=state.skillTreeData||{};const unlocked=st.unlocked||[];const unlockable=st.unlockable||[];
+   const isUnlocked=unlocked.includes(nid);const canUnlock=unlockable.includes(nid);
+   const sp=st.skill_points||0;
+   const attrText=Object.entries(node.attr_req||{}).map(([a,v])=>`${a.charAt(0).toUpperCase()+a.slice(1)} ${v}+`).join(', ')||'None';
+   const parentsText=(node.parents||[]).map(pid=>nodes[pid]?.name||pid).join(', ')||'None';
+   info.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:12px">${safe(node.name)}</b>${isUnlocked?'<span style="color:#43a047;font-size:10px">✓ Unlocked</span>':canUnlock?`<button id="unlockNodeBtn" data-nid="${safe(nid)}" class="gold" style="font-size:10px;padding:2px 8px">Unlock (1pt)</button>`:'<span style="color:var(--muted);font-size:10px">Locked</span>'}</div><div style="font-size:10px;color:var(--muted);margin-bottom:4px">${safe(node.desc||'')}</div><div style="font-size:9px;color:#aaa">Tier ${node.tier||1} · Requires: Lv${node.level_req||1}${attrText!=='None'?' · '+attrText:''}</div>${parentsText!=='None'?`<div style="font-size:9px;color:var(--muted)">Requires: ${safe(parentsText)}</div>`:''}`;
+   const unlockBtn=$('#unlockNodeBtn');
+   if(unlockBtn)unlockBtn.onclick=async()=>{
+    if(sp<1){toast('No skill points available');return;}
+    try{const r=await api(`/api/characters/${state.characterId}/skill-tree/unlock`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({node_id:nid})});
+     if(r.ok){toast(`${node.name} unlocked!`);state.skillTreeData=null;await loadSkillTree();showPanel('skillTree');}
+     else toast(r.error||'Cannot unlock');
+    }catch(e){toast(e.message);}
+   };
+  });
+ }
+ if(name==='organizations'){
+  loadOrganizations();
+  $$('[data-join-org]').forEach(el=>el.onclick=async()=>{
+   try{const r=await api(`/api/organizations/${el.dataset.joinOrg}/join`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character_id:state.characterId})});
+    if(r.ok){toast('Joined!');state.charMemberships=null;state.worldOrgs=null;await loadOrganizations();showPanel('organizations');}
+    else toast(r.error||'Could not join');
+   }catch(e){toast(e.message);}
+  });
+  $$('[data-rankup-org]').forEach(el=>el.onclick=async()=>{
+   try{const r=await api(`/api/organizations/${el.dataset.rankupOrg}/rank-up`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character_id:state.characterId})});
+    if(r.ok){toast(`Ranked up to ${r.rank_name||'next rank'}!`);state.charMemberships=null;await loadOrganizations();showPanel('organizations');}
+    else toast(r.error||'Cannot rank up');
+   }catch(e){toast(e.message);}
+  });
+  $$('[data-leave-org]').forEach(el=>el.onclick=async()=>{
+   if(!confirm('Leave this organization?'))return;
+   try{await api(`/api/organizations/${el.dataset.leaveOrg}/leave`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character_id:state.characterId})});
+    toast('Left organization');state.charMemberships=null;await loadOrganizations();showPanel('organizations');
+   }catch(e){toast(e.message);}
+  });
+  const genOrgBtn=$('#generateOrgBtn');
+  if(genOrgBtn)genOrgBtn.onclick=async()=>{
+   genOrgBtn.disabled=true;genOrgBtn.textContent='Generating…';
+   const world=state.worlds[state.worldIndex];
+   try{const r=await api('/api/organizations/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_id:world?.id,world_name:world?.name||'',history:state.chatHistory||[]})});
+    if(r.ok){toast(`✨ ${r.name} generated!`);state.worldOrgs=null;await loadOrganizations();showPanel('organizations');}
+    else toast(r.error||'Generation failed');
+   }catch(e){toast(e.message);}finally{genOrgBtn.disabled=false;genOrgBtn.textContent='✨ Generate story organization';}
+  };
+ }
+ if(name==='worldSystems'){
+  loadWorldSystems();
+  const refBtn=$('#refreshWorldSystemsBtn');
+  if(refBtn)refBtn.onclick=async()=>{refBtn.disabled=true;refBtn.textContent='Refreshing…';state.worldSystems={};await loadWorldSystems();showPanel('worldSystems');refBtn.disabled=false;};
+ }
 }
 function renderInventory(){
  const dc=$('#detailContent');
