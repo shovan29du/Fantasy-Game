@@ -464,7 +464,7 @@ def generate_story_gifts(cid: int, new_level: int) -> list:
     profession = ch.get("profession","Adventurer") or "Adventurer"
     race = ch.get("race","Human") or "Human"
     name = ch.get("name","Hero") or "Hero"
-    backstory = (ch.get("backstory") or "")[:200]
+    backstory = (ch.get("backstory") or "")[:600]
     goals = (ch.get("goals") or "")[:100]
     known_skills = []
     try: known_skills = json.loads(ch.get("skills","[]") or "[]")
@@ -694,7 +694,7 @@ def build_char_prompt(ch, world=None, rel=None):
         p.append(f"[Inventory: {inv_summary}]")
 
     # Backstory / Scenario / Goals
-    if ch.get("backstory"): p.append(f"Backstory: {ch['backstory'][:300]}")
+    if ch.get("backstory"): p.append(f"Backstory: {ch['backstory'][:900]}")
     if ch.get("scenario"): p.append(f"Scenario: {ch['scenario'][:200]}")
     if ch.get("goals"): p.append(f"Goals: {ch['goals'][:200]}")
 

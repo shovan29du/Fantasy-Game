@@ -884,6 +884,26 @@ def remove_character(character_id: int) -> dict:
     return {"deleted": delete_character(character_id)}
 
 
+class CharacterFieldUpdate(BaseModel):
+    field: str
+    value: str
+
+
+_EDITABLE_FIELDS = {"backstory", "scenario", "goals", "name", "alignment", "background"}
+
+
+@app.patch("/api/characters/{character_id}/field")
+def patch_character_field(character_id: int, payload: CharacterFieldUpdate) -> dict:
+    if payload.field not in _EDITABLE_FIELDS:
+        raise HTTPException(status_code=400, detail=f"Field '{payload.field}' is not editable via this endpoint")
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE characters SET {payload.field}=? WHERE id=?",
+            (payload.value, character_id),
+        )
+    return {"updated": True, "field": payload.field}
+
+
 @app.get("/api/chat/history")
 def chat_history(session_id: str = "default", limit: int = 100) -> list[dict]:
     return get_history(session_id, limit)

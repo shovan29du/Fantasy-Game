@@ -470,7 +470,9 @@ const panels={
   const weaponHtml=equippedWeapon?`<div class="resource"><div><span>⚔ ${safe(equippedWeapon.item_name)}</span><b>${weaponData?weaponData.damage:'—'} ${weaponData?weaponData.damage_type:''} · ATK +${atkBonus>=0?'+':''}${atkBonus}</b></div></div>`:'';
   const pendingLvl=state.pendingLevelUp;
   const lvlBtnStyle=pendingLvl?'background:linear-gradient(135deg,#c8a93e,#e6c35a);color:#000;font-weight:900;animation:glowPulse 1.8s infinite;':'background:var(--panel);color:var(--gold);border-color:var(--gold);';
-  return `<div class="character-hero"><div class="hero-portrait">${safe((s.name||'?').slice(0,2).toUpperCase())}</div><h2>${safe(s.name)}</h2><p>${safe(s.race||'Unknown')} · Level ${safe(s.calc_lv||s.level||1)} ${safe(s.profession||'Adventurer')}</p><p>${safe(tier.name)} tier · ${safe(sig.reality_type||'Prime Reality')} (${safe(sig.universe_tag||'—')})</p></div><div class="xp-row"><div><span>EXPERIENCE</span><span>${safe(s.xp||0)} XP (${xp.into}/${xp.need} to next)</span></div><div class="meter"><i style="width:${Math.round((xp.fraction||0)*100)}%"></i></div></div><div class="stats">${rows.map(([label,key])=>`<div class="stat"><b>${(stats[key]||{}).total ?? 10}</b><small>${label} · +${statMod((stats[key]||{}).total)}</small></div>`).join('')}</div><div class="resource"><div><span>Health</span><b>${curHp} / ${maxHp}</b></div><div class="meter"><i style="width:${Math.round(curHp/maxHp*100)}%;background:var(--green)"></i></div></div><div class="resource"><div><span>Mana</span><b>${curMp} / ${maxMana}</b></div><div class="meter"><i style="width:${Math.round(curMp/maxMana*100)}%;background:var(--purple)"></i></div></div>${weaponHtml}<button onclick="openLevelUpModal()" style="${lvlBtnStyle}width:100%;margin-top:10px;padding:9px 0;border:1px solid var(--gold);border-radius:6px;cursor:pointer;font-size:12px;letter-spacing:1px;transition:all .2s">${pendingLvl?'🌟 LEVEL UP READY!':'⬆ Level Up'}</button>`;
+  const backstory=s.backstory||'';
+  const backstoryHtml=`<div class="panel-title" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between"><span>BACKSTORY</span><button id="editBackstoryBtn" class="ghost" style="font-size:10px;padding:2px 8px" onclick="toggleBackstoryEdit()">✏ Edit</button></div><div id="backstoryDisplay" style="font-size:11px;color:var(--muted);line-height:1.6;padding:4px 0;white-space:pre-wrap">${safe(backstory)||'<em>No backstory yet — click Edit to add one.</em>'}</div><div id="backstoryEditBox" hidden style="display:flex;flex-direction:column;gap:6px"><textarea id="backstoryTextarea" rows="12" style="width:100%;background:#0a0f14;border:1px solid var(--line);border-radius:5px;color:#e9ecf1;font-size:11px;line-height:1.6;padding:8px;resize:vertical;box-sizing:border-box">${safe(backstory)}</textarea><div style="display:flex;gap:6px;justify-content:flex-end"><button class="ghost" style="font-size:10px;padding:3px 10px" onclick="cancelBackstoryEdit()">Cancel</button><button class="gold" style="font-size:10px;padding:3px 10px" onclick="saveBackstory()">💾 Save</button></div></div>`;
+  return `<div class="character-hero"><div class="hero-portrait">${safe((s.name||'?').slice(0,2).toUpperCase())}</div><h2>${safe(s.name)}</h2><p>${safe(s.race||'Unknown')} · Level ${safe(s.calc_lv||s.level||1)} ${safe(s.profession||'Adventurer')}</p><p>${safe(tier.name)} tier · ${safe(sig.reality_type||'Prime Reality')} (${safe(sig.universe_tag||'—')})</p></div><div class="xp-row"><div><span>EXPERIENCE</span><span>${safe(s.xp||0)} XP (${xp.into}/${xp.need} to next)</span></div><div class="meter"><i style="width:${Math.round((xp.fraction||0)*100)}%"></i></div></div><div class="stats">${rows.map(([label,key])=>`<div class="stat"><b>${(stats[key]||{}).total ?? 10}</b><small>${label} · +${statMod((stats[key]||{}).total)}</small></div>`).join('')}</div><div class="resource"><div><span>Health</span><b>${curHp} / ${maxHp}</b></div><div class="meter"><i style="width:${Math.round(curHp/maxHp*100)}%;background:var(--green)"></i></div></div><div class="resource"><div><span>Mana</span><b>${curMp} / ${maxMana}</b></div><div class="meter"><i style="width:${Math.round(curMp/maxMana*100)}%;background:var(--purple)"></i></div></div>${weaponHtml}<button onclick="openLevelUpModal()" style="${lvlBtnStyle}width:100%;margin-top:10px;padding:9px 0;border:1px solid var(--gold);border-radius:6px;cursor:pointer;font-size:12px;letter-spacing:1px;transition:all .2s">${pendingLvl?'🌟 LEVEL UP READY!':'⬆ Level Up'}</button>${backstoryHtml}`;
  },
  inventory:()=>{
   if(!state.characterId) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
@@ -733,6 +735,34 @@ function showPanel(name){
   if(refBtn)refBtn.onclick=async()=>{refBtn.disabled=true;refBtn.textContent='Refreshing…';state.worldSystems={};await loadWorldSystems();showPanel('worldSystems');refBtn.disabled=false;};
  }
 }
+
+function toggleBackstoryEdit(){
+ const display=$('#backstoryDisplay');const editBox=$('#backstoryEditBox');const btn=$('#editBackstoryBtn');
+ if(!display||!editBox)return;
+ const editing=!editBox.hidden;
+ if(editing){cancelBackstoryEdit();}
+ else{display.hidden=true;editBox.hidden=false;if(btn)btn.textContent='✕ Cancel';}
+}
+function cancelBackstoryEdit(){
+ const display=$('#backstoryDisplay');const editBox=$('#backstoryEditBox');const btn=$('#editBackstoryBtn');const ta=$('#backstoryTextarea');
+ if(display)display.hidden=false;if(editBox)editBox.hidden=true;if(btn)btn.textContent='✏ Edit';
+ if(ta&&state.sheet)ta.value=state.sheet.backstory||'';
+}
+async function saveBackstory(){
+ const ta=$('#backstoryTextarea');if(!ta||!state.characterId)return;
+ const newText=ta.value;
+ const btn=ta.closest('div')?.querySelector('.gold');
+ if(btn){btn.disabled=true;btn.textContent='Saving…';}
+ try{
+  await api(`/api/characters/${state.characterId}/field`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field:'backstory',value:newText})});
+  state.sheet.backstory=newText;
+  const display=$('#backstoryDisplay');const editBox=$('#backstoryEditBox');const editBtn=$('#editBackstoryBtn');
+  if(display){display.innerHTML=safe(newText)||'<em>No backstory yet — click Edit to add one.</em>';display.hidden=false;}
+  if(editBox)editBox.hidden=true;if(editBtn)editBtn.textContent='✏ Edit';
+  toast('Backstory saved');
+ }catch(e){toast(e.message);if(btn){btn.disabled=false;btn.textContent='💾 Save';}}
+}
+
 function renderInventory(){
  const dc=$('#detailContent');
  if(dc&&(dc.querySelector('.inventory-grid')||dc.querySelector('.armory-grid')))showPanel('inventory');
@@ -2811,7 +2841,7 @@ Click a party member card — Speak as that character<br>
     if(sp){
       charName=sp.name;
       const partyList=state.partyChars.map(c=>c.name).join(', ');
-      extraCtx=`${playerContextLine()} | ACTIVE SPEAKER: You are now roleplaying exclusively as ${sp.name}, a ${sp.race||''} ${sp.profession||''}. Respond in first person from ${sp.name}'s perspective — their personality, emotions, knowledge and worldview. Do NOT break character. Party: ${partyList}.${sp.backstory?` Backstory: ${sp.backstory.slice(0,200)}`:''}`;
+      extraCtx=`${playerContextLine()} | ACTIVE SPEAKER: You are now roleplaying exclusively as ${sp.name}, a ${sp.race||''} ${sp.profession||''}. Respond in first person from ${sp.name}'s perspective — their personality, emotions, knowledge and worldview. Do NOT break character. Party: ${partyList}.${sp.backstory?` Backstory: ${sp.backstory.slice(0,600)}`:''}`;
     } else {
       charName='Worldweaver';extraCtx=playerContextLine();
     }
