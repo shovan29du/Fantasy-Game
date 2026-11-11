@@ -611,6 +611,122 @@ SCENARIO_COVER_PROMPTS: dict[str, tuple[str, str]] = {
         "light showing the path forward",
         "Cinematic",
     ),
+    # ── Anime-Inspired ────────────────────────────────────────────────────────
+    "Fairy Tail": (
+        "A guild hall full of powerful mages celebrating after a victorious quest, "
+        "golden afternoon sunlight flooding through tall arched windows, "
+        "fire dragon slayer magic blazing warm orange, celestial spirits shimmering in the light, "
+        "colorful guild mark banners glowing, laughter and camaraderie in vivid brightness",
+        "Cinematic",
+    ),
+    "One Piece": (
+        "A pirate crew standing triumphant on a tall-mast ship at brilliant sunrise, "
+        "straw hat silhouetted against a burning orange sky over the Grand Line, "
+        "devil fruit powers glowing in warm morning light, jolly roger snapping in the sea breeze, "
+        "golden ocean stretching to the horizon, vibrant and epic",
+        "Cinematic",
+    ),
+    "Naruto": (
+        "A young shinobi on a rooftop at sunrise over a hidden leaf village, "
+        "headband catching the first golden light, chakra swirling as brilliant blue energy, "
+        "hokage mountain visible in warm morning mist, vibrant green forest behind, "
+        "shadow clone jutsu signs in a pool of radiant dawn light",
+        "Cinematic",
+    ),
+    "Bleach": (
+        "A soul reaper in black shihakusho at the edge of Soul Society at golden dawn, "
+        "zanpakuto drawn and glowing with brilliant spiritual pressure, "
+        "hollow mask fragments catching warm light, vivid orange sky above the Seireitei, "
+        "cherry blossoms drifting in golden morning air, luminous and intense",
+        "Cinematic",
+    ),
+    "Dragon Ball": (
+        "A Super Saiyan powering up on a rocky plateau at blazing noon, "
+        "golden aura crackling with lightning against a vivid blue sky, "
+        "ki energy radiating brilliant gold and white, rocks and dust swirling in the light, "
+        "distant mountains in sharp golden haze, overwhelming power made luminous",
+        "Cinematic",
+    ),
+    "Jujutsu Kaisen": (
+        "A cursed energy user launching a Domain Expansion in a sunlit Tokyo street, "
+        "brilliant blue-black cursed energy forming geometric patterns in afternoon light, "
+        "Six Eyes glowing vivid purple, city buildings reflecting the supernatural light, "
+        "ordinary sunlight and cursed power in vivid contrast, cinematic and intense",
+        "Cinematic",
+    ),
+    "Demon Slayer": (
+        "A demon slayer in vibrant haori charging through a bamboo forest at golden sunrise, "
+        "breathing technique manifesting as vivid crimson and gold flame patterns, "
+        "nichirin blade gleaming in strong morning light, wisteria blossoms catching sunlight, "
+        "mist rising from golden rice paddies below, luminous and breathtaking",
+        "Cinematic",
+    ),
+    "Soul Land": (
+        "A powerful Spirit Master summoning twin spirits in a golden tournament arena, "
+        "brilliant spirit rings orbiting in warm amber light, "
+        "ancient Shrek Academy towers gleaming in afternoon sun behind them, "
+        "spirit power blazing gold and silver, vivid and majestic",
+        "Cinematic",
+    ),
+    "Hunter x Hunter": (
+        "A hunter activating Nen in a sunlit forest clearing, "
+        "golden aura crackling with focused nen energy, "
+        "hunter license gleaming in bright afternoon light, "
+        "vibrant green jungle around them, another hunter watching from the shadows, "
+        "radiant and powerful, potential made visible in golden light",
+        "Cinematic",
+    ),
+    # ── Game-Inspired ─────────────────────────────────────────────────────────
+    "DC Comics": (
+        "A caped hero landing in a sunlit Metropolis plaza, "
+        "brilliant afternoon light on gleaming skyscrapers, "
+        "cape catching the wind against vivid blue sky, "
+        "golden emblem catching the sun, civilians below in bright daylight, "
+        "vibrant primary colors, iconic and luminous",
+        "Cinematic",
+    ),
+    "Marvel Comics": (
+        "A team of superheroes assembled on a rooftop at golden hour, "
+        "iron armor reflecting warm sunset light, thunder arc glowing, "
+        "web-line catching brilliant afternoon sun, shield gleaming gold, "
+        "vibrant city skyline behind them, heroic and luminous",
+        "Cinematic",
+    ),
+    "Star Trek": (
+        "A starship bridge crew at the helm as a vivid nebula fills the viewscreen, "
+        "brilliant purples, blues and golds of deep space illuminating command uniforms, "
+        "LCARS displays glowing in warm amber, captain standing at the center in strong light, "
+        "sense of infinite possibility in the luminous deep space panorama",
+        "Cinematic",
+    ),
+    "Stargate": (
+        "An SG team stepping through the shimmering event horizon of a Stargate at golden dawn, "
+        "brilliant blue-white wormhole light mixing with morning sunlight on alien ruins, "
+        "ancient stone carvings in warm golden glow, desert plateau in vivid color below, "
+        "radiant threshold between worlds, luminous and epic",
+        "Cinematic",
+    ),
+    "Babylon 5": (
+        "The great Babylon 5 space station gleaming in brilliant sunlight against stars, "
+        "observation dome lit by warm interior light, alien ambassadors' ships docked alongside, "
+        "Earth below glowing blue, vivid starfield backdrop, "
+        "the last best hope for peace luminous against the darkness",
+        "Cinematic",
+    ),
+    "Elder Scrolls": (
+        "A Dragonborn standing atop the Throat of the World at golden dawn, "
+        "Fus Ro Dah shout visible as blazing amber shockwave in morning light, "
+        "Tamriel's landscape stretching below in vivid morning haze, "
+        "dragon circling in brilliant sunrise sky, ancient Nordic ruins catching first light",
+        "Cinematic",
+    ),
+    "Witcher": (
+        "A witcher on horseback on a sunlit forest road through vivid autumn colors, "
+        "silver sword catching bright afternoon light, cat-slit eyes scanning golden mist, "
+        "witcher medallion glowing in warm sun, two swords on back in brilliant light, "
+        "magical signs leaving warm traces in the golden air",
+        "Cinematic",
+    ),
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
