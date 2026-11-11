@@ -2205,6 +2205,8 @@ $$('.dock-head button').forEach(b=>b.onclick=()=>{$$('.dock-head button').forEac
 $('#map').addEventListener('click',e=>{
   if(e.target.closest('button')||e.target.closest('.map-node-preview'))return;
   hideNodePreview();
+  // Blur any focused input so WASD/arrow keys work immediately after clicking the map
+  if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();
   const r=e.currentTarget.getBoundingClientRect();
   const nx=(e.clientX-r.left)/r.width*100,ny=(e.clientY-r.top)/r.height*100;
   move(nx,ny);
@@ -4318,6 +4320,7 @@ window.v6GenCharPhoto=async(id)=>{
   const grow=()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,120)+'px';};
   ta.addEventListener('input',grow);
   ta.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){e.preventDefault();ta.blur();return;} // Escape releases focus → WASD/arrows work again
     e.stopPropagation(); // block document-level WASD/arrow map handlers while typing
     if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#chatForm').requestSubmit();}
   });
