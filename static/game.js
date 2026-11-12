@@ -1528,7 +1528,7 @@ async function bindSession({sessionId,worldId,characterId,openingText}){
  updateWorld();if(world){move(world.startX??50,world.startY??50)}renderParty();renderQuests();
  // Cache saved characters for story detection
  try{state._savedCharCache=await api('/api/characters');}catch{}
- try{const active=await api(`/api/combat/active?session_id=${encodeURIComponent(state.sessionId)}`);openCombat(active)}catch{/* no combat in progress for this session */}
+ try{const active=await api(`/api/combat/active?session_id=${encodeURIComponent(state.sessionId)}`);if(active)openCombat(active)}catch{}
  updateClock();
 }
 async function initPlay(){

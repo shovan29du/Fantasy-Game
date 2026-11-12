@@ -177,7 +177,9 @@ def test_full_encounter_can_be_won_by_defeating_all_enemies(temp_db):
         dist = tc._chebyshev(human["x"], human["y"], target["x"], target["y"])
         rng = tc._weapon_range_for(human["stats"].get("weapon_name"), human["stats"].get("weapon_tier"))
         if dist <= rng:
-            tc.attack_unit(encounter_id, human["id"], target["id"])
+            result = tc.attack_unit(encounter_id, human["id"], target["id"])
+            if result.get("error"):
+                tc.end_turn(encounter_id, human["id"])
         else:
             occupied = {(u["x"], u["y"]) for u in encounter["units"] if u["is_active"] and u["id"] != human["id"]}
             reachable = tc._bfs_reachable((human["x"], human["y"]), set(encounter["obstacles"]), occupied,
@@ -186,7 +188,9 @@ def test_full_encounter_can_be_won_by_defeating_all_enemies(temp_db):
                 tc.end_turn(encounter_id, human["id"])
                 continue
             dest = min(reachable, key=lambda p: tc._chebyshev(p[0], p[1], target["x"], target["y"]))
-            tc.move_unit(encounter_id, human["id"], dest[0], dest[1])
+            result = tc.move_unit(encounter_id, human["id"], dest[0], dest[1])
+            if result.get("error"):
+                tc.end_turn(encounter_id, human["id"])
 
     final = tc.get_encounter(encounter_id)
     assert final["status"] in ("won", "lost")

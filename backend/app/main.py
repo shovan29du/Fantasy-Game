@@ -1322,6 +1322,36 @@ def start_scenario(payload: ScenarioStartIn) -> dict:
     return {"world": world, "session_id": session_id}
 
 
+@app.get("/api/chat/export/zip")
+async def export_session_zip(session_id: str = "default", character_name: str = "", character_id: int = 0) -> StreamingResponse:
+    import zipfile, io as _io, json as _json
+    buf = _io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("chat.txt", export_chat_txt(session_id))
+        zf.writestr("chat.json", export_chat_json(session_id, character_name))
+        zf.writestr("chat.html", export_chat_html(session_id))
+        if character_id:
+            conn = get_conn()
+            try:
+                sheet_row = conn.execute("SELECT * FROM characters WHERE id=?", (character_id,)).fetchone()
+                if sheet_row:
+                    zf.writestr("character_sheet.json", _json.dumps(dict(sheet_row), indent=2, default=str))
+                inv_rows = conn.execute(
+                    "SELECT * FROM inventory WHERE character_id=?", (character_id,)
+                ).fetchall()
+                if inv_rows:
+                    zf.writestr("inventory.json", _json.dumps([dict(r) for r in inv_rows], indent=2, default=str))
+            finally:
+                conn.close()
+    buf.seek(0)
+    safe_sid = session_id[:12].replace("/", "-").replace("\\", "-")
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="worldweaver-{safe_sid}.zip"'},
+    )
+
+
 @app.get("/api/chat/export/{fmt}", response_class=PlainTextResponse)
 def chat_export(fmt: str, session_id: str = "default", character_name: str = "") -> str:
     if fmt == "txt":
@@ -1386,36 +1416,6 @@ async def chat_attach_file(file: UploadFile = File(...)) -> dict:
         lines.append(f"({len(content):,} bytes — binary file, contents not shown)")
     summary = "\n".join(lines)
     return {"filename": fname, "summary": summary, "size": len(content)}
-
-
-@app.get("/api/chat/export/zip")
-async def export_session_zip(session_id: str = "default", character_name: str = "", character_id: int = 0) -> StreamingResponse:
-    import zipfile, io as _io, json as _json
-    buf = _io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("chat.txt", export_chat_txt(session_id))
-        zf.writestr("chat.json", export_chat_json(session_id, character_name))
-        zf.writestr("chat.html", export_chat_html(session_id))
-        if character_id:
-            conn = get_conn()
-            try:
-                sheet_row = conn.execute("SELECT * FROM characters WHERE id=?", (character_id,)).fetchone()
-                if sheet_row:
-                    zf.writestr("character_sheet.json", _json.dumps(dict(sheet_row), indent=2, default=str))
-                inv_rows = conn.execute(
-                    "SELECT * FROM inventory WHERE character_id=?", (character_id,)
-                ).fetchall()
-                if inv_rows:
-                    zf.writestr("inventory.json", _json.dumps([dict(r) for r in inv_rows], indent=2, default=str))
-            finally:
-                conn.close()
-    buf.seek(0)
-    safe_sid = session_id[:12].replace("/", "-").replace("\\", "-")
-    return StreamingResponse(
-        buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="worldweaver-{safe_sid}.zip"'},
-    )
 
 
 @app.post("/api/chat/import/url")
@@ -1584,7 +1584,7 @@ def multiverse_travel(payload: MultiverseTravelIn) -> dict:
                                      character_power_tier, inventory_weapon_tiers)
 
 
-@app.get("/api/worlds/{world_id}")
+@app.get("/api/worlds/{world_id:int}")
 def world_detail(world_id: int) -> dict:
     world = get_world(world_id)
     if not world:
@@ -1707,11 +1707,8 @@ def combat_start(payload: CombatStartIn) -> dict:
 
 
 @app.get("/api/combat/active")
-def combat_active(session_id: str = "default") -> dict:
-    result = tactical_combat.get_active_encounter(session_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="No active encounter for this session.")
-    return result
+def combat_active(session_id: str = "default") -> dict | None:
+    return tactical_combat.get_active_encounter(session_id) or None
 
 
 @app.get("/api/combat/{encounter_id}")

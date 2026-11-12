@@ -25,7 +25,9 @@ def test_generate_dynamic_quest_uses_llm_json(temp_db):
     assert q["title"] == "The Sealed Letter"
     active = get_active_quests("Aria")
     assert any(a["title"] == "The Sealed Letter" for a in active)
-    assert any("silver locket" in a["reward"] for a in active)
+    # Rewards come from the progression system, not the LLM's free text.
+    assert q["reward_data"]["label"]
+    assert any(a["reward"] == q["reward_data"]["label"] for a in active)
 
 
 def test_generate_dynamic_quest_handles_markdown_fenced_json(temp_db):
