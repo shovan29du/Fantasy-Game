@@ -110,6 +110,8 @@ function _partyAvatarHtml(ch){
   if(ch.photo_path)return`<img src="${safe(ch.photo_path)}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0">`;
   return`<div class="portrait" style="flex-shrink:0">${safe((ch.initials||ch.name||'?').slice(0,2).toUpperCase())}</div>`;
 }
+const isLlmError=t=>/^\[(LM Studio error|Error)\]/.test(t||'');
+const llmStatus=(sp,reply)=>isLlmError(reply)?'Start LM Studio on port 1234':sp?`${sp.name} · ${sp.race||sp.profession||''}`.trim():'LM Studio connected';
 function savePartyToStorage(){try{localStorage.setItem('party-'+state.sessionId,JSON.stringify(state.partyChars));}catch{}}
 function loadPartyFromStorage(){try{const d=localStorage.getItem('party-'+state.sessionId);if(d)state.partyChars=JSON.parse(d);}catch{}}
 function addCharToParty(ch){
@@ -1522,10 +1524,11 @@ async function bindSession({sessionId,worldId,characterId,openingText}){
  state.worlds=world?[world,...state.flavorWorlds.filter(f=>f.id!==world.id)]:state.flavorWorlds;
  state.worldIndex=0;
  if(characterId){state.characterId=characterId;await refreshCharacterState()}
+ state.partyChars=[];state.partySheets={};
  loadPartyFromStorage();
  await loadChatHistory();
  saveSessionToStorage();
- updateWorld();if(world){move(world.startX??50,world.startY??50)}renderParty();renderQuests();
+ updateWorld();if(world){move(world.startX??50,world.startY??50)}renderParty();renderQuests();showPanel('character');
  // Cache saved characters for story detection
  try{state._savedCharCache=await api('/api/characters');}catch{}
  try{const active=await api(`/api/combat/active?session_id=${encodeURIComponent(state.sessionId)}`);if(active)openCombat(active)}catch{}
@@ -2853,7 +2856,7 @@ Click a party member card — Speak as that character<br>
       const fallResp=await api('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
       const reply=fallResp?.reply||fallResp?.content||'';
       if(reply){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',replyLabel+fmtChat(reply)));speakReply(reply);detectStoryChars(reply);const _ds=detectScaleFromChat(reply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(reply);addLocationsFromChat(msg);}
-      $('#aiStatus').textContent=sp?`${sp.name} · ${sp.race||sp.profession||''}`.trim():'LM Studio connected';
+      $('#aiStatus').textContent=llmStatus(sp,reply);
       saveSessionToStorage();$('#chatLog').scrollTop=$('#chatLog').scrollHeight;return;
     }
     // replace typing indicator with live streaming bubble
@@ -2882,8 +2885,8 @@ Click a party member card — Speak as that character<br>
     }
     // update bubble id with server message id for actions
     if(msgId){const el=document.getElementById(streamBubbleId);if(el)el.dataset.msgId=msgId;}
-    $('#aiStatus').textContent=sp?`${sp.name} · ${sp.race||sp.profession||''}`.trim():'LM Studio connected';
-    if(fullReply){speakReply(fullReply);detectStoryChars(fullReply);const _ds=detectScaleFromChat(fullReply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(fullReply);addLocationsFromChat(msg);loadNpcMemories().catch(()=>{});}
+    $('#aiStatus').textContent=llmStatus(sp,fullReply);
+    if(fullReply&&!isLlmError(fullReply)){speakReply(fullReply);detectStoryChars(fullReply);const _ds=detectScaleFromChat(fullReply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(fullReply);addLocationsFromChat(msg);loadNpcMemories().catch(()=>{});}
     saveSessionToStorage();
     // Auto-generate story quest every 8 AI replies if character active
     state._chatReplyCount=(state._chatReplyCount||0)+1;

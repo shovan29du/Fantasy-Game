@@ -142,4 +142,4 @@ input[type=range]{width:100%;accent-color:var(--gold);height:4px;cursor:pointer;
 .active-choice{background:#2a1e0a!important;border-color:var(--gold)!important;color:var(--gold)!important;font-weight:700}
 body.game-active .app-sidebar{display:none}
 body.game-active .app-content{margin-left:0}
-.map-tabs button{flex:1 1 0;min-width:0;padding:12px 4px;white-space:nowrap}
+.map-tabs button{flex:1 1 0;min-width:0;padding:12px 2px;white-space:nowrap;font-size:13px}
