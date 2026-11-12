@@ -120,7 +120,7 @@ def _grant_reward(char_id: int, char_name: str, reward: dict):
         log.debug("Failed to grant reward %s to char %s", rtype, char_id, exc_info=True)
 
 
-def generate_quest(char_name, qtype="random", scenario="", title=""):
+def generate_quest(char_name, qtype="random", scenario="", title="", character_id=None):
     """Templated quest — always available, no LLM call."""
     if qtype == "random": qtype = random.choice(QUEST_TYPES[:-1])
     if not title: title = f"{qtype.title()} Quest for {char_name}"
@@ -128,8 +128,8 @@ def generate_quest(char_name, qtype="random", scenario="", title=""):
     reward = _pick_reward(qtype)
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO quests (character_name,quest_type,title,description,reward,hint,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-        (char_name, qtype, title, f"Complete a {qtype} challenge: {scenario or 'current world'}.",
+        "INSERT INTO quests (character_id,character_name,quest_type,title,description,reward,hint,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (character_id, char_name, qtype, title, f"Complete a {qtype} challenge: {scenario or 'current world'}.",
          reward["label"], random.choice(HINTS), 0, "active", now_iso()))
     qid = cur.lastrowid; conn.commit(); conn.close()
     return {"id": qid, "title": title, "type": qtype, "xp": xp, "reward_data": reward}
@@ -147,6 +147,7 @@ def generate_dynamic_quest(char_name, history=None, world=None, character=None, 
     if qtype == "random": qtype = random.choice(QUEST_TYPES[:-1])
     xp = _QXP.get(qtype, 40)
     char_level = (character or {}).get("level", 1) or 1
+    character_id = (character or {}).get("id")
     reward = _pick_reward(qtype, char_level)
 
     try:
@@ -177,13 +178,13 @@ def generate_dynamic_quest(char_name, history=None, world=None, character=None, 
 
         conn = get_conn()
         cur = conn.execute(
-            "INSERT INTO quests (character_name,quest_type,title,description,reward,hint,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            (char_name, qtype, title, description, reward["label"], hint, 0, "active", now_iso()))
+            "INSERT INTO quests (character_id,character_name,quest_type,title,description,reward,hint,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (character_id, char_name, qtype, title, description, reward["label"], hint, 0, "active", now_iso()))
         qid = cur.lastrowid; conn.commit(); conn.close()
         return {"id": qid, "title": title, "type": qtype, "xp": xp, "dynamic": True, "reward_data": reward}
     except Exception:
         log.info("Dynamic quest generation failed for %s; using templated fallback", char_name, exc_info=True)
-        result = generate_quest(char_name, qtype=qtype)
+        result = generate_quest(char_name, qtype=qtype, character_id=character_id)
         result["dynamic"] = False
         return result
 
@@ -193,28 +194,28 @@ def complete_quest(qid, character_id: int | None = None):
     conn = get_conn()
     conn.execute("UPDATE quests SET progress=100,status='completed' WHERE id=?", (qid,))
     conn.commit()
-    r = conn.execute("SELECT character_name,quest_type FROM quests WHERE id=?", (qid,)).fetchone()
+    r = conn.execute("SELECT character_id,character_name,quest_type FROM quests WHERE id=?", (qid,)).fetchone()
     conn.close()
     if not r: return {}
 
     xp = _QXP.get(r["quest_type"], 40)
 
     # Resolve character
-    char_id = character_id
+    char_id = character_id or r["character_id"]
     char_level = 1
-    if not char_id:
-        try:
-            from core.levelling import get_character_by_name
-            ch = get_character_by_name(r["character_name"])
-            if ch: char_id = ch["id"]; char_level = ch.get("level", 1) or 1
-        except Exception:
-            log.debug("Could not resolve character", exc_info=True)
+    try:
+        from core.levelling import get_character, get_character_by_name
+        ch = get_character(char_id) if char_id else get_character_by_name(r["character_name"])
+        if ch: char_id = ch["id"]; char_level = ch.get("level", 1) or 1
+    except Exception:
+        log.debug("Could not resolve character", exc_info=True)
 
     # Award XP and check level-up
     xp_result = {}
     try:
-        from core.levelling import award_xp_by_name
-        xp_result = award_xp_by_name(r["character_name"], xp, f"Quest #{qid} complete")
+        from core.levelling import award_xp
+        if char_id:
+            xp_result = award_xp(char_id, xp, f"Quest #{qid} complete")
     except Exception:
         log.debug("XP award failed", exc_info=True)
 
@@ -252,12 +253,20 @@ def update_progress(qid, prog):
     return {}
 
 
-def get_active_quests(char_name=""):
-    conn = get_conn()
+def _owner_clause(char_name, character_id):
+    """Match a character's quests by id; name is only a fallback for quests
+    that have no owning character row."""
+    if character_id:
+        return "(character_id=? OR (character_id IS NULL AND character_name=?))", [character_id, char_name]
     if char_name:
-        rows = conn.execute("SELECT * FROM quests WHERE character_name=? AND status='active' ORDER BY id DESC", (char_name,)).fetchall()
-    else:
-        rows = conn.execute("SELECT * FROM quests WHERE status='active' ORDER BY id DESC").fetchall()
+        return "character_name=?", [char_name]
+    return "1=1", []
+
+
+def get_active_quests(char_name="", character_id=None):
+    where, params = _owner_clause(char_name, character_id)
+    conn = get_conn()
+    rows = conn.execute(f"SELECT * FROM quests WHERE {where} AND status='active' ORDER BY id DESC", params).fetchall()
     conn.close(); return [dict(r) for r in rows]
 
 
@@ -273,14 +282,10 @@ def abandon_quest(qid):
     conn.commit(); conn.close()
 
 
-def get_quest_history(char_name="", limit=20):
+def get_quest_history(char_name="", limit=20, character_id=None):
+    where, params = _owner_clause(char_name, character_id)
     conn = get_conn()
-    if char_name:
-        rows = conn.execute(
-            "SELECT * FROM quests WHERE character_name=? AND status IN ('completed','abandoned') ORDER BY id DESC LIMIT ?",
-            (char_name, limit)).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM quests WHERE status IN ('completed','abandoned') ORDER BY id DESC LIMIT ?",
-            (limit,)).fetchall()
+    rows = conn.execute(
+        f"SELECT * FROM quests WHERE {where} AND status IN ('completed','abandoned') ORDER BY id DESC LIMIT ?",
+        (*params, limit)).fetchall()
     conn.close(); return [dict(r) for r in rows]

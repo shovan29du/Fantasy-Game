@@ -1,7 +1,7 @@
 """AiChat Pro — Core Storage
 All tables. WAL mode. Table creation and column migrations run BEFORE any
 module import, via init_db(), and are both idempotent."""
-import json, sqlite3
+import json, os, sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,11 +10,12 @@ from core.logging_setup import get_logger
 
 log = get_logger(__name__)
 
-DB_PATH = DATA_DIR / "aichat_pro.db"
+# AICHAT_DB_PATH lets tests and tools run the server against a throwaway database.
+DB_PATH = Path(os.environ.get("AICHAT_DB_PATH") or DATA_DIR / "aichat_pro.db")
 
 # Bump whenever a new entry is added to _MIGRATIONS or _TABLES so the
 # schema_version table reflects the schema the app expects.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 def get_conn():
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
@@ -102,6 +103,8 @@ _TABLES = [
     "CREATE TABLE IF NOT EXISTS relationship_events (id INTEGER PRIMARY KEY AUTOINCREMENT, character_name TEXT NOT NULL, sentiment TEXT NOT NULL, trust_delta INTEGER NOT NULL, note TEXT, created_at TEXT NOT NULL)",
     # Quests
     "CREATE TABLE IF NOT EXISTS quests (id INTEGER PRIMARY KEY AUTOINCREMENT, character_name TEXT NOT NULL, quest_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, reward TEXT NOT NULL, hint TEXT, progress INTEGER DEFAULT 0, status TEXT DEFAULT 'active', depends_on INTEGER, chain_id TEXT, created_at TEXT NOT NULL)",
+    # Generated images keyed by a stable id, so e.g. a map location is only generated once
+    "CREATE TABLE IF NOT EXISTS image_cache (cache_key TEXT PRIMARY KEY, path TEXT NOT NULL, created_at TEXT NOT NULL)",
     # Knowledge
     "CREATE TABLE IF NOT EXISTS knowledge_documents (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT UNIQUE, title TEXT NOT NULL, content TEXT NOT NULL, embedding_json TEXT, indexed_at TEXT NOT NULL)",
     # Users
@@ -176,6 +179,7 @@ _MIGRATIONS = [
     ("factions", "military_strength", "INTEGER DEFAULT 100"),
     ("quests", "depends_on", "INTEGER"),
     ("quests", "chain_id", "TEXT"),
+    ("quests", "character_id", "INTEGER"),
     ("achievements", "bonus_stat", "TEXT"),
     ("achievements", "bonus_value", "INTEGER DEFAULT 0"),
     ("inventory", "equip_slot", "TEXT"),
@@ -328,6 +332,17 @@ def get_schema_version(conn=None) -> int:
             conn.close()
 
 
+def _backfill_quest_owners(conn):
+    """Quests used to be keyed by character name only. Give each legacy quest
+    to the oldest character with that name so same-named characters stop
+    sharing quests."""
+    conn.execute(
+        "UPDATE quests SET character_id=(SELECT MIN(id) FROM characters WHERE name=quests.character_name) "
+        "WHERE character_id IS NULL"
+    )
+    conn.commit()
+
+
 def init_db():
     """Create all tables + run column migrations. Called BEFORE any module
     import, deterministically, on every startup. Safe to call repeatedly."""
@@ -335,8 +350,26 @@ def init_db():
     conn = get_conn()
     _create_tables(conn)
     _run_migrations(conn)
+    _backfill_quest_owners(conn)
     _record_schema_version(conn)
     conn.close()
+
+
+def get_cached_image(cache_key: str) -> str:
+    """Path of the image stored for cache_key, or '' if none or the file is gone."""
+    conn = get_conn()
+    row = conn.execute("SELECT path FROM image_cache WHERE cache_key=?", (cache_key,)).fetchone()
+    conn.close()
+    return row["path"] if row and Path(row["path"]).is_file() else ""
+
+
+def set_cached_image(cache_key: str, path: str) -> None:
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO image_cache (cache_key, path, created_at) VALUES (?,?,?)",
+        (cache_key, path, now_iso()),
+    )
+    conn.commit(); conn.close()
 
 
 # ═══ Cascading delete ═══
@@ -370,7 +403,13 @@ def delete_character(character_id: int) -> bool:
         name = row["name"]
         for tbl in _CHARACTER_ID_TABLES:
             conn.execute(f"DELETE FROM {tbl} WHERE character_id=?", (character_id,))
-        if name:
+        conn.execute("DELETE FROM quests WHERE character_id=?", (character_id,))
+        namesakes = conn.execute(
+            "SELECT COUNT(*) FROM characters WHERE name=? AND id<>?", (name, character_id)
+        ).fetchone()[0]
+        # Name-keyed rows are shared by same-named characters, so only clear
+        # them when this was the last character with that name.
+        if name and not namesakes:
             for tbl in _CHARACTER_NAME_TABLES:
                 conn.execute(f"DELETE FROM {tbl} WHERE character_name=?", (name,))
         conn.execute("DELETE FROM characters WHERE id=?", (character_id,))

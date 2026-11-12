@@ -140,6 +140,9 @@ input[type=range]{width:100%;accent-color:var(--gold);height:4px;cursor:pointer;
 /* ── Level Up button glow animation ── */
 @keyframes glowPulse{0%,100%{box-shadow:0 0 6px rgba(212,175,55,.4)}50%{box-shadow:0 0 18px rgba(212,175,55,.9),0 0 30px rgba(212,175,55,.4)}}
 .active-choice{background:#2a1e0a!important;border-color:var(--gold)!important;color:var(--gold)!important;font-weight:700}
-body.game-active .app-sidebar{display:none}
-body.game-active .app-content{margin-left:0}
+body.game-active:not(.sidebar-open) .app-sidebar{display:none}
+body.game-active:not(.sidebar-open) .app-content{margin-left:0}
 .map-tabs button{flex:1 1 0;min-width:0;padding:12px 2px;white-space:nowrap;font-size:13px}
+.llm-error{margin-top:6px;color:#e8b08a;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.llm-error .llm-retry{padding:5px 12px;cursor:pointer;font-size:12px}
+.top-actions button{white-space:nowrap}

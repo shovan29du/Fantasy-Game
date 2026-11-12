@@ -75,13 +75,13 @@ async function ensureWorlds(){
 // #characterForm below). Play just picks up whichever character exists.
 async function getExistingCharacterId(){
  const chars=await api('/api/characters');
- return chars.length?chars[chars.length-1].id:null;
+ return chars.length?Math.max(...chars.map(c=>c.id)):null;
 }
 async function refreshCharacterState(){
  const sheet=await api(`/api/characters/${state.characterId}/sheet`);
  const [inventory,quests]=await Promise.all([
   api(`/api/characters/${state.characterId}/inventory`),
-  api(`/api/quests/active?character_name=${encodeURIComponent(sheet.name||'')}`).catch(()=>[]),
+  api(`/api/quests/active?character_name=${encodeURIComponent(sheet.name||'')}&character_id=${state.characterId||''}`).catch(()=>[]),
  ]);
  state.sheet=sheet; state.inventory=inventory; state.quests=quests||[];
  if(!state.spellSlots){state.spellSlots=_initSpellSlots(sheet.calc_lv||1);}
@@ -112,6 +112,18 @@ function _partyAvatarHtml(ch){
 }
 const isLlmError=t=>/^\[(LM Studio error|Error)\]/.test(t||'');
 const llmStatus=(sp,reply)=>isLlmError(reply)?'Start LM Studio on port 1234':sp?`${sp.name} · ${sp.race||sp.profession||''}`.trim():'LM Studio connected';
+function llmErrorBubble(reply,msg){
+  const text=String(reply||'').replace(/^\[(LM Studio error|Error)\]\s*/,'')||'The storyteller could not be reached.';
+  return `<div class="chat-msg gm llm-error-msg"><div class="msg-body"><b>WORLDWEAVER</b><div class="llm-error">⚠ ${safe(text)} <button type="button" class="ghost llm-retry" data-retry="${safe(msg)}">↻ Retry</button></div></div></div>`;
+}
+// Shows elapsed time on an image loader; returns a function that stops it.
+function startGenTimer(el,label='Generating scene'){
+  if(!el)return()=>{};
+  const t0=Date.now();
+  const tick=()=>{const s=Math.round((Date.now()-t0)/1000);el.textContent=`${label}… ${s}s${s>=8?' · images can take up to a minute':''}`;};
+  tick();const id=setInterval(tick,1000);
+  return()=>clearInterval(id);
+}
 function savePartyToStorage(){try{localStorage.setItem('party-'+state.sessionId,JSON.stringify(state.partyChars));}catch{}}
 function loadPartyFromStorage(){try{const d=localStorage.getItem('party-'+state.sessionId);if(d)state.partyChars=JSON.parse(d);}catch{}}
 function addCharToParty(ch){
@@ -882,8 +894,9 @@ async function enterLocation(loc){
  if(useOpening)state.openingTextUsed=true;
  const partyLine=state.partyChars.length>1?` Party members present: ${state.partyChars.slice(1).map(c=>`${c.name} (${c.race} ${c.profession})`).join(', ')}.`:'';
  const prompt=useOpening?`${world?.name||'A realm'}: ${state.openingText.slice(0,280)}. The scene shows ${loc.terrain} terrain at ${loc.name}.`:`${world?.name||'A realm'}, ${loc.terrain} region called ${loc.name}. ${loc.description||''} A ${character?.race||'traveller'} ${character?.profession||'adventurer'} named ${character?.name||'the hero'} stands in the scene.`;
+ const stopTimer=startGenTimer(loading);
  try{
-  const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Cinematic',width:1024,height:576,save_to_chat:false})});
+  const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Cinematic',width:1024,height:576,save_to_chat:false,cache_key:`loc:${world?.id||0}:${loc.id}:scene`})}).finally(stopTimer);
   const url=result.url||result.path;
   if(url){
    state.locationImageCache[loc.id]=url;
@@ -1058,12 +1071,12 @@ async function lcpAcceptQuest(questId,locId){
  const btn=document.querySelector(`#quest-card-${questId} .lcp-btn-quest`);
  if(btn){btn.disabled=true;btn.textContent='…';}
  try{
-  const result=await api(`/api/locations/${locId}/quests/accept?quest_id=${questId}&character_name=${encodeURIComponent(charName)}`,{method:'POST'});
+  const result=await api(`/api/locations/${locId}/quests/accept?quest_id=${questId}&character_name=${encodeURIComponent(charName)}&character_id=${state.characterId||0}`,{method:'POST'});
   if(result.accepted){
    const card=document.getElementById(`quest-card-${questId}`);
    if(card){card.querySelector('.lcp-card-actions').innerHTML=`<span style="color:var(--gold);font-size:10px">✦ Quest accepted!</span>`;}
    toast(`📜 Quest accepted: ${result.title}`);
-   try{const q=await api(`/api/quests/active?character_name=${encodeURIComponent(charName)}`);state.quests=q||[];renderQuests();}catch{}
+   try{const q=await api(`/api/quests/active?character_name=${encodeURIComponent(charName)}&character_id=${state.characterId||''}`);state.quests=q||[];renderQuests();}catch{}
    if(_lcpContent?.quests){const q=_lcpContent.quests.find(q=>q.id===questId);if(q)q._accepted=true;}
   }
  }catch(e){toast('Failed to accept quest');if(btn){btn.disabled=false;btn.textContent='✦ Accept Quest';}}
@@ -1168,7 +1181,9 @@ function showNodePreview(loc,nodeEl){
   // Lazy-load thumbnail if not cached
   if(!fogged&&!cachedImg){
     const world=state.worlds[state.worldIndex];
+    const stopThumbTimer=startGenTimer($('#mnpLoading'));
     if(world)_genLocationThumbnail(loc,world,loc.terrain||'Plains').catch(()=>{}).then(()=>{
+      stopThumbTimer();
       const url=state.locationImageCache[loc.id];
       const img=$('#mnpImg'),ld=$('#mnpLoading');
       if(url&&img){img.src=url;img.style.opacity='1';if(ld)ld.style.display='none';}
@@ -1365,11 +1380,12 @@ $('#chatLog').addEventListener('click',async e=>{
    const styleMap={image:'Cinematic',anime:'Anime Portrait',video:'Cinematic'};
    const resultEl=mp.querySelector('.mmp-result');
    resultEl.innerHTML='<span class="mmp-loading">Generating…</span>';
+   const stopChatImgTimer=startGenTimer(resultEl.firstElementChild,'Generating');
    b.disabled=true;
    try{
     const endpoint='/api/media/image';
     const payload={prompt:text.slice(0,200),style:styleMap[mtype]||'Cinematic',width:mtype==='video'?1024:512,height:mtype==='video'?576:768,save_to_chat:false};
-    const res=await api(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const res=await api(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).finally(stopChatImgTimer);
     if(res.url){
      resultEl.innerHTML=`<img src="${safe(res.url)}" class="mmp-img" alt="generated"><br><button class="mmp-insert ghost">Insert into chat</button>`;
      // Auto-save to media gallery
@@ -1550,8 +1566,9 @@ async function initPlay(){
 
 // ═══ Play hub: New Game (category -> scenario) or Load Saved Game ═══
 function showStartStep(name){$$('.start-step').forEach(s=>s.hidden=(s.id!==`startStep-${name}`))}
-function showPlayHub(){$('#playHub').hidden=false;$('#gameArea').hidden=true;showStartStep('choice');$('#hubCloseBtn').hidden=!state.hasActiveGame;document.body.classList.remove('game-active')}
-function hidePlayHub(){$('#playHub').hidden=true;$('#gameArea').hidden=false;state.hasActiveGame=true;document.body.classList.add('game-active')}
+function showPlayHub(){$('#playHub').hidden=false;$('#gameArea').hidden=true;showStartStep('choice');$('#hubCloseBtn').hidden=!state.hasActiveGame;document.body.classList.remove('game-active','sidebar-open')}
+function hidePlayHub(){$('#playHub').hidden=true;$('#gameArea').hidden=false;state.hasActiveGame=true;document.body.classList.add('game-active');document.body.classList.remove('sidebar-open')}
+$('#sidebarToggleBtn').onclick=()=>document.body.classList.toggle('sidebar-open');
 $('#hubCloseBtn').onclick=hidePlayHub;
 $('#switchGameBtn').onclick=showPlayHub;
 $$('.back-btn').forEach(b=>b.onclick=()=>showStartStep(b.dataset.back));
@@ -1592,6 +1609,8 @@ function launchPlayerStep(payload){
  if(panel)panel.style.display='none';
  // Populate existing character dropdown
  api('/api/characters').then(chars=>{
+  state._savedCharCache=chars;
+  if(panel&&chars.length)panel.style.display='block';
   const sel=$('#existingCharSelect');
   if(!sel)return;
   sel.innerHTML=chars.length
@@ -1610,6 +1629,15 @@ $('#playerCharForm').onsubmit=async e=>{
  if(btn)btn.disabled=true;
  try{
   const charData={name,age:parseInt(fd.get('charAge'))||25,gender:fd.get('charGender')||'',profession:fd.get('charProfession')||'',backstory:fd.get('charBackstory')||''};
+  let saved=state._savedCharCache;
+  if(!saved){try{saved=await api('/api/characters');}catch{saved=[];}}
+  const twin=saved.filter(c=>(c.name||'').trim().toLowerCase()===name.toLowerCase()).sort((a,b)=>(b.level||1)-(a.level||1)||b.id-a.id)[0];
+  if(twin&&confirm(`You already have a character named "${twin.name}" (level ${twin.level||1}).\n\nOK — play as that character\nCancel — create a separate new one`)){
+   state.characterId=twin.id;
+   try{await refreshCharacterState();}catch{}
+   await _doBeginGame(state.sheet||twin);
+   return;
+  }
   const result=await api('/api/characters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(charData)});
   state.characterId=result.id;
   state.sheet=charData;
@@ -1662,14 +1690,12 @@ async function _doBeginGame(charInfo){
   payload.custom_text=(payload.custom_text||'')+'\n\n[Party members present at scenario start: '+partyDesc+']';
  }
  payload._charName=charName;
- // Open the tab NOW, inside this synchronous call chain (launchPlayerStep handler is sync)
- const newTab=window.open('about:blank','_blank');
  try{
-  await _beginGameInTab(payload,newTab);
- }catch(error){if(newTab&&!newTab.closed)newTab.close();toast(error.message)}
+  await _startGameSession(payload);
+ }catch(error){toast(error.message)}
 }
 
-async function _beginGameInTab(payload,newTab){
+async function _startGameSession(payload){
   const result=await api('/api/scenarios/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const world=toWorldEntry(result.world);
   state.sessionId=result.session_id;
@@ -1691,17 +1717,14 @@ async function _beginGameInTab(payload,newTab){
   state.openingText=opening;state.openingTextUsed=false;
   saveSessionToStorage();
   try{await api('/api/chat/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'assistant',content:opening,session_id:state.sessionId})})}catch{}
-  if(newTab&&!newTab.closed){newTab.location.href=location.href;}else{window.open(location.href,'_blank');}
-  toast(`New game: ${world.name} — opening in new tab`);
+  // Reload so the new game starts from clean state; the saved session is picked up on load.
+  location.reload();
 }
 
 async function beginGame(payload){
- // Open the new tab synchronously (inside the user gesture) before any await,
- // otherwise browsers block it as a popup. We navigate it once the session is ready.
- const newTab=window.open('about:blank','_blank');
  try{
-  await _beginGameInTab(payload,newTab);
- }catch(error){if(newTab&&!newTab.closed)newTab.close();toast(error.message)}
+  await _startGameSession(payload);
+ }catch(error){toast(error.message)}
 }
 // ── Scenario cover images ─────────────────────────────────────────────────────
 // _scCovers holds pre-generated persistent covers loaded from /api/scenarios/covers.
@@ -2223,7 +2246,7 @@ async function rollRandomScenario(){try{const result=await api('/api/random/prom
 $('#rerollScenarioBtn').onclick=rollRandomScenario;
 $('#useRandomScenarioBtn').onclick=()=>launchPlayerStep({category:_activeCatKey(),scenario_name:'Random Scenario',scenario_type:'custom',custom_text:state.randomScenarioText});
 
-async function loadSavedGame(save){try{await bindSession({sessionId:save.session_id,worldId:save.world_id,characterId:save.character_id});window.open(location.href,'_blank');toast(`Loaded: ${save.save_name} — opening in new tab`)}catch(error){toast(error.message)}}
+async function loadSavedGame(save){try{await bindSession({sessionId:save.session_id,worldId:save.world_id,characterId:save.character_id});location.reload()}catch(error){toast(error.message)}}
 $('#startLoadGameBtn').onclick=async()=>{
  try{const saves=await api('/api/chat/saves');
   $('#savedGameList').innerHTML=saves.length?saves.map(s=>`<button data-save-id="${s.id}"><b>${safe(s.save_name)}</b><small>${safe(s.character_name||'')} · ${safe((s.created_at||'').slice(0,16))}</small></button>`).join(''):'<div class="empty-state">No saved games yet.</div>';
@@ -2246,6 +2269,14 @@ $('#map').addEventListener('click',e=>{
   const rip=$('#mapMoveRipple');
   if(rip){rip.style.left=(e.clientX-r.left)+'px';rip.style.top=(e.clientY-r.top)+'px';rip.classList.remove('ripple-active');void rip.offsetWidth;rip.classList.add('ripple-active');}
 });
+function closeTopDialog(){
+  for(const id of ['levelUpModal','questRewardModal','craftModal','saveLoadModal','recruitModal']){const m=document.getElementById(id);if(m&&!m.hidden){m.hidden=true;return true;}}
+  const opts=document.getElementById('mediaOptsModal');if(opts){opts.remove();return true;}
+  const loc=document.getElementById('locContentOverlay');if(loc&&!loc.classList.contains('hidden')){loc.classList.add('hidden');return true;}
+  if(document.body.classList.contains('sidebar-open')&&document.body.classList.contains('game-active')&&document.querySelector('#view-play.active')){document.body.classList.remove('sidebar-open');return true;}
+  return false;
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&closeTopDialog()){e.preventDefault();e.stopPropagation();}},true);
 document.addEventListener('keydown',e=>{const active=document.activeElement;const tag=active?.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||active?.isContentEditable)return;if(e.key==='Escape'){hideNodePreview();return;}const keys={w:[0,-3],ArrowUp:[0,-3],s:[0,3],ArrowDown:[0,3],a:[-3,0],ArrowLeft:[-3,0],d:[3,0],ArrowRight:[3,0]};if(keys[e.key]){e.preventDefault();move(state.x+keys[e.key][0],state.y+keys[e.key][1])}if('1234'.includes(e.key))setScale(['local','country','continent','universe'][+e.key-1])});
 $('#portal').onclick=crossPortal;
 $('#zoomIn').onclick=()=>{$('#zoomText').textContent=(state.zoom=Math.min(140,state.zoom+10))+'%';$('#map').style.backgroundSize=state.zoom+'%'};
@@ -2660,6 +2691,7 @@ async function openRecruitModal(){
         <button data-recruit-id="${ch.id}" class="${inParty?'ghost':'gold'}" style="font-size:10px;padding:4px 10px;flex-shrink:0" ${inParty?'disabled':''}>
           ${inParty?'In party':'+ Add'}
         </button>
+        ${inParty||ch.id===state.characterId?'':`<button data-delete-char="${ch.id}" class="ghost" title="Delete this saved character" style="font-size:11px;padding:4px 8px;flex-shrink:0">🗑</button>`}
       </div>`;
     }).join('');
     $$('[data-recruit-id]').forEach(btn=>btn.onclick=async()=>{
@@ -2667,6 +2699,12 @@ async function openRecruitModal(){
       const ch=chars.find(c=>c.id===cid);if(!ch)return;
       addCharToParty(ch);
       btn.textContent='In party';btn.disabled=true;btn.className='ghost';
+    });
+    $$('[data-delete-char]').forEach(btn=>btn.onclick=async()=>{
+      const cid=+btn.dataset.deleteChar;
+      const ch=chars.find(c=>c.id===cid);if(!ch)return;
+      if(!confirm(`Delete "${ch.name}" (level ${ch.level||1}) permanently? Their inventory and quests are deleted too.`))return;
+      try{await api(`/api/characters/${cid}`,{method:'DELETE'});toast(`${ch.name} deleted`);openRecruitModal();}catch(err){toast(err.message);}
     });
   }catch(err){list.innerHTML=`<div style="color:var(--muted);font-size:11px">${safe(err.message)}</div>`;}
 }
@@ -2737,6 +2775,11 @@ if(SpeechRecognitionApi){
   try{speechRecognizer.start()}catch{isListening=false;$('#micBtn').classList.remove('listening')}
  };
 }
+$('#chatLog').addEventListener('click',e=>{
+  const btn=e.target.closest('.llm-retry');if(!btn)return;
+  btn.closest('.chat-msg')?.remove();
+  state._retryPending=true;$('#chatInput').value=btn.dataset.retry;$('#chatForm').requestSubmit();
+});
 $('#chatForm').onsubmit=async e=>{
   e.preventDefault();
   const input=$('#chatInput'),msg=input.value.trim();if(!msg)return;
@@ -2832,7 +2875,8 @@ Click a party member card — Speak as that character<br>
 
   const sp=state.activeSpeaker;
   const playerLabel=sp?`<b style="color:var(--gold)">${safe(sp.name)}:</b> `:'';
-  $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',playerLabel+fmtChat(msg)));
+  const isRetry=state._retryPending===true;state._retryPending=false;
+  if(!isRetry)$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',playerLabel+fmtChat(msg)));
   input.value='';if(input.tagName==='TEXTAREA'){input.style.height='auto';}$('#aiStatus').textContent='Thinking…';
   // typing indicator bubble
   const typingId='typing-'+Date.now();
@@ -2848,14 +2892,15 @@ Click a party member card — Speak as that character<br>
     } else {
       charName='Worldweaver';extraCtx=playerContextLine();
     }
-    const payload={content:msg,extra_context:extraCtx,session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:charName,participants:sp?[sp.name]:['Worldweaver'],temperature:.75};
+    const payload={content:msg,extra_context:extraCtx,session_id:state.sessionId,world_id:world?.id,user_name:'Player',character_name:charName,participants:sp?[sp.name]:['Worldweaver'],temperature:.75,retry:isRetry};
     const replyLabel=sp?`<b style="color:var(--gold)">${safe(sp.name)}</b> `:'<b>WORLDWEAVER</b> ';
     const streamResp=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if(!streamResp.ok||!streamResp.body){
       const te2=document.getElementById(typingId);if(te2)te2.remove();
       const fallResp=await api('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
       const reply=fallResp?.reply||fallResp?.content||'';
-      if(reply){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',replyLabel+fmtChat(reply)));speakReply(reply);detectStoryChars(reply);const _ds=detectScaleFromChat(reply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(reply);addLocationsFromChat(msg);}
+      if(isLlmError(reply)){$('#chatLog').insertAdjacentHTML('beforeend',llmErrorBubble(reply,msg));}
+      else if(reply){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',replyLabel+fmtChat(reply)));speakReply(reply);detectStoryChars(reply);const _ds=detectScaleFromChat(reply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(reply);addLocationsFromChat(msg);}
       $('#aiStatus').textContent=llmStatus(sp,reply);
       saveSessionToStorage();$('#chatLog').scrollTop=$('#chatLog').scrollHeight;return;
     }
@@ -2886,7 +2931,8 @@ Click a party member card — Speak as that character<br>
     // update bubble id with server message id for actions
     if(msgId){const el=document.getElementById(streamBubbleId);if(el)el.dataset.msgId=msgId;}
     $('#aiStatus').textContent=llmStatus(sp,fullReply);
-    if(fullReply&&!isLlmError(fullReply)){speakReply(fullReply);detectStoryChars(fullReply);const _ds=detectScaleFromChat(fullReply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(fullReply);addLocationsFromChat(msg);loadNpcMemories().catch(()=>{});}
+    if(isLlmError(fullReply)){const eb=document.getElementById(streamBubbleId);if(eb)eb.outerHTML=llmErrorBubble(fullReply,msg);$('#chatLog').scrollTop=$('#chatLog').scrollHeight;return;}
+    if(fullReply){speakReply(fullReply);detectStoryChars(fullReply);const _ds=detectScaleFromChat(fullReply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(fullReply);addLocationsFromChat(msg);loadNpcMemories().catch(()=>{});}
     saveSessionToStorage();
     // Auto-generate story quest every 8 AI replies if character active
     state._chatReplyCount=(state._chatReplyCount||0)+1;
@@ -2908,14 +2954,14 @@ Click a party member card — Speak as that character<br>
     (async()=>{const _ap=$('.detail-tabs button.active')?.dataset?.panel;if(_ap==='character'||_ap==='inventory'){try{await refreshCharacterState();if(_ap==='inventory')renderInventory();else showPanel('character');}catch{}}})();
   }catch(error){
     const typingEl=document.getElementById(typingId);if(typingEl)typingEl.remove();
-    $('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',safe(error.message||'The local storyteller cannot be reached.')));
+    $('#chatLog').insertAdjacentHTML('beforeend',llmErrorBubble(error.message||'The game server could not be reached.',msg));
     $('#aiStatus').textContent='Start LM Studio on port 1234';
   }
   $('#chatLog').scrollTop=$('#chatLog').scrollHeight;
 };
 
 // ═══ AI Companion-style workspace navigation and studios ═══
-function openView(name){$$('.app-view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.side-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='play'){$('#playHub').hidden=state.hasActiveGame;$('#gameArea').hidden=!state.hasActiveGame}if(name==='characters')loadCharacterStudio();if(name==='explore')loadExplore();if(name==='worlds')loadWorlds();if(name==='knowledge'){loadLore();loadKnowledgeDocs()}if(name==='media')loadMediaTab();if(name==='settings'){checkModelStatus();loadSettingsExtras()}}
+function openView(name){$$('.app-view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.side-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));document.body.classList.toggle('sidebar-open',name!=='play');if(name==='play'){$('#playHub').hidden=state.hasActiveGame;$('#gameArea').hidden=!state.hasActiveGame;document.body.classList.toggle('game-active',!!state.hasActiveGame)}if(name==='characters')loadCharacterStudio();if(name==='explore')loadExplore();if(name==='worlds')loadWorlds();if(name==='knowledge'){loadLore();loadKnowledgeDocs()}if(name==='media')loadMediaTab();if(name==='settings'){checkModelStatus();loadSettingsExtras()}}
 $$('.side-nav button').forEach(button=>button.onclick=()=>openView(button.dataset.view));
 
 let studioOptions={};
@@ -3115,8 +3161,9 @@ async function loadMediaTab(){
 $('#mediaImageForm').onsubmit=async e=>{
  e.preventDefault();const formEl=e.currentTarget;const payload=Object.fromEntries(new FormData(formEl).entries());
  const preview=$('#mediaImagePreview');preview.innerHTML='<div class="empty-state">Generating…</div>';
+ const stopMediaTimer=startGenTimer(preview.firstElementChild,'Generating image');
  try{
-  const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:payload.prompt,style:payload.style,save_to_chat:false})});
+  const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:payload.prompt,style:payload.style,save_to_chat:false})}).finally(stopMediaTimer);
   preview.innerHTML=`<img src="${safe(result.url)}" alt="Generated image" style="max-width:100%;border:1px solid var(--line);margin-top:8px"><div class="form-actions" style="margin-top:8px"><button id="saveToGalleryBtn" class="ghost">＋ Save to gallery</button></div>`;
   $('#saveToGalleryBtn').onclick=async()=>{try{await api('/api/media/gallery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({media_type:'image',title:payload.prompt.slice(0,60),file_path:result.path||result.url,character_name:state.sheet?.name||''})});toast('Saved to gallery');loadGallery()}catch(error){toast(error.message)}};
  }catch(error){preview.innerHTML=`<div class="empty-state">${safe(error.message)}</div>`}
@@ -3792,7 +3839,7 @@ async function _genLocationThumbnail(loc,world,terrain){
     if(state.locationImageCache[loc.id])return; // double-check after queue wait
     try{
       const prompt=`Fantasy landscape: ${loc.name}, ${terrain} terrain, ${world?.name||'fantasy world'} setting. Scenic vista, atmospheric, painterly.`;
-      const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Fantasy Art',width:256,height:144,world_id:world?.id,character_name:loc.name})});
+      const result=await api('/api/media/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:'Fantasy Art',width:256,height:144,cache_key:`loc:${world?.id||0}:${loc.id}:thumb`})});
       if(result.url){
         state.locationImageCache[loc.id]=result.url;
         _saveImgCache(state.locationImageCache);

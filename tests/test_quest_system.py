@@ -64,3 +64,41 @@ def test_generate_quest_templated_still_works(temp_db):
     assert q["type"] == "combat"
     active = get_active_quests("Eve")
     assert active[0]["quest_type"] == "combat"
+
+
+def _make_character(name):
+    from core.storage import get_conn
+    conn = get_conn()
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(characters)")}
+    fields = {"name": name}
+    if "created_at" in cols:
+        fields["created_at"] = "2026-01-01T00:00:00"
+    cur = conn.execute(
+        f"INSERT INTO characters ({','.join(fields)}) VALUES ({','.join('?' * len(fields))})", tuple(fields.values())
+    )
+    conn.commit(); conn.close()
+    return cur.lastrowid
+
+
+def test_same_named_characters_do_not_share_quests(temp_db):
+    first, second = _make_character("Aria"), _make_character("Aria")
+    generate_quest("Aria", qtype="daily", title="First's errand", character_id=first)
+    assert [q["title"] for q in get_active_quests("Aria", first)] == ["First's errand"]
+    assert get_active_quests("Aria", second) == []
+
+
+def test_legacy_quests_are_assigned_to_oldest_namesake(temp_db):
+    import core.storage as storage
+    first, second = _make_character("Bram"), _make_character("Bram")
+    generate_quest("Bram", qtype="daily", title="Old quest")  # no owner, as before the migration
+    storage.init_db()
+    assert [q["title"] for q in get_active_quests("Bram", first)] == ["Old quest"]
+    assert get_active_quests("Bram", second) == []
+
+
+def test_deleting_one_namesake_keeps_the_others_quests(temp_db):
+    import core.storage as storage
+    first, second = _make_character("Cyra"), _make_character("Cyra")
+    generate_quest("Cyra", qtype="daily", title="Keep me", character_id=second)
+    storage.delete_character(first)
+    assert [q["title"] for q in get_active_quests("Cyra", second)] == ["Keep me"]

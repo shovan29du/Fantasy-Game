@@ -148,7 +148,20 @@ def send_to_llm(messages: List[Dict[str, str]], temperature: float = 0.7,
         return data["choices"][0]["message"]["content"]
     except Exception as e:
         log.warning("LM Studio request failed", exc_info=True)
-        return f"[LM Studio error] {e}"
+        return f"[LM Studio error] {_friendly_llm_error(e)}"
+
+
+def _friendly_llm_error(exc: Exception) -> str:
+    """Short, player-facing reason for a failed LM Studio call."""
+    name = type(exc).__name__
+    text = str(exc)
+    if "Timeout" in name or "timed out" in text:
+        return "LM Studio took too long to respond. Try again, or load a smaller model."
+    if "ConnectionError" in name or "Connection refused" in text or "Max retries exceeded" in text:
+        return "LM Studio isn't running — start its local server on port 1234."
+    if isinstance(exc, (KeyError, ValueError)):
+        return "LM Studio returned an unexpected reply. Check that a model is loaded."
+    return text[:200] or name
 
 
 def stream_from_llm(messages: List[Dict[str, str]], temperature: float = 0.7,
@@ -197,7 +210,7 @@ def stream_from_llm(messages: List[Dict[str, str]], temperature: float = 0.7,
         try:
             yield send_to_llm(messages, temperature=temperature, max_tokens=max_tokens)
         except Exception as e2:
-            yield f"[LM Studio error] {e2}"
+            yield f"[LM Studio error] {_friendly_llm_error(e2)}"
 
 
 # â•â•â• Chat history CRUD â•â•â•

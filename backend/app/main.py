@@ -1,6 +1,7 @@
 """FastAPI backend for the React AiChat Pro frontend."""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import json
 import random
 from pathlib import Path
@@ -118,7 +119,7 @@ from core.relationship_engine import (
     list_all_relationships,
     record_interaction,
 )
-from core.storage import delete_character, delete_world, get_setting, set_setting
+from core.storage import delete_character, delete_world, get_cached_image, get_setting, set_cached_image, set_setting
 from core.world_engine import (
     add_law,
     advance_world_tick,
@@ -149,7 +150,13 @@ from backend.app.companion_studio.gpu_modules import router as companion_gpu_rou
 ROOT = Path(__file__).resolve().parents[2]
 REACT_DIST = ROOT / "frontend" / "react_app" / "dist"
 
-app = FastAPI(title="AiChat Pro API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    startup()
+    yield
+
+
+app = FastAPI(title="AiChat Pro API", version="1.0.0", lifespan=lifespan)
 app.include_router(companion_gpu_router, prefix="/api/companion-studio")
 app.add_middleware(
     CORSMiddleware,
@@ -308,6 +315,7 @@ class ChatSendIn(BaseModel):
     participants: list[str] = []
     temperature: float = 0.7
     extra_context: str = ""
+    retry: bool = False  # resend after a failed reply: the user line is already saved
 
 
 class ChatEditIn(BaseModel):
@@ -399,6 +407,7 @@ class ImageIn(BaseModel):
     height: int = 512
     save_to_chat: bool = True
     session_id: str = "default"
+    cache_key: str = ""  # stable id (e.g. a map location) so the image is generated once and reused
 
 
 class AnimateIn(BaseModel):
@@ -551,7 +560,6 @@ class BoolSettingIn(BaseModel):
     value: bool
 
 
-@app.on_event("startup")
 def startup() -> None:
     init_db()
     # Pre-generate scenario cover images in background (only missing images)
@@ -922,7 +930,8 @@ def send_chat(payload: ChatSendIn) -> dict:
     world = get_world(payload.world_id) if payload.world_id else None
     relationship = ensure_relationship(character_name) if character_name else None
     user_line = f"**{payload.user_name or 'User'}:** {payload.content}"
-    save_message("user", user_line, payload.session_id)
+    if not payload.retry:
+        save_message("user", user_line, payload.session_id)
     history = get_history(payload.session_id, limit=50)
     system_prompt = build_system_prompt(character=character, world=world, relationship=relationship, user_name=payload.user_name or "User")
     profile_bits = [payload.user_name or "User"]
@@ -936,7 +945,7 @@ def send_chat(payload: ChatSendIn) -> dict:
         system_prompt += "\n[MULTI-PERSPECTIVE: Write responses for each character with their name prefix. Characters in scene: " + ", ".join(participants) + ".]"
     elif character_name:
         system_prompt += f"\n[Always prefix responses with **{character_name}:** to show who is speaking.]"
-    quests = get_active_quests(character_name) if character_name else []
+    quests = get_active_quests(character_name, payload.character_id) if character_name else []
     if quests:
         system_prompt += "\n[Quests: " + "; ".join(q["title"][:30] for q in quests[:3]) + "]"
     try:
@@ -972,8 +981,8 @@ def send_chat(payload: ChatSendIn) -> dict:
         response = send_to_llm(messages, temperature=payload.temperature)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
-    save_message("assistant", response, payload.session_id)
     if not response.startswith(("[LM Studio error]", "[Error]")):
+        save_message("assistant", response, payload.session_id)
         try:
             # Auto-accumulate memory from actual play so later replies stay
             # consistent even after the recent-message window scrolls past
@@ -1016,7 +1025,8 @@ def stream_chat(payload: ChatSendIn) -> StreamingResponse:
     world = get_world(payload.world_id) if payload.world_id else None
     relationship = ensure_relationship(character_name) if character_name else None
     user_line = f"**{payload.user_name or 'User'}:** {payload.content}"
-    save_message("user", user_line, payload.session_id)
+    if not payload.retry:
+        save_message("user", user_line, payload.session_id)
     history = get_history(payload.session_id, limit=50)
     system_prompt = build_system_prompt(character=character, world=world, relationship=relationship, user_name=payload.user_name or "User")
     profile_bits = [payload.user_name or "User"]
@@ -1030,7 +1040,7 @@ def stream_chat(payload: ChatSendIn) -> StreamingResponse:
         system_prompt += "\n[MULTI-PERSPECTIVE: Write responses for each character with their name prefix. Characters in scene: " + ", ".join(participants) + ".]"
     elif character_name:
         system_prompt += f"\n[Always prefix responses with **{character_name}:** to show who is speaking.]"
-    quests = get_active_quests(character_name) if character_name else []
+    quests = get_active_quests(character_name, payload.character_id) if character_name else []
     if quests:
         system_prompt += "\n[Quests: " + "; ".join(q["title"][:30] for q in quests[:3]) + "]"
     try:
@@ -1066,15 +1076,18 @@ def stream_chat(payload: ChatSendIn) -> StreamingResponse:
             full.append(chunk)
             yield f"data: {_json.dumps({'text': chunk})}\n\n"
         full_reply = "".join(full)
-        save_message("assistant", full_reply, payload.session_id)
-        conn = get_conn()
-        row = conn.execute(
-            "SELECT id FROM messages WHERE session_id=? ORDER BY id DESC LIMIT 1",
-            (payload.session_id,),
-        ).fetchone()
-        conn.close()
-        msg_id = row["id"] if row else None
-        if not full_reply.startswith(("[LM Studio error]", "[Error]")):
+        failed = full_reply.startswith(("[LM Studio error]", "[Error]"))
+        msg_id = None
+        if not failed:
+            save_message("assistant", full_reply, payload.session_id)
+            conn = get_conn()
+            row = conn.execute(
+                "SELECT id FROM messages WHERE session_id=? ORDER BY id DESC LIMIT 1",
+                (payload.session_id,),
+            ).fetchone()
+            conn.close()
+            msg_id = row["id"] if row else None
+        if not failed:
             try:
                 memory_engine.store_fact(
                     f"{payload.user_name or 'Player'} said: {payload.content[:200]} | "
@@ -2122,13 +2135,13 @@ def relationship_interaction(payload: RelationshipIn) -> dict:
 
 
 @app.get("/api/quests/active")
-def active_quests(character_name: str = "") -> list[dict]:
-    return get_active_quests(character_name)
+def active_quests(character_name: str = "", character_id: int | None = None) -> list[dict]:
+    return get_active_quests(character_name, character_id)
 
 
 @app.get("/api/quests/history")
-def quest_history(character_name: str = "", limit: int = 20) -> list[dict]:
-    return get_quest_history(character_name, limit)
+def quest_history(character_name: str = "", limit: int = 20, character_id: int | None = None) -> list[dict]:
+    return get_quest_history(character_name, limit, character_id)
 
 
 @app.post("/api/quests/generate")
@@ -2450,11 +2463,17 @@ def _media_url(path: str) -> str:
 @app.post("/api/media/image")
 def create_image(payload: ImageIn) -> dict:
     prompt = f"{PHOTO_STYLES.get(payload.style, '')}, {payload.prompt}" if payload.style else payload.prompt
+    if payload.cache_key:
+        cached = get_cached_image(payload.cache_key)
+        if cached:
+            return {"path": cached, "url": _media_url(cached), "prompt": prompt, "cached": True}
     # Skip placeholder provider so that if server-side download fails we fall
     # back to the direct Pollinations URL that the user's browser can load.
     path = download_image(prompt, width=payload.width, height=payload.height,
                           providers=["pollinations", "comfyui", "automatic1111"])
     url = _media_url(path) or generate_image_url(prompt, payload.width, payload.height)
+    if payload.cache_key and _media_url(path):
+        set_cached_image(payload.cache_key, path)
     if payload.save_to_chat:
         save_message("assistant", f"🖼️ *[{payload.prompt[:80]}]*", payload.session_id)
     return {"path": path, "url": url, "prompt": prompt}
@@ -3134,8 +3153,8 @@ def accept_location_quest(loc_id: int, quest_id: int, character_name: str = "", 
 
         if character_name:
             conn.execute(
-                "INSERT INTO quests (character_name,quest_type,title,description,reward,hint,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                (character_name, "location", item["name"], item["description"], data.get("reward_desc","Unknown reward"), f"Given by {data.get('giver','someone')} in location {loc_id}", 0, "active", now_iso())
+                "INSERT INTO quests (character_id,character_name,quest_type,title,description,reward,hint,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (character_id or None, character_name, "location", item["name"], item["description"], data.get("reward_desc","Unknown reward"), f"Given by {data.get('giver','someone')} in location {loc_id}", 0, "active", now_iso())
             )
             conn.execute("UPDATE location_content SET depleted=1 WHERE id=?", (quest_id,))
 
