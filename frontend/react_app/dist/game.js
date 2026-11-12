@@ -1547,8 +1547,8 @@ async function initPlay(){
 
 // ═══ Play hub: New Game (category -> scenario) or Load Saved Game ═══
 function showStartStep(name){$$('.start-step').forEach(s=>s.hidden=(s.id!==`startStep-${name}`))}
-function showPlayHub(){$('#playHub').hidden=false;$('#gameArea').hidden=true;showStartStep('choice');$('#hubCloseBtn').hidden=!state.hasActiveGame}
-function hidePlayHub(){$('#playHub').hidden=true;$('#gameArea').hidden=false;state.hasActiveGame=true}
+function showPlayHub(){$('#playHub').hidden=false;$('#gameArea').hidden=true;showStartStep('choice');$('#hubCloseBtn').hidden=!state.hasActiveGame;document.querySelector('.app-sidebar')?.classList.remove('sidebar-game-hidden');document.querySelector('.app-content')?.classList.remove('app-content-fullwidth')}
+function hidePlayHub(){$('#playHub').hidden=true;$('#gameArea').hidden=false;state.hasActiveGame=true;document.querySelector('.app-sidebar')?.classList.add('sidebar-game-hidden');document.querySelector('.app-content')?.classList.add('app-content-fullwidth')}
 $('#hubCloseBtn').onclick=hidePlayHub;
 $('#switchGameBtn').onclick=showPlayHub;
 $$('.back-btn').forEach(b=>b.onclick=()=>showStartStep(b.dataset.back));
