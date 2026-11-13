@@ -124,6 +124,91 @@ const check = (ok, label) => { console.log((ok ? 'ok   ' : 'FAIL ') + label); if
   await page.locator('.side-nav button', { hasText: 'Play' }).click();
   check((await layout()).game, 'Play returns from Help to the game');
 
+  // --- journal
+  const drawerOpen = () => page.evaluate(() => !document.querySelector('#journalDrawer').hidden);
+  const tab = async name => { await page.locator(`#journalTabs [data-jtab="${name}"]`).click(); await page.waitForTimeout(250); };
+  await page.locator('#journalBtn').click();
+  check(await drawerOpen(), 'Journal opens from the top bar');
+  check(await page.locator('#journalTabs button').count() === 5, 'Journal has five tabs');
+
+  // quests
+  await page.locator('.jcard', { hasText: 'The Sealed Scroll' }).waitFor({ timeout: 10000 });
+  await page.locator('[data-jact="q-progress"]').first().click();
+  await page.waitForFunction(() => document.querySelector('.jcard .jprogress')?.title === '25% complete', null, { timeout: 5000 });
+  check(true, 'quest progress can be advanced from the Journal');
+
+  // notes
+  await tab('notes');
+  await page.locator('[data-jform="note"] [name=title]').fill('Smuggler cove');
+  await page.locator('[data-jform="note"] [name=body]').fill('Meet Corvin at midnight by the old pier');
+  await page.locator('[data-jform="note"] [name=tags]').fill('clue, Corvin');
+  await page.locator('[data-jform="note"] button.gold').click();
+  await page.locator('.jcard', { hasText: 'Smuggler cove' }).waitFor();
+  check(await page.locator('.jtag', { hasText: '#corvin' }).count() === 1, 'a note is saved with tags');
+  await page.locator('[data-jact="note-pin"]').first().click();
+  await page.locator('.jcard-pinned', { hasText: 'Smuggler cove' }).waitFor();
+  check(true, 'a note can be pinned');
+  await page.locator('#journalSearch').fill('zzz-nothing');
+  await page.waitForFunction(() => document.querySelector('#journalBody .journal-empty'), null, { timeout: 5000 });
+  await page.locator('#journalSearch').fill('midnight');
+  await page.locator('.jcard', { hasText: 'Smuggler cove' }).waitFor();
+  check(true, 'notes can be searched');
+  await page.locator('#journalSearch').fill('');
+  await page.locator('[data-jact="recap"]').click();
+  await page.locator('.jchip', { hasText: 'recap' }).first().waitFor({ timeout: 20000 });
+  check(true, 'a recap of the story is written into the notes');
+
+  // memory
+  await tab('memory');
+  await page.locator('[data-jform="memory"] [name=fact]').fill('Marta owes the player a favour');
+  await page.locator('[data-jform="memory"] [name=pinned]').check();
+  await page.locator('[data-jform="memory"] button.gold').click();
+  await page.locator('.jmem', { hasText: 'Marta owes' }).waitFor();
+  check(await page.locator('.jmem.jcard-pinned .jstar.on').count() === 1, 'a pinned memory is saved');
+  await page.locator('[data-jpreview]').fill('I ask Marta about the favour');
+  await page.locator('[data-jact="mem-preview"]').click();
+  await page.waitForFunction(() => document.querySelector('.jpreview')?.textContent.includes('Marta owes'), null, { timeout: 5000 });
+  check(true, 'the preview shows what the storyteller will recall');
+  await page.locator('[data-jact="mem-edit"]').first().click();
+  await page.locator('[data-jform="memory"][data-id] [name=fact]').fill('Marta forgave the player');
+  await page.locator('[data-jform="memory"][data-id] button.gold').click();
+  await page.locator('.jmem', { hasText: 'Marta forgave' }).waitFor();
+  check(true, 'a memory can be edited');
+  await page.locator('[data-jact="mem-delete"]').first().click();
+  await page.waitForFunction(() => ![...document.querySelectorAll('.jmem')].some(m => m.textContent.includes('Marta forgave')), null, { timeout: 5000 });
+  check(true, 'a memory can be forgotten');
+
+  // people
+  await tab('people');
+  const personCard = page.locator('#journalBody .jcard').first();
+  await personCard.waitFor({ timeout: 10000 });
+  await personCard.locator('[name=fact]').fill('Speaks in riddles');
+  await personCard.locator('button').click();
+  await page.locator('.jlist li', { hasText: 'Speaks in riddles' }).waitFor();
+  check(true, 'people show trust and what you know about them');
+
+  // Escape and the J key
+  await page.keyboard.press('Escape');
+  check(!(await drawerOpen()), 'Escape closes the Journal');
+  await page.locator('#chatInput').blur();
+  await page.keyboard.press('j');
+  check(await drawerOpen(), 'the J key opens the Journal');
+  await page.keyboard.press('j');
+
+  // key moments, from a message saved in the history
+  await page.reload();
+  await page.waitForFunction(() => !document.querySelector('#gameArea').hidden && document.querySelector('#chatLog .chat-msg.gm[data-mid]'), null, { timeout: 30000 });
+  await page.evaluate(() => document.querySelector('#chatLog .chat-msg.gm[data-mid] [data-act="moment"]').click());
+  await page.waitForFunction(() => document.querySelector('#chatLog .ma-on'), null, { timeout: 5000 });
+  await page.locator('#journalBtn').click();
+  await tab('moments');
+  await page.locator('#journalBody .jcard').first().waitFor();
+  check(true, 'a starred message appears under Moments');
+  await page.locator('[data-jact="moment-unstar"]').first().click();
+  await page.waitForFunction(() => document.querySelector('#journalBody .journal-empty'), null, { timeout: 5000 });
+  check(true, 'a moment can be removed');
+  await page.keyboard.press('Escape');
+
   // --- a second story with the same character name gets its own character
   const namesakes = async () => (await (await page.request.get(`${APP}/api/characters`)).json()).filter(c => c.name === 'Smoke Tester');
   const firstId = (await namesakes())[0].id;

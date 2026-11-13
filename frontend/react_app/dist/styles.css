@@ -187,3 +187,65 @@ body.game-active:not(.sidebar-open) .app-content{margin-left:0}
 .help-link-app{border-color:#4a3f6e;color:#cdbdf5}
 .help-flash{outline:2px solid var(--gold);outline-offset:2px}
 .help-nav button{display:flex;align-items:center}
+.journal-drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100vw);z-index:930;display:flex;flex-direction:column;background:linear-gradient(180deg,#121a22,#0b1015);border-left:1px solid var(--line);box-shadow:-18px 0 50px #000a}
+.journal-drawer[hidden]{display:none}
+.journal-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.journal-head b{font:19px Georgia;color:#f2f0eb}
+.journal-head small{color:var(--gold);font-size:10px;letter-spacing:1px;text-transform:uppercase;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.journal-head button{background:none;border:0;color:#e9ecf1;font-size:18px;cursor:pointer}
+.journal-searchrow{padding:8px 14px 0}
+.journal-searchrow input{width:100%;background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:9px 11px;font-size:12px;outline:none}
+.journal-searchrow input:focus{border-color:var(--gold)}
+.journal-tabs{display:flex;gap:2px;padding:8px 14px 0;border-bottom:1px solid var(--line)}
+.journal-tabs button{flex:1;background:transparent;border:0;border-bottom:2px solid transparent;color:#9aa5b1;padding:9px 4px;font-size:12px;cursor:pointer}
+.journal-tabs button.active{color:var(--gold);border-bottom-color:var(--gold)}
+.journal-tabs i{font-style:normal;font-size:9px;margin-left:5px;color:#0b1015;background:#8a7a50;border-radius:8px;padding:0 5px}
+.journal-tabs i:empty{display:none}
+.journal-notice{margin:10px 14px 0;padding:8px 10px;border:1px solid #5a4a22;background:#2a210f;color:#e6c883;font-size:11px}
+#journalBody{flex:1;overflow-y:auto;padding:12px 14px 24px;display:flex;flex-direction:column;gap:10px}
+.jintro{margin:0;font-size:11.5px;line-height:1.55;color:var(--muted)}
+.jcard{border:1px solid #242e38;background:#10171d;padding:11px 12px;display:flex;flex-direction:column;gap:7px}
+.jcard-pinned{border-color:#6e5a2a;background:#17140c}
+.jcard-done{opacity:.75}
+.jcard-head{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.jcard-head b{font-size:13px;color:var(--gold);flex:1;min-width:0}
+.jcard p{margin:0;font-size:12px;line-height:1.55;color:#d3d9df}
+.jtext{white-space:pre-wrap;overflow-wrap:anywhere}
+.jhint{color:var(--muted)!important;font-style:italic}
+.jchip{display:inline-block;font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#b7c0c9;background:#1a242e;border:1px solid #2b3540;padding:1px 7px;border-radius:9px}
+.jchip-gold{color:var(--gold);border-color:#5a4a22;background:#2a210f}
+.jrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:space-between}
+.jrow input,.jrow select{flex:1;min-width:0}
+.jbtns{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.jbtns button,.jbar button{padding:5px 10px;font-size:11px;cursor:pointer}
+.jbtns select{flex:none;background:#0a0f14;color:#d8dee5;border:1px solid #303b46;padding:4px 6px;font-size:11px}
+.jbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.jbar small{color:var(--muted);font-size:10.5px;flex:1;min-width:140px}
+.jbar select{background:#0a0f14;color:#d8dee5;border:1px solid #303b46;padding:5px 7px;font-size:11px}
+.jprogress{height:6px;background:#1c2530;border-radius:3px;overflow:hidden}
+.jprogress span{display:block;height:100%;background:linear-gradient(90deg,#b9822a,var(--gold))}
+.jfold{border:1px solid #242e38;background:#0e141a;padding:8px 12px}
+.jfold>summary{cursor:pointer;font-size:12px;color:#c7cdd3;display:flex;gap:8px;align-items:baseline}
+.jfold>summary small{color:var(--gold)}
+.jfold[open]>summary{margin-bottom:8px}
+.jform{display:flex;flex-direction:column;gap:7px;border:1px solid #2b3540;background:#0e141a;padding:10px}
+.jform input,.jform textarea,.jform select{background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:8px 9px;font:12px inherit;outline:none;resize:vertical}
+.jform input:focus,.jform textarea:focus,.jform select:focus{border-color:var(--gold)}
+.jform .gold{padding:7px 14px;cursor:pointer}
+.jinline{flex-direction:row;padding:0;border:0;background:none}
+.jinline input{flex:1}
+.jcheck{display:flex;align-items:center;gap:5px;font-size:11px;color:#b7c0c9;white-space:nowrap}
+.jcheck input{width:auto}
+.jtags,.jchips{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.jtag{background:#18212a;border:1px solid var(--line);color:#b7c9d6;padding:2px 9px;font-size:10.5px;border-radius:10px;cursor:pointer}
+.jtag:hover,.jtag.on{border-color:var(--gold);color:var(--gold)}
+.jstar{background:none;border:0;color:#6c7682;font-size:20px;cursor:pointer;padding:0 4px;line-height:1}
+.jstar.on,.jstar:hover{color:var(--gold)}
+.jmem .jrow:first-child{align-items:flex-start;flex-wrap:nowrap}
+.jpreview{font-size:11.5px;line-height:1.6;color:#d6d0e6;background:#16122033;border-left:2px solid #9877db;padding:8px 10px;margin-bottom:8px;overflow-wrap:anywhere}
+.jlist{margin:0;padding-left:18px;font-size:11.5px;line-height:1.55;color:#c7cdd3}
+.journal-empty{padding:26px 14px;text-align:center;color:var(--muted);font-size:12px;border:1px dashed var(--line)}
+.ma-on{color:var(--gold)}
+@media(max-width:600px){.journal-drawer{width:100vw}}
+.jrow input:not([type=checkbox]),.jbar input{background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:8px 9px;font:12px inherit;outline:none}
+.jrow input:focus,.jbar input:focus{border-color:var(--gold)}

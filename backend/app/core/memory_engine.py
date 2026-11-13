@@ -35,6 +35,11 @@ _ENTITY_PATTERNS = {
     "item": r'(?:the|a|an)\s+(\w+\s+(?:sword|shield|ring|amulet|potion|scroll|key|book|weapon|armor|gem|stone|crystal|staff|wand|blade|bow|dagger))',
 }
 
+# Which facts a story may recall: its own, plus facts saved without a story
+# unless they were auto-captured (those belong to the story that produced them).
+STORY_FACTS_SQL = "(session_id=? OR (COALESCE(session_id,'')='' AND source<>'auto'))"
+
+
 class MemoryEngine:
     def __init__(self, max_context: int = 20):
         self.context_window: List[Dict[str, str]] = []
@@ -272,7 +277,7 @@ class MemoryEngine:
     def apply_decay(self, decay_rate: float = 0.01):
         """Reduce importance of old, unaccessed memories."""
         conn = get_conn()
-        rows = conn.execute("SELECT id, importance, last_accessed, created_at FROM memory_facts").fetchall()
+        rows = conn.execute("SELECT id, importance, last_accessed, created_at FROM memory_facts WHERE COALESCE(pinned,0)=0").fetchall()
         now = datetime.now()
         for r in rows:
             last = r["last_accessed"] or r["created_at"]
@@ -297,8 +302,8 @@ class MemoryEngine:
         conn = get_conn()
         rows = [dict(r) for r in conn.execute(
             "SELECT fact, importance, character_name FROM memory_facts "
-            "WHERE session_id=? OR (COALESCE(session_id,'')='' AND source<>'auto') "
-            "ORDER BY importance DESC, id DESC", (session_id,)).fetchall()]
+            f"WHERE {STORY_FACTS_SQL} "
+            "ORDER BY COALESCE(pinned,0) DESC, importance DESC, id DESC", (session_id,)).fetchall()]
         conn.close()
         parts = []
         important = [r for r in rows if (r["importance"] or 0) >= 0.7][:3]
@@ -351,5 +356,6 @@ class MemoryEngine:
     def prune(self, keep: int = 200):
         conn = get_conn()
         conn.execute("DELETE FROM memory_facts WHERE id NOT IN "
-                     "(SELECT id FROM memory_facts ORDER BY importance DESC, id DESC LIMIT ?)", (keep,))
+                     "(SELECT id FROM memory_facts ORDER BY COALESCE(pinned,0) DESC, importance DESC, id DESC LIMIT ?) "
+                     "AND COALESCE(pinned,0)=0", (keep,))
         conn.commit(); conn.close()

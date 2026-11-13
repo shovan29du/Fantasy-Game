@@ -1255,7 +1255,7 @@ function fmtInline(s){
 function chatMsg(cls,html,id){
  const idAttr=id?` data-mid="${id}"`:'';
  const label=cls==='player'?'<b>YOU</b>':'<b>WORLDWEAVER</b>';
- return `<div class="chat-msg ${cls}"${idAttr}><div class="msg-body">${label}${html}</div><div class="msg-actions"><button class="ma" data-act="copy" title="Copy">⎘</button><button class="ma" data-act="edit" title="Edit">✎</button><button class="ma" data-act="delete" title="Delete">🗑</button><button class="ma" data-act="rewind" title="Delete this and everything after">⏪</button><button class="ma" data-act="regenerate" title="Regenerate AI response">♻</button><button class="ma" data-act="memory" title="Save to memory">🧠</button><button class="ma" data-act="select" title="Select">☐</button><button class="ma" data-act="paste" title="Paste to input">→✏</button><button class="ma" data-act="forward" title="Progress story forward">↗</button><button class="ma" data-act="media" title="Generate media from this message">🎨</button></div></div>`;
+ return `<div class="chat-msg ${cls}"${idAttr}><div class="msg-body">${label}${html}</div><div class="msg-actions"><button class="ma" data-act="copy" title="Copy">⎘</button><button class="ma" data-act="edit" title="Edit">✎</button><button class="ma" data-act="delete" title="Delete">🗑</button><button class="ma" data-act="rewind" title="Delete this and everything after">⏪</button><button class="ma" data-act="regenerate" title="Regenerate AI response">♻</button><button class="ma" data-act="memory" title="Save to memory">🧠</button><button class="ma" data-act="moment" title="Mark as a key moment">⭐</button><button class="ma" data-act="note" title="Add to journal notes">📝</button><button class="ma" data-act="select" title="Select">☐</button><button class="ma" data-act="paste" title="Paste to input">→✏</button><button class="ma" data-act="forward" title="Progress story forward">↗</button><button class="ma" data-act="media" title="Generate media from this message">🎨</button></div></div>`;
 }
 
 // Event delegation for per-message action buttons
@@ -1346,6 +1346,13 @@ $('#chatLog').addEventListener('click',async e=>{
    speakReply(data.reply);
   }catch(err){toast(err.message);}
   finally{btn.textContent='♻';btn.disabled=false;}
+ }
+ else if(act==='moment'||act==='note'){
+  const on=act==='moment'&&!btn.classList.contains('ma-on');
+  try{
+   if(act==='note'){await api('/api/journal/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:state.sessionId||'default',title:'From the chat',body:text,tags:['chat']})});toast('Added to your journal notes');}
+   else{if(!mid){toast('Reload the chat first — this message has no id yet.');return;}await api(`/api/chat/messages/${mid}/moment`,{method:on?'POST':'DELETE'});btn.classList.toggle('ma-on',on);toast(on?'Marked as a key moment':'Moment removed');}
+  }catch(err){toast(err.message);}
  }
  else if(act==='memory'){
   if(!mid){
@@ -2363,6 +2370,7 @@ async function loadHelp(){
   }catch(error){$('#helpContent').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`;}
 }
 function closeTopDialog(){
+  const jd=document.getElementById('journalDrawer');if(jd&&!jd.hidden){closeJournal();return true;}
   for(const id of ['levelUpModal','questRewardModal','craftModal','saveLoadModal','recruitModal']){const m=document.getElementById(id);if(m&&!m.hidden){m.hidden=true;return true;}}
   const opts=document.getElementById('mediaOptsModal');if(opts){opts.remove();return true;}
   const loc=document.getElementById('locContentOverlay');if(loc&&!loc.classList.contains('hidden')){loc.classList.add('hidden');return true;}
@@ -2438,7 +2446,7 @@ async function _loadSaveSlots(modal){
  }catch(e){list.innerHTML=`<div class="empty-state">${safe(e.message)}</div>`;}
 }
 $('#saveBtn').onclick=()=>_openSaveModal();
-$('#journalBtn').onclick=()=>toast('Quest journal opened');
+$('#journalBtn').onclick=()=>toggleJournal();
 function playerContextLine(){
  const world=state.worlds[state.worldIndex]; const s=state.sheet;
  const bits=[`World: ${world?.name}`,`Reality: ${world?.reality_type}`,`Location: ${world?.place||'Unknown'}`,`Map scale: ${state.scale}`];

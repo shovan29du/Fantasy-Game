@@ -124,7 +124,7 @@
       <button id="gameBackBtn" class="ghost" title="Back to scenario selection">‹ Back</button>
       <button id="gameCloseBtn" class="ghost" title="Close game and return to main menu">✕ Close</button>
       <button id="switchGameBtn" class="ghost" title="Start new game or load a saved one" style="display:none">⇄ New / Load Game</button>
-      <button id="journalBtn" class="ghost">◫ Journal</button>
+      <button id="journalBtn" class="ghost" title="Journal: quests, notes, memory, people (J)">◫ Journal</button>
       <button id="saveBtn" class="gold">Save game</button>
       <span class="online"><i></i> LOCAL</span>
     </div>
@@ -733,6 +733,14 @@ button.active-choice{background:var(--gold,#c9a84c)!important;color:#0d0d0d!impo
 /* Quest reward type badge colors */
 .qr-feat{color:var(--gold,#c9a84c)}.qr-spell{color:var(--purple,#9c27b0)}.qr-companion{color:#4caf50}.qr-title{color:var(--gold,#c9a84c)}.qr-ally{color:#2196f3}.qr-stat_point{color:#ff9800}.qr-plot_item{color:#e91e63}.qr-skill{color:#00bcd4}
   </style>
+  <aside id="journalDrawer" class="journal-drawer" hidden aria-label="Journal">
+    <div class="journal-head"><b>Journal</b><small id="journalStory"></small><button id="journalClose" type="button" aria-label="Close journal">✕</button></div>
+    <div class="journal-searchrow"><input id="journalSearch" type="search" autocomplete="off" aria-label="Search the journal"></div>
+    <div id="journalTabs" class="journal-tabs" role="tablist"></div>
+    <div id="journalNotice" class="journal-notice" hidden>No story is open, so notes and memories here belong to the plain chat. Start or load a game to keep a journal for it.</div>
+    <div id="journalBody"></div>
+  </aside>
   <script src="/game.js"></script>
+  <script src="/journal.js"></script>
 </body>
 </html>

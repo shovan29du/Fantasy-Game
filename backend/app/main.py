@@ -637,6 +637,168 @@ def help_reference() -> list[dict]:
     return build_help()
 
 
+# ── Journal: notes, memory, people, recap ───────────────────────────────
+from core import journal as journal_store
+
+
+def _journal_error(exc: Exception) -> HTTPException:
+    return HTTPException(status_code=400, detail=str(exc))
+
+
+class MemoryCreateIn(BaseModel):
+    fact: str
+    session_id: str
+    memory_type: str = "general"
+    level: str = "normal"
+    pinned: bool = False
+    shared: bool = False          # shared facts apply to every story
+    character_name: str = ""
+
+
+class MemoryPatchIn(BaseModel):
+    fact: str | None = None
+    memory_type: str | None = None
+    level: str | None = None
+    pinned: bool | None = None
+
+
+class NoteIn(BaseModel):
+    session_id: str
+    title: str = ""
+    body: str = ""
+    tags: list[str] | str = ""
+    kind: str = "note"
+    pinned: bool = False
+
+
+class NotePatchIn(BaseModel):
+    title: str | None = None
+    body: str | None = None
+    tags: list[str] | str | None = None
+    kind: str | None = None
+    pinned: bool | None = None
+
+
+class RecapIn(BaseModel):
+    session_id: str
+
+
+@app.get("/api/journal/overview")
+def journal_overview(session_id: str, quests: int = 0) -> dict:
+    return journal_store.counts(session_id, quests)
+
+
+@app.get("/api/journal/memory")
+def journal_memory(session_id: str, q: str = "", memory_type: str = "", view: str = "story") -> dict:
+    return {"items": journal_store.list_memory(session_id, q, memory_type, view),
+            "types": journal_store.MEMORY_TYPES, "counts": journal_store.memory_counts(session_id)}
+
+
+@app.get("/api/journal/memory/preview")
+def journal_memory_preview(session_id: str, character_name: str = "", q: str = "") -> dict:
+    """What the storyteller is handed from memory for the next reply."""
+    return {"context": memory_engine.build_memory_context(
+        query=q, character_name=character_name, session_id=_story_session(session_id)) or ""}
+
+
+@app.post("/api/journal/memory")
+def journal_memory_add(payload: MemoryCreateIn) -> dict:
+    if not payload.fact.strip():
+        raise HTTPException(status_code=400, detail="A memory cannot be empty.")
+    memory_engine.store_fact(
+        payload.fact.strip()[:600], source="journal", memory_type=payload.memory_type if payload.memory_type in journal_store.MEMORY_TYPES else "general",
+        character_name=payload.character_name, session_id="" if payload.shared else payload.session_id)
+    conn = get_conn()
+    try:
+        fact_id = conn.execute("SELECT MAX(id) FROM memory_facts").fetchone()[0]
+    finally:
+        conn.close()
+    try:
+        item = journal_store.update_memory(fact_id, {"level": payload.level, "pinned": payload.pinned})
+    except ValueError as exc:
+        raise _journal_error(exc)
+    return {"item": item}
+
+
+@app.patch("/api/journal/memory/{fact_id:int}")
+def journal_memory_patch(fact_id: int, payload: MemoryPatchIn) -> dict:
+    try:
+        item = journal_store.update_memory(fact_id, payload.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise _journal_error(exc)
+    if not item:
+        raise HTTPException(status_code=404, detail="Memory not found.")
+    return {"item": item}
+
+
+@app.post("/api/journal/memory/{fact_id:int}/adopt")
+def journal_memory_adopt(fact_id: int, session_id: str) -> dict:
+    """Give an old auto-captured memory to this story so it can be recalled again."""
+    item = journal_store.update_memory(fact_id, {"session_id": _story_session(session_id)})
+    if not item:
+        raise HTTPException(status_code=404, detail="Memory not found.")
+    return {"item": item}
+
+
+@app.delete("/api/journal/memory/{fact_id:int}")
+def journal_memory_delete(fact_id: int) -> dict:
+    if not journal_store.delete_memory(fact_id):
+        raise HTTPException(status_code=404, detail="Memory not found.")
+    return {"deleted": True}
+
+
+@app.get("/api/journal/notes")
+def journal_notes(session_id: str, q: str = "", tag: str = "", kind: str = "") -> dict:
+    notes = journal_store.list_notes(session_id, q, tag, kind)
+    all_tags = sorted({t for n in journal_store.list_notes(session_id) for t in n["tags"]})
+    return {"items": notes, "tags": all_tags, "kinds": journal_store.NOTE_KINDS}
+
+
+@app.post("/api/journal/notes")
+def journal_note_add(payload: NoteIn) -> dict:
+    try:
+        return {"item": journal_store.create_note(payload.session_id, payload.title, payload.body, payload.tags, payload.kind, payload.pinned)}
+    except ValueError as exc:
+        raise _journal_error(exc)
+
+
+@app.patch("/api/journal/notes/{note_id:int}")
+def journal_note_patch(note_id: int, payload: NotePatchIn) -> dict:
+    try:
+        item = journal_store.update_note(note_id, payload.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise _journal_error(exc)
+    if not item:
+        raise HTTPException(status_code=404, detail="Note not found.")
+    return {"item": item}
+
+
+@app.delete("/api/journal/notes/{note_id:int}")
+def journal_note_delete(note_id: int) -> dict:
+    if not journal_store.delete_note(note_id):
+        raise HTTPException(status_code=404, detail="Note not found.")
+    return {"deleted": True}
+
+
+@app.get("/api/journal/people")
+def journal_people(session_id: str, character_id: int | None = None) -> dict:
+    return {"items": journal_store.people(session_id, character_id)}
+
+
+@app.post("/api/journal/recap")
+def journal_recap(payload: RecapIn) -> dict:
+    """Ask the storyteller for a short recap of the story so far and keep it as a note."""
+    from core.chat_engine import send_to_llm
+    messages = journal_store.recap_prompt(payload.session_id)
+    if not messages:
+        raise HTTPException(status_code=400, detail="There is not enough story yet to recap.")
+    reply = send_to_llm(messages, temperature=0.3, max_tokens=400).strip()
+    if reply.startswith(("[LM Studio error]", "[Error]")):
+        raise HTTPException(status_code=503, detail=reply.partition("] ")[2] or "The storyteller could not be reached.")
+    stamp = now_iso()[:16].replace("T", " ")
+    return {"item": journal_store.create_note(payload.session_id, f"Recap — {stamp}", reply, ["recap"], "recap")}
+
+
 class HelpPictureIn(BaseModel):
     section: str
     id: str
@@ -1201,6 +1363,12 @@ def update_chat_message(message_id: int, payload: ChatEditIn) -> dict:
 def mark_chat_moment(message_id: int) -> dict:
     tag_moment(message_id, True)
     return {"tagged": True}
+
+
+@app.delete("/api/chat/messages/{message_id}/moment")
+def unmark_chat_moment(message_id: int) -> dict:
+    tag_moment(message_id, False)
+    return {"tagged": False}
 
 
 @app.delete("/api/chat/messages/{message_id}/rewind")
@@ -3435,6 +3603,11 @@ def worldweaver_styles():
 @app.get("/game.js", include_in_schema=False)
 def worldweaver_script():
     return FileResponse(REACT_DIST / "game.js", media_type="application/javascript")
+
+
+@app.get("/journal.js", include_in_schema=False)
+def worldweaver_journal_script():
+    return FileResponse(REACT_DIST / "journal.js", media_type="application/javascript")
 
 
 @app.get("/worldweaver-icon.png", include_in_schema=False)

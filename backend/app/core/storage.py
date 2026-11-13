@@ -15,7 +15,7 @@ DB_PATH = Path(os.environ.get("AICHAT_DB_PATH") or DATA_DIR / "aichat_pro.db")
 
 # Bump whenever a new entry is added to _MIGRATIONS or _TABLES so the
 # schema_version table reflects the schema the app expects.
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 def get_conn():
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
@@ -103,6 +103,8 @@ _TABLES = [
     "CREATE TABLE IF NOT EXISTS relationship_events (id INTEGER PRIMARY KEY AUTOINCREMENT, character_name TEXT NOT NULL, sentiment TEXT NOT NULL, trust_delta INTEGER NOT NULL, note TEXT, created_at TEXT NOT NULL)",
     # Quests
     "CREATE TABLE IF NOT EXISTS quests (id INTEGER PRIMARY KEY AUTOINCREMENT, character_name TEXT NOT NULL, quest_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, reward TEXT NOT NULL, hint TEXT, progress INTEGER DEFAULT 0, status TEXT DEFAULT 'active', depends_on INTEGER, chain_id TEXT, created_at TEXT NOT NULL)",
+    # Player-written journal notes, one set per story
+    "CREATE TABLE IF NOT EXISTS journal_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '', pinned INTEGER NOT NULL DEFAULT 0, kind TEXT NOT NULL DEFAULT 'note', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
     # Generated images keyed by a stable id, so e.g. a map location is only generated once
     "CREATE TABLE IF NOT EXISTS image_cache (cache_key TEXT PRIMARY KEY, path TEXT NOT NULL, created_at TEXT NOT NULL)",
     # Knowledge
@@ -181,6 +183,7 @@ _MIGRATIONS = [
     ("quests", "chain_id", "TEXT"),
     ("quests", "character_id", "INTEGER"),
     ("memory_facts", "session_id", "TEXT DEFAULT ''"),
+    ("memory_facts", "pinned", "INTEGER DEFAULT 0"),
     ("achievements", "bonus_stat", "TEXT"),
     ("achievements", "bonus_value", "INTEGER DEFAULT 0"),
     ("inventory", "equip_slot", "TEXT"),

@@ -183,13 +183,14 @@ TAG_DEFINITIONS = {
 
 
 SECTION_ICONS = {
-    "start": "🧭", "controls": "🎮", "rules": "📜", "combat": "⚔", "classes": "🛡", "races": "👥", "feats": "⭐",
+    "start": "🧭", "controls": "🎮", "journal": "📖", "rules": "📜", "combat": "⚔", "classes": "🛡", "races": "👥", "feats": "⭐",
     "spells": "✨", "skilltree": "🌳", "character": "🎭", "tags": "🏷", "equipment": "🗡", "monsters": "👹",
     "quests": "🗺", "relationships": "❤", "worlds": "🌍", "limits": "⚠",
 }
 
 SECTION_PICTURES = {
     "start": "an adventurer standing before a glowing portal at dawn, wide fantasy landscape",
+    "journal": "an open leather adventurer's journal with handwritten notes, a sketched map and a quill by candlelight",
     "controls": "an ornate fantasy game table with a map, tokens and dice seen from above",
     "rules": "an open ancient rulebook with dice and a quill on a wooden desk, candlelight",
     "combat": "a party of adventurers fighting goblins on a stone battlefield, dynamic action",
@@ -327,6 +328,8 @@ def _controls() -> dict:
             "☰": "Show or hide the main menu while playing.",
             "‹ Back": "Return to scenario selection without ending the current story.",
             "✕ Close": "Return to the Play hub. “Back to game” resumes.",
+            "◫ Journal": "Open the Journal: quests, notes, memory, people and key moments. Press J as a shortcut.",
+            "?": "Open Help.",
             "Save game": "Save or load this story.",
         }, example="To check a spell mid-fight: press ?, search the spell, then press Play in the menu to return.",
            links=[("Saving and loading", "start/Saving and loading")]),
@@ -376,10 +379,12 @@ def _controls() -> dict:
             "Regenerate": "Ask the storyteller for a different reply.",
             "Progress story forward": "Continue the story from here.",
             "Generate media": "Make an image from the message.",
-            "Save to memory": "Pin the message as a fact for this story.",
+            "Save to memory": "Pin the message as a fact for this story (🧠).",
+            "Mark as a key moment": "Star the message so it shows under Journal → Moments (⭐).",
+            "Add to journal notes": "Copy the message into your Journal notes (📝).",
         }, example="The storyteller forgets the innkeeper's name: find the message that introduced her and "
                    "press Save to memory.",
-           links=[("Memory", "relationships/Memory")]),
+           links=[("Memory", "journal/Memory"), ("Moments", "journal/Moments"), ("Notes", "journal/Notes")]),
         _entry("How replies are formatted", "“Name: text” is dialogue. **Bold text** is action or narration.",
                example="**The door creaks open.** Captain Hayate: “You are late.”"),
         _entry("Party", "Click a party member to speak as them; “Narrator” returns to the storyteller. "
@@ -1003,9 +1008,9 @@ def _relationships() -> dict:
             "Happy": "60–79", "Elated": "80 or more",
         }),
         _entry("Memory", "The storyteller remembers what happens in a story and brings it back later. Memories "
-               "stay inside their story. “Save to memory” on a chat message pins it for that story.",
+               "stay inside their story. Manage them in Journal → Memory.",
                example="Pin “The innkeeper Marta owes you a favour”; weeks of story later, Marta still remembers.",
-               links=[("Message actions", "controls/Message actions"),
+               links=[("Memory", "journal/Memory"), ("Message actions", "controls/Message actions"),
                       ("Each story has its own character", "start/Each story has its own character")]),
     ]}
 
@@ -1054,11 +1059,82 @@ def _content_limits() -> dict:
     ]}
 
 
+def _journal() -> dict:
+    return {"id": "journal", "title": "Journal and memory", "intro": "Your quests, notes and everything the storyteller remembers.", "entries": [
+        _entry("Opening the Journal", "Press the ◫ Journal button in the top bar, or press J while playing. Esc closes it. "
+               "The search box filters whichever tab is open. Each story has its own Journal.",
+               stats={"Tabs": 5, "Shortcut": "J"},
+               example="Mid-fight you forget the innkeeper's name: press J, open People, and it is there with what you noted about her.",
+               links=[("Top bar", "controls/Top bar"), ("Each story has its own character", "start/Each story has its own character")]),
+        _entry("Quests tab", "Active quests with their hint, reward and progress bar. +25% moves the bar, Complete "
+               "pays out XP and a reward, Abandon drops the quest. “New quest from the story” asks the storyteller "
+               "for one based on your recent chat. Finished quests are kept in a list underneath.",
+               stats={"Progress step": "+25%"},
+               example="Deliver the sealed scroll to the watchtower: tap +25% at each stage, then Complete when you arrive.",
+               links=[("Quests and rewards", "quests"), ("Getting quests", "quests/Getting quests")]),
+        _entry("Notes", "Your own notes for this story: a title, text, tags and a kind (note, clue, todo or recap). "
+               "Pin important ones to keep them at the top, click a tag to filter by it, and search by any word. "
+               "The 📝 button on a chat message copies it straight into your notes.",
+               stats={"Kinds": "note · clue · todo · recap", "Tags per note": "up to 8"},
+               example="Title “Smuggler cove”, tags “clue, Corvin”: later, click #corvin to see every clue about him.",
+               links=[("Message actions", "controls/Message actions"), ("Recap", "journal/Recap")]),
+        _entry("Recap", "✦ Write a recap asks the storyteller to summarise the most recent part of the story into a few "
+               "bullet points (where you are, who you have met, open threads, danger ahead) and saves it as a note. "
+               "It needs LM Studio to be running.",
+               stats={"Reads": "last 40 messages", "Length": "4–7 bullets"},
+               example="Back after a week away? Press ✦ Write a recap and read where things stand before you type.",
+               links=[("What you need", "start/What you need"), ("Notes", "journal/Notes")]),
+        _entry("Memory", "The facts the storyteller can recall in this story. Every reply it is handed a short selection: "
+               "up to three important facts, up to three about your character, and up to three that match the words "
+               "in your message, all trimmed to about 600 characters. Add facts yourself, edit them, change how "
+               "important they are, or Forget them. Memories the storyteller captures automatically appear too.",
+               stats={"Important facts per reply": 3, "About your character": 3, "Matching your message": 3, "Total size": "≈600 characters"},
+               example="Save “Marta owes me a favour”. When you later write “I ask Marta for help”, that fact is among those recalled.",
+               links=[("What the storyteller sees", "journal/What the storyteller sees"),
+                      ("Importance and pinning", "journal/Importance and pinning"),
+                      ("Memory types", "journal/Memory types"), ("This story or all stories", "journal/This story or all stories")]),
+        _entry("Importance and pinning", "Each memory is Minor, Normal or Important. Important ones are considered first. "
+               "Pinning (★) makes a memory the highest priority and protects it from the optional memory clean-up tools. "
+               "A memory is only ever removed when you Forget it or run those tools.",
+               stats={"Minor": "0.3", "Normal": "0.5", "Important": "0.8", "Pinned": "1.0"},
+               example="Pin “The player is afraid of fire” so the storyteller keeps weaving it in, however long the story runs.",
+               links=[("Memory", "journal/Memory")]),
+        _entry("Memory types", "A label that describes what kind of fact it is. It helps you filter and does not change how "
+               "the fact is used.", stats={"Types": 6},
+               example="“Marta runs the Gull Inn” is semantic; “We crossed the burning bridge” is episodic.",
+               links=[("Memory", "journal/Memory")],
+               **{"episodic": "Something that happened.", "semantic": "A fact about the world or a person.",
+                  "procedural": "A habit or routine.", "preference": "Likes and dislikes.",
+                  "event": "A quest, mission or objective.", "general": "Anything else."}),
+        _entry("This story or all stories", "A memory belongs to the story it was made in, so a character who shares a "
+               "name with one in another story starts with a clean slate. Tick “All stories” when adding a memory "
+               "to share it everywhere, such as how you like replies written. “Older memories” lists automatic "
+               "memories saved before stories were kept apart; bring back the ones that belong in this story.",
+               example="“The player prefers short replies” is shared; “Marta owes me a favour” stays in this story.",
+               links=[("Each story has its own character", "start/Each story has its own character"), ("Memory", "journal/Memory")]),
+        _entry("What the storyteller sees", "The box at the top of the Memory tab shows exactly what memory the storyteller "
+               "will be given right now. Type a message into “Try a message” and press Check to see what would be "
+               "recalled for it.",
+               example="Type “I ask Marta about the ring” and check that her favour appears. If it does not, make it Important or pin it.",
+               links=[("Memory", "journal/Memory")]),
+        _entry("People", "Everyone you have dealt with in this story. Each card shows trust (0–100), the bond and mood it "
+               "produces, how many exchanges you have had, the last few things that moved their trust, and facts you "
+               "know about them. Add a fact with the box on the card.",
+               stats={"Trust": "0–100"},
+               example="Marta is a friend at trust 40: two gifts (+8 each) bring her to 56, a close friend.",
+               links=[("Trust", "relationships/Trust"), ("Bond", "relationships/Bond"), ("Mood", "relationships/Mood")]),
+        _entry("Moments", "Star a chat message with ⭐ to mark it as a key moment. They are listed here, and you can turn "
+               "one into a note, make the storyteller remember it, or remove the star.",
+               example="Star the scene where the captain gives you the scroll; later press Remember so it is never forgotten.",
+               links=[("Message actions", "controls/Message actions"), ("Notes", "journal/Notes"), ("Memory", "journal/Memory")]),
+    ]}
+
+
 def _sections() -> list[dict]:
     return [
         _getting_started(), _controls(), _core_rules(), _combat(), _classes(), _races(), _feats(), _spells(),
-        _skill_tree(), _character_options(), _tags(), _equipment(), _monsters(), _quests(), _relationships(),
-        _worlds(), _content_limits(),
+        _skill_tree(), _character_options(), _tags(), _equipment(), _monsters(), _quests(), _journal(),
+        _relationships(), _worlds(), _content_limits(),
     ]
 
 
