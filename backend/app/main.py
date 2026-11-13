@@ -1,23 +1,38 @@
 """FastAPI backend for the React AiChat Pro frontend."""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import json
+import random
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from core.logging_setup import get_logger
+
+log = get_logger(__name__)
+
+# Minimum number of recent chat turns kept in the LLM context window, on top
+# of the persistent memory facts pulled in separately (see memory_engine).
+RECENT_HISTORY_MESSAGES = 30
+
+import uuid
+
+from backend.app.domain import dnd_weapons, multiverse, scenarios, spells as spells_domain, weapons, worldscale
 from backend.app.domain.characters import (
     ALIGNMENTS,
     ALL_PRESET_SOURCES,
+    ANIME_PRESETS,
     BODY_TYPES,
     CHARACTER_TAGS,
     DND_BACKGROUNDS,
     DND_RACES,
     EMOTION_STYLES,
+    GAME_PRESETS,
     GENDERS,
     IMAGE_STYLES,
     MAGIC_TYPES,
@@ -39,9 +54,15 @@ from backend.app.services.scenario_template_service import (
     render_template_scenario,
     save_scenario_template,
 )
+from backend.app.world.prebuilt import create_prebuilt_world, get_prebuilt_by_category, get_prebuilt_opening
+from core.scenario_covers import (
+    cover_url, generate_cover, start_pregen_thread, all_covers_map, cover_path,
+)
+from core import tactical_combat
 from backend.app.chat_io.character_builder import build_characters_from_chat
 from backend.app.chat_io.importer import import_chat_file, import_chat_url
 from core.storage import get_conn, init_db, now_iso
+from shared_config import MEDIA_DIR
 from core.chat_engine import (
     build_system_prompt,
     clear_session,
@@ -63,13 +84,25 @@ from core.knowledge_base import delete_document, index_file, index_folder, list_
 from core.lorebook import create_entry, delete_entry, list_entries, toggle_entry
 from core.levelling import (
     STAT_NAMES,
+    add_feat_to_character,
     add_skill_to_character,
+    add_spell_to_character,
     award_xp,
     get_full_sheet,
     increase_stat,
     xp_progress,
+    get_pending_level_up,
+    claim_level_up,
 )
-from core.media_pipeline import ANIMATION_EFFECTS, create_animation, get_provider_options, list_jobs, queue_media_job
+from core.media_pipeline import (
+    ANIMATION_EFFECTS,
+    create_animation,
+    generate_animated_clip,
+    generate_scene_video,
+    get_provider_options,
+    list_jobs,
+    queue_media_job,
+)
 from core.memory_engine import MemoryEngine
 from core.quest_system import (
     abandon_quest,
@@ -86,7 +119,7 @@ from core.relationship_engine import (
     list_all_relationships,
     record_interaction,
 )
-from core.storage import delete_character, delete_world, get_setting, set_setting
+from core.storage import delete_character, delete_world, get_cached_image, get_setting, set_cached_image, set_setting
 from core.world_engine import (
     add_law,
     advance_world_tick,
@@ -117,7 +150,13 @@ from backend.app.companion_studio.gpu_modules import router as companion_gpu_rou
 ROOT = Path(__file__).resolve().parents[2]
 REACT_DIST = ROOT / "frontend" / "react_app" / "dist"
 
-app = FastAPI(title="AiChat Pro API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    startup()
+    yield
+
+
+app = FastAPI(title="AiChat Pro API", version="1.0.0", lifespan=lifespan)
 app.include_router(companion_gpu_router, prefix="/api/companion-studio")
 app.add_middleware(
     CORSMiddleware,
@@ -176,6 +215,12 @@ class CharacterIn(BaseModel):
     xp: int = 0
     photo_path: str = ""
     identity_stability: int = 50
+    origin_world: str = ""
+    reality_type: str = "Prime Reality"
+    power_tier: int | None = None
+    origin: str = "Original fantasy world"
+    secondary_ancestry: str = ""
+    values_json: str = "{}"
 
 
 class ChatMessageIn(BaseModel):
@@ -190,6 +235,18 @@ class WorldIn(BaseModel):
     tech: str = "middle_age"
     space: str = "fantasy"
     num_locs: int = 8
+    ratings: dict[str, int] | None = None
+    reality_type: str = "Prime Reality"
+
+
+class MultiverseTravelIn(BaseModel):
+    origin_ratings: dict[str, int] | None = None
+    dest_ratings: dict[str, int] | None = None
+    origin_world_id: int | None = None
+    dest_world_id: int | None = None
+    dest_reality_type: str = "Prime Reality"
+    character_id: int | None = None
+    character_power_tier: int = 2
 
 
 class SettingIn(BaseModel):
@@ -257,6 +314,21 @@ class ChatSendIn(BaseModel):
     world_id: int | None = None
     participants: list[str] = []
     temperature: float = 0.7
+    extra_context: str = ""
+    retry: bool = False  # resend after a failed reply: the user line is already saved
+
+
+def _story_session(session_id: str) -> str:
+    """Session id when the chat belongs to a game story, else ''. The plain
+    companion chat ("default") keeps its shared, name-keyed memory."""
+    return "" if session_id in ("", "default") else session_id
+
+
+def _story_identity(name: str, session_id: str) -> str:
+    """Key for name-keyed state (relationship, mood). The same name in a
+    different story is a different character, so stories get their own key."""
+    story = _story_session(session_id)
+    return f"{name} [{story}]" if name and story else name
 
 
 class ChatEditIn(BaseModel):
@@ -267,6 +339,15 @@ class ChatSaveIn(BaseModel):
     session_id: str = "default"
     save_name: str
     character_name: str = ""
+    world_id: int | None = None
+    character_id: int | None = None
+
+
+class ScenarioStartIn(BaseModel):
+    category: str
+    scenario_name: str = ""
+    scenario_type: str = "prebuilt"  # prebuilt | preset | custom
+    custom_text: str = ""
 
 
 class QuestGenerateIn(BaseModel):
@@ -300,12 +381,37 @@ class SkillLearnIn(BaseModel):
     skill: str
 
 
+class FeatLearnIn(BaseModel):
+    feat: str
+
+
+class SpellLearnIn(BaseModel):
+    spell: str
+
+
+class WeaponEquipIn(BaseModel):
+    weapon_name: str
+    equip_slot: str = "weapon"
+
+
+class InventoryAddIn(BaseModel):
+    item_name: str
+    item_type: str = "misc"
+    quantity: int = 1
+    value: int = 0
+    description: str = ""
+    equip_slot: str = ""
+    weapon_tier: int | None = None
+    stat_bonuses: dict[str, int] = {}
+
+
 class MemoryIn(BaseModel):
     fact: str
     source: str = "manual"
     memory_type: str = "episodic"
     character_name: str = ""
     importance: float = 0.7
+    session_id: str = ""  # the story this fact belongs to; empty = shared by all
 
 
 class ImageIn(BaseModel):
@@ -315,12 +421,36 @@ class ImageIn(BaseModel):
     height: int = 512
     save_to_chat: bool = True
     session_id: str = "default"
+    cache_key: str = ""  # stable id (e.g. a map location) so the image is generated once and reused
 
 
 class AnimateIn(BaseModel):
     image_path: str
     effect: str = "ken_burns"
     duration: int = 5
+    session_id: str = "default"
+
+
+class TextToAnimationIn(BaseModel):
+    prompt: str
+    style: str = ""
+    width: int = 768
+    height: int = 512
+    effect: str = "ken_burns"
+    duration: int = 5
+    save_to_chat: bool = True
+    session_id: str = "default"
+
+
+class TextToVideoIn(BaseModel):
+    prompt: str = ""
+    prompts: list[str] = []
+    scenes: int = 3
+    style: str = ""
+    width: int = 768
+    height: int = 512
+    duration_per_slide: int = 3
+    save_to_chat: bool = True
     session_id: str = "default"
 
 
@@ -359,6 +489,39 @@ class DungeonIn(BaseModel):
 class CombatIn(BaseModel):
     attacker: dict = {"name": "Hero", "strength": 10}
     defender: dict = {"name": "Goblin", "constitution": 10}
+
+
+class CombatStartIn(BaseModel):
+    session_id: str = "default"
+    world_id: int | None = None
+    character_id: int | None = None
+
+
+class CombatMoveIn(BaseModel):
+    unit_id: int
+    x: int
+    y: int
+
+
+class CombatTargetIn(BaseModel):
+    unit_id: int
+    target_id: int
+    power_attack: bool = False
+
+
+class CombatCastIn(BaseModel):
+    unit_id: int
+    spell_name: str
+    target_id: int | None = None
+
+
+class CombatUnitIn(BaseModel):
+    unit_id: int
+
+
+class CombatSpecialActionIn(BaseModel):
+    unit_id: int
+    action: str  # "dash" | "disengage" | "dodge" | "help"
 
 
 class LawIn(BaseModel):
@@ -411,9 +574,25 @@ class BoolSettingIn(BaseModel):
     value: bool
 
 
-@app.on_event("startup")
 def startup() -> None:
     init_db()
+    # Pre-generate scenario cover images in background (only missing images)
+    try:
+        _all_scenarios: list[dict] = []
+        for _cat in scenarios.CATEGORIES:
+            _cat_key = _cat.get("key", "")
+            if _cat.get("presets") in ("anime", "game"):
+                continue
+            for _name in get_prebuilt_by_category(_cat_key):
+                _all_scenarios.append({
+                    "name": _name,
+                    "opening": get_prebuilt_opening(_name),
+                    "category": _cat_key,
+                })
+        if _all_scenarios:
+            start_pregen_thread(_all_scenarios, force=False)
+    except Exception as _exc:
+        log.warning("Could not start scenario cover pre-generation: %s", _exc)
 
 
 @app.get("/api/health")
@@ -440,7 +619,211 @@ def options() -> dict:
         "alignments": ALIGNMENTS,
         "imageStyles": IMAGE_STYLES,
         "presetSources": ALL_PRESET_SOURCES,
+        # Multiverse / character-origin expansion
+        "origins": multiverse.CHARACTER_ORIGINS,
+        "powerTiers": multiverse.POWER_TIERS,
+        "realityTypes": multiverse.REALITY_TYPE_NAMES,
+        "valuesAxes": multiverse.VALUES_AXES,
+        # World-scale axes (8 × 0-10 ratings)
+        "worldAxes": worldscale.WORLD_AXES,
+        "worldAxisLabels": worldscale.AXIS_LEVEL_LABELS,
     }
+
+
+@app.get("/api/help")
+def help_reference() -> list[dict]:
+    """The in-app Help: rules, options and reference tables built from game data."""
+    from backend.app.domain.help_content import build_help
+    return build_help()
+
+
+# ── Journal: notes, memory, people, recap ───────────────────────────────
+from core import journal as journal_store
+
+
+def _journal_error(exc: Exception) -> HTTPException:
+    return HTTPException(status_code=400, detail=str(exc))
+
+
+class MemoryCreateIn(BaseModel):
+    fact: str
+    session_id: str
+    memory_type: str = "general"
+    level: str = "normal"
+    pinned: bool = False
+    shared: bool = False          # shared facts apply to every story
+    character_name: str = ""
+
+
+class MemoryPatchIn(BaseModel):
+    fact: str | None = None
+    memory_type: str | None = None
+    level: str | None = None
+    pinned: bool | None = None
+
+
+class NoteIn(BaseModel):
+    session_id: str
+    title: str = ""
+    body: str = ""
+    tags: list[str] | str = ""
+    kind: str = "note"
+    pinned: bool = False
+
+
+class NotePatchIn(BaseModel):
+    title: str | None = None
+    body: str | None = None
+    tags: list[str] | str | None = None
+    kind: str | None = None
+    pinned: bool | None = None
+
+
+class RecapIn(BaseModel):
+    session_id: str
+
+
+@app.get("/api/journal/overview")
+def journal_overview(session_id: str, quests: int = 0) -> dict:
+    return journal_store.counts(session_id, quests)
+
+
+@app.get("/api/journal/memory")
+def journal_memory(session_id: str, q: str = "", memory_type: str = "", view: str = "story") -> dict:
+    return {"items": journal_store.list_memory(session_id, q, memory_type, view),
+            "types": journal_store.MEMORY_TYPES, "counts": journal_store.memory_counts(session_id)}
+
+
+@app.get("/api/journal/memory/preview")
+def journal_memory_preview(session_id: str, character_name: str = "", q: str = "") -> dict:
+    """What the storyteller is handed from memory for the next reply."""
+    return {"context": memory_engine.build_memory_context(
+        query=q, character_name=character_name, session_id=_story_session(session_id)) or ""}
+
+
+@app.post("/api/journal/memory")
+def journal_memory_add(payload: MemoryCreateIn) -> dict:
+    if not payload.fact.strip():
+        raise HTTPException(status_code=400, detail="A memory cannot be empty.")
+    memory_engine.store_fact(
+        payload.fact.strip()[:600], source="journal", memory_type=payload.memory_type if payload.memory_type in journal_store.MEMORY_TYPES else "general",
+        character_name=payload.character_name, session_id="" if payload.shared else payload.session_id)
+    conn = get_conn()
+    try:
+        fact_id = conn.execute("SELECT MAX(id) FROM memory_facts").fetchone()[0]
+    finally:
+        conn.close()
+    try:
+        item = journal_store.update_memory(fact_id, {"level": payload.level, "pinned": payload.pinned})
+    except ValueError as exc:
+        raise _journal_error(exc)
+    return {"item": item}
+
+
+@app.patch("/api/journal/memory/{fact_id:int}")
+def journal_memory_patch(fact_id: int, payload: MemoryPatchIn) -> dict:
+    try:
+        item = journal_store.update_memory(fact_id, payload.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise _journal_error(exc)
+    if not item:
+        raise HTTPException(status_code=404, detail="Memory not found.")
+    return {"item": item}
+
+
+@app.post("/api/journal/memory/{fact_id:int}/adopt")
+def journal_memory_adopt(fact_id: int, session_id: str) -> dict:
+    """Give an old auto-captured memory to this story so it can be recalled again."""
+    item = journal_store.update_memory(fact_id, {"session_id": _story_session(session_id)})
+    if not item:
+        raise HTTPException(status_code=404, detail="Memory not found.")
+    return {"item": item}
+
+
+@app.delete("/api/journal/memory/{fact_id:int}")
+def journal_memory_delete(fact_id: int) -> dict:
+    if not journal_store.delete_memory(fact_id):
+        raise HTTPException(status_code=404, detail="Memory not found.")
+    return {"deleted": True}
+
+
+@app.get("/api/journal/notes")
+def journal_notes(session_id: str, q: str = "", tag: str = "", kind: str = "") -> dict:
+    notes = journal_store.list_notes(session_id, q, tag, kind)
+    all_tags = sorted({t for n in journal_store.list_notes(session_id) for t in n["tags"]})
+    return {"items": notes, "tags": all_tags, "kinds": journal_store.NOTE_KINDS}
+
+
+@app.post("/api/journal/notes")
+def journal_note_add(payload: NoteIn) -> dict:
+    try:
+        return {"item": journal_store.create_note(payload.session_id, payload.title, payload.body, payload.tags, payload.kind, payload.pinned)}
+    except ValueError as exc:
+        raise _journal_error(exc)
+
+
+@app.patch("/api/journal/notes/{note_id:int}")
+def journal_note_patch(note_id: int, payload: NotePatchIn) -> dict:
+    try:
+        item = journal_store.update_note(note_id, payload.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise _journal_error(exc)
+    if not item:
+        raise HTTPException(status_code=404, detail="Note not found.")
+    return {"item": item}
+
+
+@app.delete("/api/journal/notes/{note_id:int}")
+def journal_note_delete(note_id: int) -> dict:
+    if not journal_store.delete_note(note_id):
+        raise HTTPException(status_code=404, detail="Note not found.")
+    return {"deleted": True}
+
+
+@app.get("/api/journal/people")
+def journal_people(session_id: str, character_id: int | None = None) -> dict:
+    return {"items": journal_store.people(session_id, character_id)}
+
+
+@app.post("/api/journal/recap")
+def journal_recap(payload: RecapIn) -> dict:
+    """Ask the storyteller for a short recap of the story so far and keep it as a note."""
+    from core.chat_engine import send_to_llm
+    messages = journal_store.recap_prompt(payload.session_id)
+    if not messages:
+        raise HTTPException(status_code=400, detail="There is not enough story yet to recap.")
+    reply = send_to_llm(messages, temperature=0.3, max_tokens=400).strip()
+    if reply.startswith(("[LM Studio error]", "[Error]")):
+        raise HTTPException(status_code=503, detail=reply.partition("] ")[2] or "The storyteller could not be reached.")
+    stamp = now_iso()[:16].replace("T", " ")
+    return {"item": journal_store.create_note(payload.session_id, f"Recap — {stamp}", reply, ["recap"], "recap")}
+
+
+class HelpPictureIn(BaseModel):
+    section: str
+    id: str
+
+
+@app.post("/api/help/picture")
+def help_picture(payload: HelpPictureIn) -> dict:
+    """Generate (once) the illustration for one Help entry. Only pictures
+    defined by the Help content can be requested; the prompt is never taken
+    from the client."""
+    from backend.app.domain.help_content import find_picture_spec, HELP_MEDIA
+    spec = find_picture_spec(payload.section, payload.id)
+    if not spec:
+        raise HTTPException(status_code=404, detail="No picture is defined for that Help entry.")
+    target = spec["path"]
+    if not target.is_file():
+        source = download_image(spec["prompt"], width=768, height=432,
+                                providers=["pollinations", "comfyui", "automatic1111"])
+        if not source:
+            raise HTTPException(status_code=503, detail="No image generator is available right now. Try again later.")
+        from PIL import Image
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(source) as im:
+            im.convert("RGB").resize((640, 360)).save(target, "JPEG", quality=82, optimize=True)
+    return {"url": "/media/" + str(target.relative_to(MEDIA_DIR)).replace("\\", "/")}
 
 
 @app.get("/api/random/prompts")
@@ -605,6 +988,13 @@ def explore_general_web_search(payload: GeneralWebSearchIn) -> dict:
 
 
 def _insert_character(character: dict) -> int:
+    reality_signature = multiverse.generate_reality_signature(
+        character.get("origin_world") or character.get("scenario") or "",
+        character.get("reality_type") or "Prime Reality",
+    )
+    power_tier = character.get("power_tier")
+    if power_tier is None:
+        power_tier = multiverse.power_tier_for_level(character.get("level", 1))
     conn = get_conn()
     try:
         cur = conn.execute(
@@ -613,8 +1003,8 @@ def _insert_character(character: dict) -> int:
               (name,age,gender,race,alignment,background,personality,skin,hair,eyes,body_type,height,measurements,looks,
                charisma_stat,strength,dexterity,intelligence,wisdom,constitution,speed,luck,profession,weapon_training,
                magic_type,power_system,spells,skills,traits,backstory,scenario,goals,quirks,level,xp,photo_path,
-               emotion_styles,identity_stability,created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               emotion_styles,identity_stability,reality_signature,power_tier,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 character.get("name", "Unknown"),
@@ -662,11 +1052,24 @@ def _insert_character(character: dict) -> int:
                 character.get("photo_path", ""),
                 json.dumps(character.get("emotion_styles", [])),
                 character.get("identity_stability", 50),
+                json.dumps(reality_signature),
+                power_tier,
                 now_iso(),
             ),
         )
+        char_id = cur.lastrowid
+        # Save fields added via schema migration (safe: columns exist after init_db).
+        conn.execute(
+            "UPDATE characters SET origin=?, secondary_ancestry=?, values_json=? WHERE id=?",
+            (
+                character.get("origin", "Original fantasy world"),
+                character.get("secondary_ancestry", ""),
+                character.get("values_json", "{}"),
+                char_id,
+            ),
+        )
         conn.commit()
-        return cur.lastrowid
+        return char_id
     finally:
         conn.close()
 
@@ -699,6 +1102,26 @@ def remove_character(character_id: int) -> dict:
     return {"deleted": delete_character(character_id)}
 
 
+class CharacterFieldUpdate(BaseModel):
+    field: str
+    value: str
+
+
+_EDITABLE_FIELDS = {"backstory", "scenario", "goals", "name", "alignment", "background"}
+
+
+@app.patch("/api/characters/{character_id}/field")
+def patch_character_field(character_id: int, payload: CharacterFieldUpdate) -> dict:
+    if payload.field not in _EDITABLE_FIELDS:
+        raise HTTPException(status_code=400, detail=f"Field '{payload.field}' is not editable via this endpoint")
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE characters SET {payload.field}=? WHERE id=?",
+            (payload.value, character_id),
+        )
+    return {"updated": True, "field": payload.field}
+
+
 @app.get("/api/chat/history")
 def chat_history(session_id: str = "default", limit: int = 100) -> list[dict]:
     return get_history(session_id, limit)
@@ -715,9 +1138,11 @@ def send_chat(payload: ChatSendIn) -> dict:
     character = get_full_sheet(payload.character_id) if payload.character_id else None
     character_name = payload.character_name or ((character or {}).get("name") if character else "Character")
     world = get_world(payload.world_id) if payload.world_id else None
-    relationship = ensure_relationship(character_name) if character_name else None
+    identity = _story_identity(character_name, payload.session_id)
+    relationship = ensure_relationship(identity) if character_name else None
     user_line = f"**{payload.user_name or 'User'}:** {payload.content}"
-    save_message("user", user_line, payload.session_id)
+    if not payload.retry:
+        save_message("user", user_line, payload.session_id)
     history = get_history(payload.session_id, limit=50)
     system_prompt = build_system_prompt(character=character, world=world, relationship=relationship, user_name=payload.user_name or "User")
     profile_bits = [payload.user_name or "User"]
@@ -731,12 +1156,12 @@ def send_chat(payload: ChatSendIn) -> dict:
         system_prompt += "\n[MULTI-PERSPECTIVE: Write responses for each character with their name prefix. Characters in scene: " + ", ".join(participants) + ".]"
     elif character_name:
         system_prompt += f"\n[Always prefix responses with **{character_name}:** to show who is speaking.]"
-    quests = get_active_quests(character_name) if character_name else []
+    quests = get_active_quests(character_name, payload.character_id) if character_name else []
     if quests:
         system_prompt += "\n[Quests: " + "; ".join(q["title"][:30] for q in quests[:3]) + "]"
     try:
         from core.companion_soul import build_soul_prompt
-        soul_context = build_soul_prompt(character_name)
+        soul_context = build_soul_prompt(identity)
         if soul_context:
             system_prompt += f"\n{soul_context}"
     except Exception:
@@ -748,10 +1173,18 @@ def send_chat(payload: ChatSendIn) -> dict:
             system_prompt += f"\n{lore_context}"
     except Exception:
         pass
+    if payload.extra_context:
+        # Kept out of the saved message content so chat history stays clean
+        # when reloaded -- this is prompt context only, not part of what the
+        # player actually said.
+        system_prompt += f"\n[Context: {payload.extra_context}]"
     messages = [{"role": "system", "content": system_prompt}]
-    messages.extend({"role": msg["role"], "content": msg["content"]} for msg in history[-40:])
+    # Keep at least the last 30 turns in context so replies stay consistent
+    # with recent events, on top of the persistent memory facts below.
+    messages.extend({"role": msg["role"], "content": msg["content"]} for msg in history[-RECENT_HISTORY_MESSAGES:])
     try:
-        memory_context = memory_engine.build_memory_context(query=payload.content, character_name=character_name)
+        memory_context = memory_engine.build_memory_context(
+            query=payload.content, character_name=character_name, session_id=_story_session(payload.session_id))
         if memory_context:
             messages[-1]["content"] += f"\n[Memory: {memory_context}]"
     except Exception:
@@ -760,14 +1193,27 @@ def send_chat(payload: ChatSendIn) -> dict:
         response = send_to_llm(messages, temperature=payload.temperature)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
-    save_message("assistant", response, payload.session_id)
+    if not response.startswith(("[LM Studio error]", "[Error]")):
+        save_message("assistant", response, payload.session_id)
+        try:
+            # Auto-accumulate memory from actual play so later replies stay
+            # consistent even after the recent-message window scrolls past
+            # this exchange -- build_memory_context() surfaces this back later.
+            memory_engine.store_fact(
+                f"{payload.user_name or 'Player'} said: {payload.content[:200]} | "
+                f"{character_name or 'AI'} replied: {response[:200]}",
+                source="auto", character_name=character_name or "",
+                    session_id=_story_session(payload.session_id),
+            )
+        except Exception:
+            log.debug("Auto memory storage failed", exc_info=True)
     if character_name:
         sentiment = "positive" if any(word in payload.content.lower() for word in ["love", "kiss", "hug", "thank", "happy"]) else "neutral"
         if any(word in payload.content.lower() for word in ["hate", "attack", "kill", "angry"]):
             sentiment = "negative"
         if any(word in payload.content.lower() for word in ["flirt", "seduce", "intimate", "desire"]):
             sentiment = "flirt"
-        record_interaction(character_name, sentiment, payload.content[:80])
+        record_interaction(identity, sentiment, payload.content[:80])
         try:
             from core.companion_soul import update_affect
             update_affect(character_name, sentiment)
@@ -777,6 +1223,115 @@ def send_chat(payload: ChatSendIn) -> dict:
         award_xp(payload.character_id, 5, "chat")
     _sync_world_from_text(payload.world_id, response)
     return {"reply": response, "session_id": payload.session_id}
+
+
+@app.post("/api/chat/stream")
+def stream_chat(payload: ChatSendIn) -> StreamingResponse:
+    """SSE streaming variant of /api/chat/send.
+    Yields text chunks as they arrive from LM Studio so the frontend can
+    display tokens in real-time without waiting for the full reply.
+    Final event: data: {"id": <msg_id>, "done": true}
+    """
+    from core.chat_engine import stream_from_llm
+    character = get_full_sheet(payload.character_id) if payload.character_id else None
+    character_name = payload.character_name or ((character or {}).get("name") if character else "Character")
+    world = get_world(payload.world_id) if payload.world_id else None
+    identity = _story_identity(character_name, payload.session_id)
+    relationship = ensure_relationship(identity) if character_name else None
+    user_line = f"**{payload.user_name or 'User'}:** {payload.content}"
+    if not payload.retry:
+        save_message("user", user_line, payload.session_id)
+    history = get_history(payload.session_id, limit=50)
+    system_prompt = build_system_prompt(character=character, world=world, relationship=relationship, user_name=payload.user_name or "User")
+    profile_bits = [payload.user_name or "User"]
+    if payload.user_sex:
+        profile_bits.append(payload.user_sex)
+    if payload.user_age:
+        profile_bits.append(f"age {payload.user_age}")
+    system_prompt += f"\n[Player: {', '.join(profile_bits)}]"
+    participants = payload.participants or ([character_name] if character_name else [])
+    if len(participants) > 1:
+        system_prompt += "\n[MULTI-PERSPECTIVE: Write responses for each character with their name prefix. Characters in scene: " + ", ".join(participants) + ".]"
+    elif character_name:
+        system_prompt += f"\n[Always prefix responses with **{character_name}:** to show who is speaking.]"
+    quests = get_active_quests(character_name, payload.character_id) if character_name else []
+    if quests:
+        system_prompt += "\n[Quests: " + "; ".join(q["title"][:30] for q in quests[:3]) + "]"
+    try:
+        from core.companion_soul import build_soul_prompt
+        soul_context = build_soul_prompt(identity)
+        if soul_context:
+            system_prompt += f"\n{soul_context}"
+    except Exception:
+        pass
+    try:
+        from core.lorebook import build_lorebook_context
+        lore_context = build_lorebook_context(payload.content, payload.world_id or 0)
+        if lore_context:
+            system_prompt += f"\n{lore_context}"
+    except Exception:
+        pass
+    if payload.extra_context:
+        system_prompt += f"\n[Context: {payload.extra_context}]"
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend({"role": msg["role"], "content": msg["content"]} for msg in history[-RECENT_HISTORY_MESSAGES:])
+    try:
+        memory_context = memory_engine.build_memory_context(
+            query=payload.content, character_name=character_name, session_id=_story_session(payload.session_id))
+        if memory_context:
+            messages[-1]["content"] += f"\n[Memory: {memory_context}]"
+    except Exception:
+        pass
+
+    import json as _json
+
+    def _generate():
+        full = []
+        for chunk in stream_from_llm(messages, temperature=payload.temperature):
+            full.append(chunk)
+            yield f"data: {_json.dumps({'text': chunk})}\n\n"
+        full_reply = "".join(full)
+        failed = full_reply.startswith(("[LM Studio error]", "[Error]"))
+        msg_id = None
+        if not failed:
+            save_message("assistant", full_reply, payload.session_id)
+            conn = get_conn()
+            row = conn.execute(
+                "SELECT id FROM messages WHERE session_id=? ORDER BY id DESC LIMIT 1",
+                (payload.session_id,),
+            ).fetchone()
+            conn.close()
+            msg_id = row["id"] if row else None
+        if not failed:
+            try:
+                memory_engine.store_fact(
+                    f"{payload.user_name or 'Player'} said: {payload.content[:200]} | "
+                    f"{character_name or 'AI'} replied: {full_reply[:200]}",
+                    source="auto", character_name=character_name or "",
+                    session_id=_story_session(payload.session_id),
+                )
+            except Exception:
+                pass
+            if character_name:
+                sentiment = "positive" if any(w in payload.content.lower() for w in ["love","kiss","hug","thank","happy"]) else "neutral"
+                if any(w in payload.content.lower() for w in ["hate","attack","kill","angry"]):
+                    sentiment = "negative"
+                if any(w in payload.content.lower() for w in ["flirt","seduce","intimate","desire"]):
+                    sentiment = "flirt"
+                record_interaction(identity, sentiment, payload.content[:80])
+                try:
+                    from core.companion_soul import update_affect
+                    update_affect(character_name, sentiment)
+                except Exception:
+                    pass
+        if payload.character_id:
+            award_xp(payload.character_id, 5, "chat")
+        _sync_world_from_text(payload.world_id, full_reply)
+        yield f"data: {_json.dumps({'id': msg_id, 'done': True})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_generate(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/api/chat/regen")
@@ -808,6 +1363,75 @@ def update_chat_message(message_id: int, payload: ChatEditIn) -> dict:
 def mark_chat_moment(message_id: int) -> dict:
     tag_moment(message_id, True)
     return {"tagged": True}
+
+
+@app.delete("/api/chat/messages/{message_id}/moment")
+def unmark_chat_moment(message_id: int) -> dict:
+    tag_moment(message_id, False)
+    return {"tagged": False}
+
+
+@app.delete("/api/chat/messages/{message_id}/rewind")
+def rewind_chat_to(message_id: int, session_id: str = "default") -> dict:
+    """Delete every message after message_id in the session (keeps message_id itself)."""
+    conn = get_conn()
+    conn.execute("DELETE FROM messages WHERE id > ? AND session_id = ?", (message_id, session_id))
+    conn.commit()
+    conn.close()
+    return {"rewound": True}
+
+
+@app.post("/api/chat/messages/{message_id}/memory")
+def save_message_to_memory(message_id: int) -> dict:
+    """Save a chat message as a persistent memory fact."""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Message not found")
+    fact = dict(row)["content"]
+    memory_engine.store_fact(fact, source="chat-pin", memory_type="episodic", importance=0.9,
+                             session_id=_story_session(dict(row)["session_id"]))
+    return {"saved": True, "fact": fact[:120]}
+
+
+@app.post("/api/chat/progressions")
+async def chat_progressions(session_id: str = "default", context: str = "") -> dict:
+    """Get 5 logical next-step options based on current chat context."""
+    history = get_history(session_id, limit=10)
+    last_ai = next((m['content'] for m in reversed(history) if m['role']=='assistant'), '')
+    prompt_text = last_ai or context or "You are at the start of an adventure."
+    try:
+        raw = send_to_llm([
+            {"role":"system","content":"You are a tabletop RPG narrator. Given the last story beat, generate exactly 5 short, distinct player action options (max 12 words each). Format: numbered list 1-5, one per line, no extra text."},
+            {"role":"user","content":f"Last beat: {prompt_text[:400]}\nGenerate 5 options:"}
+        ], temperature=0.85, max_tokens=200)
+        lines = [l.strip() for l in raw.strip().split('\n') if l.strip() and l.strip()[0].isdigit()]
+        options = [l.lstrip('0123456789.) ').strip() for l in lines][:5]
+        if len(options)<3:
+            options = ["Investigate the area","Talk to a nearby NPC","Check your inventory","Move to a new location","Wait and observe"]
+    except Exception:
+        options = ["Investigate the area","Talk to a nearby NPC","Check your inventory","Move to a new location","Wait and observe"]
+    return {"options": options}
+
+
+@app.post("/api/chat/alternatives")
+async def chat_alternatives(session_id: str = "default", message_id: int = 0) -> dict:
+    """Get 5 alternative outcomes for a given story moment."""
+    history = get_history(session_id, limit=8)
+    context = ' '.join(m['content'] for m in history[-3:])
+    try:
+        raw = send_to_llm([
+            {"role":"system","content":"You are a tabletop RPG narrator. Given this story moment, generate 5 alternative story outcomes that could have happened differently (max 15 words each). Format: numbered list 1-5."},
+            {"role":"user","content":f"Story context: {context[:500]}\nGenerate 5 alternative outcomes:"}
+        ], temperature=0.9, max_tokens=250)
+        lines = [l.strip() for l in raw.strip().split('\n') if l.strip() and l.strip()[0].isdigit()]
+        options = [l.lstrip('0123456789.) ').strip() for l in lines][:5]
+        if len(options)<3:
+            options = ["A stranger intervenes","The enemy retreats","A portal opens nearby","A hidden passage reveals itself","An ally arrives at the last moment"]
+    except Exception:
+        options = ["A stranger intervenes","The enemy retreats","A portal opens nearby","A hidden passage reveals itself","An ally arrives at the last moment"]
+    return {"options": options}
 
 
 @app.delete("/api/chat/session/{session_id}")
@@ -846,13 +1470,122 @@ def create_chat_save(payload: ChatSaveIn) -> dict:
     conn = get_conn()
     try:
         conn.execute(
-            "INSERT INTO chat_saves (session_id, save_name, character_name, created_at) VALUES (?, ?, ?, ?)",
-            (payload.session_id, payload.save_name, payload.character_name, now_iso()),
+            "INSERT INTO chat_saves (session_id, save_name, character_name, world_id, character_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (payload.session_id, payload.save_name, payload.character_name, payload.world_id, payload.character_id, now_iso()),
         )
         conn.commit()
         return {"saved": True}
     finally:
         conn.close()
+
+
+@app.get("/api/scenarios/categories")
+def scenario_categories() -> list[dict]:
+    result = []
+    for category in scenarios.CATEGORIES:
+        entry = dict(category)
+        if category.get("presets") == "anime":
+            entry["scenarios"] = [{"type": "preset", "name": name} for name in ANIME_PRESETS]
+        elif category.get("presets") == "game":
+            entry["scenarios"] = [{"type": "preset", "name": name} for name in GAME_PRESETS]
+        else:
+            entry["scenarios"] = [{"type": "prebuilt", "name": name, "opening": get_prebuilt_opening(name)} for name in get_prebuilt_by_category(category["key"])]
+        result.append(entry)
+    return result
+
+
+@app.get("/api/scenarios/covers")
+def scenario_covers() -> dict[str, str]:
+    """Return {scenario_name: url} for every pre-generated cover on disk."""
+    result: dict[str, str] = {}
+    for category in scenarios.CATEGORIES:
+        if category.get("presets") in ("anime", "game"):
+            continue
+        for name in get_prebuilt_by_category(category.get("key", "")):
+            url = cover_url(name)
+            if url:
+                result[name] = url
+    return result
+
+
+class ScenarioCoverIn(BaseModel):
+    name: str
+    opening: str = ""
+    category: str = ""
+    force: bool = False
+
+
+@app.post("/api/scenarios/covers/generate")
+def generate_scenario_cover(payload: ScenarioCoverIn) -> dict:
+    """Generate and save a cover image for one scenario (idempotent unless force=True)."""
+    url = generate_cover(payload.name, payload.opening, payload.category, payload.force)
+    if url:
+        return {"url": url, "name": payload.name}
+    raise HTTPException(status_code=503, detail="Image generation failed.")
+
+
+@app.post("/api/scenarios/covers/regenerate-all")
+def regenerate_all_covers() -> dict:
+    """Kick off background regeneration of ALL scenario covers (force, overwrites existing)."""
+    all_scens: list[dict] = []
+    for cat in scenarios.CATEGORIES:
+        cat_key = cat.get("key", "")
+        if cat.get("presets") in ("anime", "game"):
+            continue
+        for name in get_prebuilt_by_category(cat_key):
+            all_scens.append({"name": name, "opening": get_prebuilt_opening(name), "category": cat_key})
+    if not all_scens:
+        return {"started": False, "count": 0}
+    start_pregen_thread(all_scens, force=True)
+    return {"started": True, "count": len(all_scens)}
+
+
+@app.post("/api/scenarios/start")
+def start_scenario(payload: ScenarioStartIn) -> dict:
+    defaults = scenarios.category_defaults(payload.category)
+    session_id = f"game-{uuid.uuid4().hex[:12]}"
+    if payload.scenario_type == "prebuilt" and payload.scenario_name:
+        world = create_prebuilt_world(payload.scenario_name, reality_type=defaults["reality_type"])
+        if world.get("error"):
+            raise HTTPException(status_code=404, detail=world["error"])
+    else:
+        name = payload.scenario_name or f"{defaults['label']} Reality"
+        world = create_world(name, defaults["magic"], defaults["tech"], defaults["space"], 8,
+                              reality_type=defaults["reality_type"])
+        if payload.scenario_type == "custom" and payload.custom_text.strip():
+            create_entry("Opening Scenario", payload.custom_text.strip(), ["opening", "scenario"],
+                          world_id=world["id"], always_active=True)
+    return {"world": world, "session_id": session_id}
+
+
+@app.get("/api/chat/export/zip")
+async def export_session_zip(session_id: str = "default", character_name: str = "", character_id: int = 0) -> StreamingResponse:
+    import zipfile, io as _io, json as _json
+    buf = _io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("chat.txt", export_chat_txt(session_id))
+        zf.writestr("chat.json", export_chat_json(session_id, character_name))
+        zf.writestr("chat.html", export_chat_html(session_id))
+        if character_id:
+            conn = get_conn()
+            try:
+                sheet_row = conn.execute("SELECT * FROM characters WHERE id=?", (character_id,)).fetchone()
+                if sheet_row:
+                    zf.writestr("character_sheet.json", _json.dumps(dict(sheet_row), indent=2, default=str))
+                inv_rows = conn.execute(
+                    "SELECT * FROM inventory WHERE character_id=?", (character_id,)
+                ).fetchall()
+                if inv_rows:
+                    zf.writestr("inventory.json", _json.dumps([dict(r) for r in inv_rows], indent=2, default=str))
+            finally:
+                conn.close()
+    buf.seek(0)
+    safe_sid = session_id[:12].replace("/", "-").replace("\\", "-")
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="worldweaver-{safe_sid}.zip"'},
+    )
 
 
 @app.get("/api/chat/export/{fmt}", response_class=PlainTextResponse)
@@ -877,6 +1610,48 @@ async def import_chat_upload(file: UploadFile = File(...)) -> dict:
     path.write_bytes(await file.read())
     messages = import_chat_file(str(path))
     return {"messages": messages, "count": len(messages), "path": str(path.relative_to(ROOT))}
+
+
+@app.post("/api/chat/attach")
+async def chat_attach_file(file: UploadFile = File(...)) -> dict:
+    import zipfile, io as _io
+    content = await file.read()
+    fname = file.filename or "file"
+    ext = Path(fname).suffix.lower()
+    lines: list[str] = [f"📎 Attached file: {fname}"]
+    if ext == ".zip":
+        try:
+            with zipfile.ZipFile(_io.BytesIO(content)) as zf:
+                names = zf.namelist()
+                lines.append(f"Contents ({len(names)} files):")
+                for n in names[:40]:
+                    lines.append(f"  • {n}")
+                if len(names) > 40:
+                    lines.append(f"  … and {len(names) - 40} more")
+                # preview first readable text file
+                for n in names:
+                    if Path(n).suffix.lower() in {".txt", ".md", ".json", ".csv", ".py", ".js", ".ts"}:
+                        try:
+                            preview = zf.read(n).decode("utf-8", errors="replace")[:1500]
+                            lines.append(f"\nPreview of {n}:\n{preview}")
+                        except Exception:
+                            pass
+                        break
+        except zipfile.BadZipFile:
+            lines.append("(could not read zip)")
+    elif ext in {".txt", ".md", ".csv", ".py", ".js", ".ts"}:
+        lines.append(content.decode("utf-8", errors="replace")[:3000])
+    elif ext == ".json":
+        try:
+            import json as _json
+            parsed = _json.loads(content)
+            lines.append(_json.dumps(parsed, indent=2)[:3000])
+        except Exception:
+            lines.append(content.decode("utf-8", errors="replace")[:3000])
+    else:
+        lines.append(f"({len(content):,} bytes — binary file, contents not shown)")
+    summary = "\n".join(lines)
+    return {"filename": fname, "summary": summary, "size": len(content)}
 
 
 @app.post("/api/chat/import/url")
@@ -986,10 +1761,66 @@ def worlds() -> list[dict]:
 
 @app.post("/api/worlds")
 def create_new_world(payload: WorldIn) -> dict:
-    return create_world(payload.name, payload.magic, payload.tech, payload.space, payload.num_locs)
+    return create_world(payload.name, payload.magic, payload.tech, payload.space, payload.num_locs,
+                         ratings=payload.ratings, reality_type=payload.reality_type)
 
 
-@app.get("/api/worlds/{world_id}")
+@app.get("/api/worldscale/axes")
+def worldscale_axes() -> dict:
+    return {"axes": worldscale.WORLD_AXES, "levelLabels": worldscale.AXIS_LEVEL_LABELS}
+
+
+@app.get("/api/weapons/tiers")
+def weapon_tiers() -> list[dict]:
+    return weapons.WEAPON_TIERS
+
+
+@app.get("/api/multiverse/reality-types")
+def multiverse_reality_types() -> dict:
+    return multiverse.REALITY_TYPES
+
+
+@app.get("/api/multiverse/power-tiers")
+def multiverse_power_tiers() -> list[dict]:
+    return multiverse.POWER_TIERS
+
+
+@app.post("/api/multiverse/travel")
+def multiverse_travel(payload: MultiverseTravelIn) -> dict:
+    origin_ratings = payload.origin_ratings
+    if origin_ratings is None and payload.origin_world_id is not None:
+        origin_world = get_world(payload.origin_world_id)
+        origin_ratings = origin_world["ratings"] if origin_world else None
+    dest_ratings = payload.dest_ratings
+    dest_reality_type = payload.dest_reality_type
+    if dest_ratings is None and payload.dest_world_id is not None:
+        dest_world = get_world(payload.dest_world_id)
+        if dest_world:
+            dest_ratings = dest_world["ratings"]
+            dest_reality_type = dest_world.get("reality_type", dest_reality_type)
+    if origin_ratings is None or dest_ratings is None:
+        raise HTTPException(status_code=400, detail="Provide origin/dest ratings or world ids.")
+
+    character_power_tier = payload.character_power_tier
+    inventory_weapon_tiers: list[int] = []
+    if payload.character_id is not None:
+        sheet = get_full_sheet(payload.character_id)
+        if sheet:
+            character_power_tier = sheet.get("power_tier", character_power_tier) or character_power_tier
+        conn = get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT item_name FROM inventory WHERE character_id=? AND equip_slot IS NOT NULL AND equip_slot != ''",
+                (payload.character_id,)).fetchall()
+        finally:
+            conn.close()
+        inventory_weapon_tiers = [weapons.tier_for_weapon_name(row["item_name"]) for row in rows]
+
+    return multiverse.travel_report(origin_ratings, dest_ratings, dest_reality_type,
+                                     character_power_tier, inventory_weapon_tiers)
+
+
+@app.get("/api/worlds/{world_id:int}")
 def world_detail(world_id: int) -> dict:
     world = get_world(world_id)
     if not world:
@@ -1000,6 +1831,27 @@ def world_detail(world_id: int) -> dict:
 @app.get("/api/worlds/{world_id}/locations")
 def world_locations(world_id: int) -> list[dict]:
     return get_locations(world_id)
+
+
+class LocationIn(BaseModel):
+    name: str
+    terrain: str = "Plains"
+    loc_type: str = "area"
+    description: str = ""
+    x: float = 50.0
+    y: float = 50.0
+
+@app.post("/api/worlds/{world_id}/locations")
+def add_world_location(world_id: int, loc: LocationIn):
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO world_locations (world_id, name, loc_type, terrain, description, x, y) VALUES (?,?,?,?,?,?,?)",
+        (world_id, loc.name, loc.loc_type, loc.terrain, loc.description, int(loc.x), int(loc.y))
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM world_locations WHERE id=?", (cur.lastrowid,)).fetchone()
+    conn.close()
+    return dict(row)
 
 
 @app.post("/api/worlds/{world_id}/tick")
@@ -1043,6 +1895,94 @@ def create_world_dungeon(world_id: int, payload: DungeonIn) -> dict:
 @app.post("/api/worlds/combat")
 def world_combat(payload: CombatIn) -> dict:
     return simulate_combat(payload.attacker, payload.defender)
+
+
+def _grant_combat_reward(character_id: int | None, world_id: int | None) -> dict:
+    if not character_id:
+        return {}
+    xp_result = award_xp(character_id, 30, "combat victory")
+    tier = 2
+    if world_id:
+        world = get_world(world_id)
+        if world:
+            tier = world.get("ratings", {}).get("weapon", 2)
+    tier_info = weapons.describe_tier(tier)
+    item_name = random.choice(tier_info["examples"])
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO inventory (character_id,item_name,item_type,quantity,value,description,equip_slot,stat_bonuses,source,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (character_id, item_name, "weapon", 1, 0, "Looted from a defeated foe.", None,
+             json.dumps({"weapon_tier": tier}), "combat", now_iso()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"xp_awarded": 30, "leveled_up": xp_result.get("levelled_up", False), "loot": item_name}
+
+
+def _combat_response(result: dict, character_id: int | None = None, world_id: int | None = None) -> dict:
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    reward = {}
+    if result.get("status") == "won":
+        reward = _grant_combat_reward(character_id or result.get("character_id"), world_id or result.get("world_id"))
+    return {**result, "reward": reward}
+
+
+@app.post("/api/combat/start")
+def combat_start(payload: CombatStartIn) -> dict:
+    danger = 4
+    if payload.world_id:
+        world = get_world(payload.world_id)
+        if world:
+            danger = world.get("ratings", {}).get("danger", 4)
+    result = tactical_combat.start_encounter(payload.session_id, payload.world_id, payload.character_id, danger)
+    return _combat_response(result, payload.character_id, payload.world_id)
+
+
+@app.get("/api/combat/active")
+def combat_active(session_id: str = "default") -> dict | None:
+    return tactical_combat.get_active_encounter(session_id) or None
+
+
+@app.get("/api/combat/{encounter_id}")
+def combat_get(encounter_id: int) -> dict:
+    result = tactical_combat.get_encounter(encounter_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Encounter not found.")
+    return result
+
+
+@app.post("/api/combat/{encounter_id}/move")
+def combat_move(encounter_id: int, payload: CombatMoveIn) -> dict:
+    result = tactical_combat.move_unit(encounter_id, payload.unit_id, payload.x, payload.y)
+    return _combat_response(result, result.get("character_id"), result.get("world_id"))
+
+
+@app.post("/api/combat/{encounter_id}/attack")
+def combat_attack(encounter_id: int, payload: CombatTargetIn) -> dict:
+    result = tactical_combat.attack_unit(encounter_id, payload.unit_id, payload.target_id, payload.power_attack)
+    return _combat_response(result, result.get("character_id"), result.get("world_id"))
+
+
+@app.post("/api/combat/{encounter_id}/cast")
+def combat_cast(encounter_id: int, payload: CombatCastIn) -> dict:
+    result = tactical_combat.cast_spell(encounter_id, payload.unit_id, payload.spell_name, payload.target_id)
+    return _combat_response(result, result.get("character_id"), result.get("world_id"))
+
+
+@app.post("/api/combat/{encounter_id}/end-turn")
+def combat_end_turn(encounter_id: int, payload: CombatUnitIn) -> dict:
+    result = tactical_combat.end_turn(encounter_id, payload.unit_id)
+    return _combat_response(result, result.get("character_id"), result.get("world_id"))
+
+
+@app.post("/api/combat/{encounter_id}/special-action")
+def combat_special_action(encounter_id: int, payload: CombatSpecialActionIn) -> dict:
+    result = tactical_combat.special_action(encounter_id, payload.unit_id, payload.action)
+    return _combat_response(result, result.get("character_id"), result.get("world_id"))
 
 
 @app.get("/api/worlds/{world_id}/resources")
@@ -1100,6 +2040,188 @@ def create_world_save(world_id: int, payload: CampaignSaveIn) -> dict:
 @app.delete("/api/worlds/{world_id}")
 def remove_world(world_id: int) -> dict:
     return {"deleted": delete_world(world_id)}
+
+
+class WorldVisitIn(BaseModel):
+    character_id: int | None = None
+    location_name: str = ""
+
+@app.post("/api/worlds/{world_id}/visit")
+def record_world_visit(world_id: int, payload: WorldVisitIn) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO world_visits (world_id, character_id, location_name, visited_at) VALUES (?,?,?,?)",
+            (world_id, payload.character_id, payload.location_name, now_iso())
+        )
+        conn.commit()
+        return {"visited": True}
+    except Exception:
+        return {"visited": False}
+    finally:
+        conn.close()
+
+
+class EconomyAddIn(BaseModel):
+    gold: int = 0
+    credits: int = 0
+    tokens: int = 0
+
+@app.post("/api/characters/{character_id}/economy/add")
+def add_economy(character_id: int, payload: EconomyAddIn) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO economy (character_id, gold, credits, tokens) VALUES (?,?,?,?) "
+            "ON CONFLICT(character_id) DO UPDATE SET "
+            "gold=gold+excluded.gold, credits=credits+excluded.credits, tokens=tokens+excluded.tokens",
+            (character_id, max(0, payload.gold), max(0, payload.credits), max(0, payload.tokens))
+        )
+        conn.commit()
+        row = conn.execute("SELECT gold, credits, tokens FROM economy WHERE character_id=?", (character_id,)).fetchone()
+        return dict(row) if row else {"gold": 0, "credits": 0, "tokens": 0}
+    finally:
+        conn.close()
+
+
+# ── Game Saves ──────────────────────────────────────────────────────────────
+
+class GameSaveIn(BaseModel):
+    save_name: str
+    character_id: int | None = None
+    session_id: str = "default"
+    world_id: int | None = None
+    notes: str = ""
+
+@app.get("/api/game-saves")
+def list_game_saves(character_id: int | None = None) -> list[dict]:
+    conn = get_conn()
+    try:
+        if character_id:
+            rows = conn.execute(
+                "SELECT * FROM game_saves WHERE character_id=? ORDER BY created_at DESC",
+                (character_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM game_saves ORDER BY created_at DESC LIMIT 50"
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+@app.post("/api/game-saves")
+def create_game_save(payload: GameSaveIn) -> dict:
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO game_saves (save_name, character_id, session_id, world_id, notes, created_at) VALUES (?,?,?,?,?,?)",
+            (payload.save_name, payload.character_id, payload.session_id, payload.world_id, payload.notes, now_iso())
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "save_name": payload.save_name, "created": True}
+    finally:
+        conn.close()
+
+@app.delete("/api/game-saves/{save_id}")
+def delete_game_save(save_id: int) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM game_saves WHERE id=?", (save_id,))
+        conn.commit()
+        return {"deleted": True}
+    finally:
+        conn.close()
+
+
+# ── NPC Memory ───────────────────────────────────────────────────────────────
+
+class NpcMemoryIn(BaseModel):
+    character_id: int
+    npc_name: str
+    fact: str
+    session_id: str = "default"
+
+@app.get("/api/npc-memory")
+def get_npc_memory(character_id: int, npc_name: str = "") -> list[dict]:
+    conn = get_conn()
+    try:
+        if npc_name:
+            rows = conn.execute(
+                "SELECT * FROM npc_memory WHERE character_id=? AND npc_name=? ORDER BY created_at DESC LIMIT 10",
+                (character_id, npc_name)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM npc_memory WHERE character_id=? ORDER BY created_at DESC LIMIT 50",
+                (character_id,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+@app.post("/api/npc-memory")
+def add_npc_memory(payload: NpcMemoryIn) -> dict:
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO npc_memory (character_id, npc_name, fact, session_id, created_at) VALUES (?,?,?,?,?)",
+            (payload.character_id, payload.npc_name, payload.fact, payload.session_id, now_iso())
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "stored": True}
+    finally:
+        conn.close()
+
+
+# ── Crafting ─────────────────────────────────────────────────────────────────
+
+class CraftIn(BaseModel):
+    item_id_a: int
+    item_id_b: int
+
+@app.post("/api/characters/{character_id}/craft")
+def craft_items(character_id: int, payload: CraftIn) -> dict:
+    conn = get_conn()
+    try:
+        row_a = conn.execute(
+            "SELECT * FROM inventory WHERE id=? AND character_id=?", (payload.item_id_a, character_id)
+        ).fetchone()
+        row_b = conn.execute(
+            "SELECT * FROM inventory WHERE id=? AND character_id=?", (payload.item_id_b, character_id)
+        ).fetchone()
+        if not row_a or not row_b:
+            raise HTTPException(status_code=404, detail="One or both items not found")
+        tier_a = row_a["weapon_tier"] or 0
+        tier_b = row_b["weapon_tier"] or 0
+        new_tier = min(10, max(tier_a, tier_b) + 1)
+        new_name = f"Crafted {row_a['item_name']} + {row_b['item_name']}"
+        conn.execute("DELETE FROM inventory WHERE id IN (?,?)", (payload.item_id_a, payload.item_id_b))
+        cur = conn.execute(
+            "INSERT INTO inventory (character_id, item_name, item_type, weapon_tier, quantity, created_at) VALUES (?,?,?,?,?,?)",
+            (character_id, new_name, "weapon", new_tier, 1, now_iso())
+        )
+        conn.commit()
+        return {"crafted": True, "item_id": cur.lastrowid, "item_name": new_name, "weapon_tier": new_tier}
+    finally:
+        conn.close()
+
+
+# ── Visited Worlds ────────────────────────────────────────────────────────────
+
+@app.get("/api/worlds/visited")
+def visited_worlds(character_id: int | None = None) -> list[dict]:
+    conn = get_conn()
+    try:
+        if character_id:
+            rows = conn.execute(
+                "SELECT DISTINCT world_id FROM world_visits WHERE character_id=?", (character_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT DISTINCT world_id FROM world_visits").fetchall()
+        return [{"world_id": r["world_id"]} for r in rows]
+    finally:
+        conn.close()
 
 
 @app.get("/api/media/providers")
@@ -1236,13 +2358,13 @@ def relationship_interaction(payload: RelationshipIn) -> dict:
 
 
 @app.get("/api/quests/active")
-def active_quests(character_name: str = "") -> list[dict]:
-    return get_active_quests(character_name)
+def active_quests(character_name: str = "", character_id: int | None = None) -> list[dict]:
+    return get_active_quests(character_name, character_id)
 
 
 @app.get("/api/quests/history")
-def quest_history(character_name: str = "", limit: int = 20) -> list[dict]:
-    return get_quest_history(character_name, limit)
+def quest_history(character_name: str = "", limit: int = 20, character_id: int | None = None) -> list[dict]:
+    return get_quest_history(character_name, limit, character_id)
 
 
 @app.post("/api/quests/generate")
@@ -1264,10 +2386,10 @@ def progress_quest(quest_id: int, payload: QuestProgressIn) -> dict:
 
 @app.post("/api/quests/{quest_id}/complete")
 def finish_quest(quest_id: int, character_id: int | None = None) -> dict:
-    complete_quest(quest_id)
+    result = complete_quest(quest_id, character_id=character_id)
     if character_id:
-        award_xp(character_id, 50, "quest")
-    return {"completed": True}
+        result["sheet"] = get_full_sheet(character_id)
+    return {"completed": True, **result}
 
 
 @app.delete("/api/quests/{quest_id}")
@@ -1289,8 +2411,93 @@ def character_sheet(character_id: int) -> dict:
 
 @app.post("/api/characters/{character_id}/xp")
 def add_character_xp(character_id: int, payload: XpIn) -> dict:
-    award_xp(character_id, payload.amount, payload.reason)
-    return {"sheet": get_full_sheet(character_id)}
+    result = award_xp(character_id, payload.amount, payload.reason)
+    return {"sheet": get_full_sheet(character_id), **result}
+
+
+@app.get("/api/characters/{character_id}/level-up/pending")
+def get_level_up_pending_endpoint(character_id: int) -> dict:
+    pending = get_pending_level_up(character_id)
+    if not pending:
+        return {"has_pending": False}
+    try:
+        choices = json.loads(pending["choices_json"] or "{}")
+    except Exception:
+        choices = {}
+    return {"has_pending": True, "new_level": pending["new_level"], "choices": choices}
+
+
+@app.get("/api/characters/{character_id}/level-up/open")
+def open_level_up(character_id: int) -> dict:
+    from core.levelling import get_pending_level_up, _generate_level_up_choices, get_character, level_from_xp
+    pending = get_pending_level_up(character_id)
+    if pending:
+        try:
+            choices = json.loads(pending["choices_json"] or "{}")
+        except Exception:
+            choices = {}
+        return {"has_pending": True, "new_level": pending["new_level"], "choices": choices}
+    # No pending — check if character is at a level with unclaimed up choices
+    ch = get_character(character_id)
+    if not ch:
+        return {"has_pending": False}
+    return {"has_pending": False, "message": "No level-up available yet. Earn XP to level up!"}
+
+
+class StoryGiftsIn(BaseModel):
+    pass
+
+
+@app.post("/api/characters/{character_id}/level-up/story-gifts")
+def get_story_gifts(character_id: int) -> dict:
+    from core.levelling import get_pending_level_up, generate_story_gifts, get_character, level_from_xp
+    pending = get_pending_level_up(character_id)
+    if pending:
+        new_level = pending["new_level"]
+    else:
+        ch = get_character(character_id)
+        if not ch:
+            return {"gifts": []}
+        new_level = level_from_xp(ch.get("xp", 0) or 0)
+    gifts = generate_story_gifts(character_id, new_level)
+    return {"gifts": gifts}
+
+
+class LevelUpClaimIn(BaseModel):
+    stat: str = ""
+    stat_asi: str = ""   # ASI: +2 to one stat
+    stat_a: str = ""     # ASI split: +1 to first stat
+    stat_b: str = ""     # ASI split: +1 to second stat
+    feat: str = ""
+    spell: str = ""
+    skill: str = ""
+    profession: str = ""
+    tree_node: str = ""         # Skill tree node ID to unlock
+    story_ability: str = ""     # JSON string: {name, desc, bonus}
+
+
+@app.post("/api/characters/{character_id}/level-up/claim")
+def claim_level_up_endpoint(character_id: int, payload: LevelUpClaimIn) -> dict:
+    choices_made = {k: v for k, v in payload.model_dump().items() if v}
+    result = claim_level_up(character_id, choices_made)
+    return result
+
+
+class HpChangeIn(BaseModel):
+    amount: int
+    reason: str = ""
+
+@app.post("/api/characters/{character_id}/hp")
+def update_character_hp(character_id: int, payload: HpChangeIn) -> dict:
+    # HP is tracked client-side; this endpoint validates the character exists
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT id FROM characters WHERE id=?", (character_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Character not found")
+        return {"ok": True, "character_id": character_id, "hp_change": payload.amount}
+    finally:
+        conn.close()
 
 
 @app.post("/api/characters/{character_id}/stats")
@@ -1307,13 +2514,130 @@ def learn_character_skill(character_id: int, payload: SkillLearnIn) -> dict:
     return {"updated": ok, "sheet": get_full_sheet(character_id)}
 
 
+@app.post("/api/characters/{character_id}/feats")
+def learn_character_feat(character_id: int, payload: FeatLearnIn) -> dict:
+    ok = add_feat_to_character(character_id, payload.feat)
+    return {"updated": ok, "sheet": get_full_sheet(character_id)}
+
+
+@app.get("/api/spells")
+def list_spells(profession: str | None = None) -> dict:
+    names = spells_domain.spells_for_class(profession) if profession else list(spells_domain.SPELLS.keys())
+    return {"spells": {name: spells_domain.SPELLS[name] for name in names}}
+
+
+@app.post("/api/characters/{character_id}/spells")
+def learn_character_spell(character_id: int, payload: SpellLearnIn) -> dict:
+    if payload.spell not in spells_domain.SPELLS:
+        raise HTTPException(status_code=400, detail="Unknown spell.")
+    ok = add_spell_to_character(character_id, payload.spell)
+    return {"updated": ok, "sheet": get_full_sheet(character_id)}
+
+
+@app.get("/api/weapons/dnd")
+def list_dnd_weapons() -> dict:
+    return {"weapons": dnd_weapons.DND_WEAPONS, "categories": dnd_weapons.WEAPON_CATEGORIES}
+
+
+@app.post("/api/characters/{character_id}/equip")
+def equip_dnd_weapon(character_id: int, payload: WeaponEquipIn) -> dict:
+    weapon = dnd_weapons.DND_WEAPONS.get(payload.weapon_name)
+    if not weapon:
+        raise HTTPException(status_code=400, detail="Unknown weapon.")
+    conn = get_conn()
+    try:
+        conn.execute("UPDATE inventory SET equip_slot=NULL WHERE character_id=? AND equip_slot=?",
+                     (character_id, payload.equip_slot))
+        existing = conn.execute(
+            "SELECT id FROM inventory WHERE character_id=? AND item_name=?", (character_id, payload.weapon_name)
+        ).fetchone()
+        stat_bonuses = json.dumps({"weapon_tier": weapon["tier"]})
+        if existing:
+            conn.execute("UPDATE inventory SET equip_slot=?, stat_bonuses=? WHERE id=?",
+                         (payload.equip_slot, stat_bonuses, existing["id"]))
+            item_id = existing["id"]
+        else:
+            cur = conn.execute(
+                "INSERT INTO inventory (character_id,item_name,item_type,quantity,value,description,equip_slot,stat_bonuses,source,created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (character_id, payload.weapon_name, weapon["category"], 1, 0,
+                 f"{weapon['damage']} {weapon['damage_type']}", payload.equip_slot, stat_bonuses, "equip", now_iso()),
+            )
+            item_id = cur.lastrowid
+        conn.commit()
+        row = conn.execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
+        return {"item": _item_with_weapon_tier(dict(row)), "sheet": get_full_sheet(character_id)}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/characters/{character_id}/inventory/{item_id}")
+def drop_inventory_item(character_id: int, item_id: int) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM inventory WHERE id=? AND character_id=?", (item_id, character_id))
+        conn.commit()
+        return {"dropped": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/characters/{character_id}/unequip")
+def unequip_slot(character_id: int, slot: str = "weapon") -> dict:
+    conn = get_conn()
+    try:
+        conn.execute("UPDATE inventory SET equip_slot=NULL WHERE character_id=? AND equip_slot=?",
+                     (character_id, slot))
+        conn.commit()
+        return {"unequipped": True}
+    finally:
+        conn.close()
+
+
+def _item_with_weapon_tier(row: dict) -> dict:
+    item = dict(row)
+    try:
+        bonuses = json.loads(item.get("stat_bonuses") or "{}")
+    except Exception:
+        bonuses = {}
+    tier = bonuses.get("weapon_tier")
+    item["weapon_tier"] = tier if tier is not None else weapons.tier_for_weapon_name(item.get("item_name", ""))
+    item["weapon_tier_info"] = weapons.describe_tier(item["weapon_tier"])
+    return item
+
+
 @app.get("/api/characters/{character_id}/inventory")
 def character_inventory(character_id: int) -> dict:
     conn = get_conn()
     try:
         items = conn.execute("SELECT * FROM inventory WHERE character_id=? ORDER BY item_type, item_name", (character_id,)).fetchall()
         economy = conn.execute("SELECT gold, credits, tokens FROM economy WHERE character_id=?", (character_id,)).fetchone()
-        return {"economy": dict(economy) if economy else {"gold": 0, "credits": 0, "tokens": 0}, "items": [dict(row) for row in items]}
+        return {"economy": dict(economy) if economy else {"gold": 0, "credits": 0, "tokens": 0},
+                "items": [_item_with_weapon_tier(row) for row in items]}
+    finally:
+        conn.close()
+
+
+@app.post("/api/characters/{character_id}/inventory")
+def add_inventory_item(character_id: int, payload: InventoryAddIn) -> dict:
+    weapon_tier = payload.weapon_tier
+    if weapon_tier is None and payload.item_type.lower() in ("weapon", "melee", "ranged"):
+        weapon_tier = weapons.tier_for_weapon_name(payload.item_name)
+    stat_bonuses = dict(payload.stat_bonuses)
+    if weapon_tier is not None:
+        stat_bonuses["weapon_tier"] = weapon_tier
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO inventory (character_id,item_name,item_type,quantity,value,description,equip_slot,stat_bonuses,source,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (character_id, payload.item_name, payload.item_type, payload.quantity, payload.value,
+             payload.description, payload.equip_slot or None, json.dumps(stat_bonuses), "manual", now_iso()),
+        )
+        conn.commit()
+        item_id = cur.lastrowid
+        row = conn.execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
+        return {"item": _item_with_weapon_tier(dict(row))}
     finally:
         conn.close()
 
@@ -1332,6 +2656,7 @@ def create_memory_fact(payload: MemoryIn) -> dict:
         memory_type=payload.memory_type,
         character_name=payload.character_name,
         importance=payload.importance,
+        session_id=_story_session(payload.session_id),
     )
     return {"saved": True}
 
@@ -1347,11 +2672,32 @@ def media_image_styles() -> list[str]:
     return list(PHOTO_STYLES.keys())
 
 
+def _media_url(path: str) -> str:
+    """Convert an absolute filesystem path under MEDIA_DIR into the relative
+    URL the /media static mount serves it back out at. Empty string if the
+    path is missing or falls outside MEDIA_DIR."""
+    if not path:
+        return ""
+    try:
+        return "/media/" + str(Path(path).relative_to(MEDIA_DIR)).replace("\\", "/")
+    except ValueError:
+        return ""
+
+
 @app.post("/api/media/image")
 def create_image(payload: ImageIn) -> dict:
     prompt = f"{PHOTO_STYLES.get(payload.style, '')}, {payload.prompt}" if payload.style else payload.prompt
-    path = download_image(prompt, width=payload.width, height=payload.height)
-    url = "" if path else generate_image_url(prompt, payload.width, payload.height)
+    if payload.cache_key:
+        cached = get_cached_image(payload.cache_key)
+        if cached:
+            return {"path": cached, "url": _media_url(cached), "prompt": prompt, "cached": True}
+    # Skip placeholder provider so that if server-side download fails we fall
+    # back to the direct Pollinations URL that the user's browser can load.
+    path = download_image(prompt, width=payload.width, height=payload.height,
+                          providers=["pollinations", "comfyui", "automatic1111"])
+    url = _media_url(path) or generate_image_url(prompt, payload.width, payload.height)
+    if payload.cache_key and _media_url(path):
+        set_cached_image(payload.cache_key, path)
     if payload.save_to_chat:
         save_message("assistant", f"🖼️ *[{payload.prompt[:80]}]*", payload.session_id)
     return {"path": path, "url": url, "prompt": prompt}
@@ -1367,7 +2713,43 @@ def animate_image(payload: AnimateIn) -> dict:
     output = create_animation(payload.image_path, effect=payload.effect, duration=payload.duration)
     if output:
         save_message("assistant", f"🎞️ *[Animated: {payload.effect}, {payload.duration}s]*", payload.session_id)
-    return {"path": output}
+    return {"path": output, "url": _media_url(output)}
+
+
+@app.post("/api/media/text-to-animation")
+def text_to_animation(payload: TextToAnimationIn) -> dict:
+    result = generate_animated_clip(payload.prompt, style_prefix=PHOTO_STYLES.get(payload.style, ""),
+                                     width=payload.width, height=payload.height,
+                                     effect=payload.effect, duration=payload.duration)
+    if not result:
+        raise HTTPException(status_code=502, detail="Could not render an animation (image generation or ffmpeg failed).")
+    if payload.save_to_chat:
+        save_message("assistant", f"🎬 *[Animated: {payload.prompt[:80]}]*", payload.session_id)
+    return {
+        "image_path": result["image_path"], "image_url": _media_url(result["image_path"]),
+        "video_path": result["video_path"], "video_url": _media_url(result["video_path"]),
+    }
+
+
+@app.post("/api/media/text-to-video")
+def text_to_video(payload: TextToVideoIn) -> dict:
+    prompts = [p.strip() for p in payload.prompts if p.strip()]
+    if not prompts and payload.prompt.strip():
+        prompts = [payload.prompt.strip()] * max(2, payload.scenes)
+    if not prompts:
+        raise HTTPException(status_code=400, detail="Provide a prompt or a list of scene prompts.")
+    result = generate_scene_video(prompts, style_prefix=PHOTO_STYLES.get(payload.style, ""),
+                                   width=payload.width, height=payload.height,
+                                   duration_per_slide=payload.duration_per_slide)
+    if not result:
+        raise HTTPException(status_code=502, detail="Could not render a video (image generation or ffmpeg failed).")
+    if payload.save_to_chat:
+        label = prompts[0][:80] + ("…" if len(prompts) > 1 else "")
+        save_message("assistant", f"🎥 *[Video: {label}]*", payload.session_id)
+    return {
+        "image_paths": result["image_paths"], "image_urls": [_media_url(p) for p in result["image_paths"]],
+        "video_path": result["video_path"], "video_url": _media_url(result["video_path"]),
+    }
 
 
 @app.post("/api/voice/speak")
@@ -1375,7 +2757,7 @@ def voice_speak(payload: ChatEditIn) -> dict:
     try:
         from core.edge_voice import get_voice_for_character, speak_text
         path = speak_text(payload.content, voice=get_voice_for_character())
-        return {"path": path}
+        return {"path": path, "url": _media_url(path)}
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"TTS unavailable: {exc}") from exc
 
@@ -1528,9 +2910,689 @@ def _add_quest_item(character_id: int, quest: dict) -> None:
         conn.close()
 
 
+import math as _math, time as _time
+
+_GAME_CLOCK = {}  # session_id -> {day, hour, minute, weather, season, temp}
+
+WEATHERS = ['Clear','Cloudy','Overcast','Light Rain','Heavy Rain','Thunderstorm','Fog','Drizzle','Snow','Blizzard','Windy','Hail','Sandstorm','Aurora','Mist']
+SEASONS = ['Spring','Summer','Autumn','Winter']
+
+def _get_clock(session_id='default'):
+    if session_id not in _GAME_CLOCK:
+        _GAME_CLOCK[session_id] = {'day':1,'hour':8,'minute':0,'weather':'Clear','season':'Spring','temp':18}
+    return _GAME_CLOCK[session_id]
+
+@app.get("/api/world/clock")
+def get_world_clock(session_id: str = "default") -> dict:
+    clk = _get_clock(session_id)
+    return dict(clk)
+
+@app.post("/api/world/clock/advance")
+def advance_world_clock(session_id: str = "default", minutes: int = 30) -> dict:
+    import random as _random
+    clk = _get_clock(session_id)
+    total = clk['hour'] * 60 + clk['minute'] + minutes
+    clk['minute'] = total % 60
+    clk['hour'] = (total // 60) % 24
+    if total // 60 >= 24:
+        clk['day'] += 1
+        clk['season'] = SEASONS[(clk['day'] // 90) % 4]
+    if _random.random() < 0.15:
+        clk['weather'] = _random.choice(WEATHERS)
+        clk['temp'] = _random.randint(-5, 35)
+    return dict(clk)
+
+@app.post("/api/world/events/random")
+def random_world_event(session_id: str = "default", world_id: int = 0) -> dict:
+    import random as _random
+    EVENTS = [
+        "A wandering merchant arrives at the nearest settlement with rare goods.",
+        "Strange lights are seen in the sky — locals whisper of portals opening.",
+        "A faction scout is spotted observing the party from afar.",
+        "An earthquake trembles through the region, shifting the landscape slightly.",
+        "A local festival erupts in the nearest town — music and laughter fill the air.",
+        "Dark clouds gather rapidly; a magical storm approaches.",
+        "A courier delivers an urgent sealed message addressed to one of the party.",
+        "Distant horns signal an army on the march somewhere beyond the horizon.",
+        "A rare celestial event lights up the night sky — all magic is amplified.",
+        "A travelling bard begins spinning tales about the party's deeds.",
+        "Raiders have struck a nearby village — smoke rises on the horizon.",
+        "A portal flickers to life unexpectedly, revealing a glimpse of another world.",
+        "An ancient ruin is spotted nearby that wasn't there yesterday.",
+        "A powerful beast has been sighted by terrified locals.",
+        "A political assassination changes the balance of power in the region.",
+    ]
+    event = _random.choice(EVENTS)
+    try:
+        clk = _get_clock(session_id)
+        enhanced = send_to_llm([
+            {"role":"system","content":"You are a fantasy game narrator. Given a random event seed, expand it into one vivid sentence (max 40 words) that fits the current world state."},
+            {"role":"user","content":f"Event seed: {event}\nDay {clk['day']}, {clk['hour']:02d}:00, {clk['weather']} weather, {clk['season']} season."}
+        ], temperature=0.9, max_tokens=80)
+        if enhanced and not enhanced.startswith('['):
+            event = enhanced.strip()
+    except Exception:
+        pass
+    return {"event": event, "day": _get_clock(session_id)['day']}
+
+
+class ScenarioGenIn(BaseModel):
+    world_name: str = ""
+    story_preset: str = ""
+    genre: str = ""
+    session_id: str = "default"
+
+@app.post("/api/scenario/generate")
+def generate_scenario_text(payload: ScenarioGenIn) -> dict:
+    try:
+        prompt = f"World: {payload.world_name or 'Unknown'}\nGenre: {payload.genre or 'Fantasy'}\nStory preset: {payload.story_preset or 'Adventure'}"
+        raw = send_to_llm([
+            {"role":"system","content":"You are a tabletop RPG campaign designer. Given a world and story preset, write an opening campaign scenario in 2-3 vivid sentences (max 60 words) that hooks the player immediately. Write in second person ('You...'). No headers, just the scenario text."},
+            {"role":"user","content":prompt}
+        ], temperature=0.9, max_tokens=120)
+        text = raw.strip() if raw and not raw.startswith('[') else ""
+    except Exception:
+        text = ""
+    if not text:
+        text = f"You stand at the threshold of {payload.world_name or 'a new world'}, where the fate of many hangs in the balance. The air crackles with {payload.genre or 'adventure'} as {payload.story_preset or 'your journey'} begins."
+    return {"scenario": text}
+
+
+class NpcCreateIn(BaseModel):
+    name: str
+    role: str = ""
+    faction: str = ""
+    location: str = ""
+    disposition: str = "neutral"
+    world_id: int = 0
+    session_id: str = "default"
+
+@app.get("/api/world/npcs")
+def get_world_npcs_session(world_id: int = 0, session_id: str = "default") -> list:
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM npcs WHERE world_id=? ORDER BY id DESC LIMIT 30",
+            (world_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+@app.post("/api/world/npcs")
+def create_world_npc_session(payload: NpcCreateIn) -> dict:
+    import random as _random
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO npcs (name, profession, faction, mood, world_id, created_at) VALUES (?,?,?,?,?,?)",
+            (payload.name, payload.role, payload.faction, payload.disposition, payload.world_id, now_iso())
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "saved": True}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        conn.close()
+
+@app.post("/api/world/npcs/generate")
+def generate_npc_session(world_id: int = 0, session_id: str = "default") -> dict:
+    import random as _random
+    DISPOSITIONS = ['friendly','neutral','hostile','suspicious','desperate','grateful']
+    ROLES = ['innkeeper','guard','merchant','assassin','wizard','healer','thief','noble','farmer','warrior','spy','exile','rebel','scholar']
+    disposition = _random.choice(DISPOSITIONS)
+    role = _random.choice(ROLES)
+    try:
+        raw = send_to_llm([
+            {"role":"system","content":"You are a fantasy NPC generator. Create a brief NPC description: name, one quirk, one secret (max 30 words total). Format: Name: X | Quirk: Y | Secret: Z"},
+            {"role":"user","content":f"Generate a {disposition} {role}:"}
+        ], temperature=0.95, max_tokens=80)
+        parts = {p.split(':')[0].strip().lower(): p.split(':',1)[1].strip() for p in raw.split('|') if ':' in p}
+        name = parts.get('name', f"{role.title()} #{_random.randint(100,999)}")
+        quirk = parts.get('quirk', '')
+        secret = parts.get('secret', '')
+    except Exception:
+        name = f"{role.title()} #{_random.randint(100,999)}"
+        quirk = secret = ''
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO npcs (name, profession, faction, mood, world_id, created_at) VALUES (?,?,?,?,?,?)",
+            (name, role, '', disposition, world_id, now_iso())
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "name": name, "role": role, "disposition": disposition, "quirk": quirk, "secret": secret}
+    except Exception as e:
+        return {"name": name, "role": role, "disposition": disposition}
+    finally:
+        conn.close()
+
+
+@app.get("/api/locations/{loc_id}/content")
+def get_location_content(loc_id: int, world_id: int = 0) -> dict:
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM location_content WHERE location_id=? AND depleted=0 ORDER BY content_type, id",
+            (loc_id,)
+        ).fetchall()
+        result: dict = {"npcs": [], "enemies": [], "boss": None, "loot": [], "quests": []}
+        for r in rows:
+            d = dict(r)
+            try:
+                d["data"] = json.loads(d.get("data_json") or "{}")
+            except Exception:
+                d["data"] = {}
+            ct = d["content_type"]
+            if ct == "boss":
+                result["boss"] = d
+            elif ct in result:
+                result[ct].append(d)
+        return result
+    finally:
+        conn.close()
+
+
+@app.post("/api/locations/{loc_id}/content/generate")
+def generate_location_content(loc_id: int, world_id: int = 0, terrain: str = "Plains", loc_name: str = "", force: bool = False) -> dict:
+    import random as _rand
+    conn = get_conn()
+    try:
+        # Return cached if exists and not forcing refresh
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM location_content WHERE location_id=?", (loc_id,)
+        ).fetchone()[0]
+        if existing and not force:
+            rows = conn.execute(
+                "SELECT * FROM location_content WHERE location_id=? AND depleted=0 ORDER BY content_type, id",
+                (loc_id,)
+            ).fetchall()
+            result: dict = {"npcs": [], "enemies": [], "boss": None, "loot": [], "quests": []}
+            for r in rows:
+                d = dict(r)
+                try:
+                    d["data"] = json.loads(d.get("data_json") or "{}")
+                except Exception:
+                    d["data"] = {}
+                ct = d["content_type"]
+                if ct == "boss":
+                    result["boss"] = d
+                elif ct in result:
+                    result[ct].append(d)
+            return result
+
+        # Wipe old entries for this location before regenerating
+        conn.execute("DELETE FROM location_content WHERE location_id=?", (loc_id,))
+        conn.commit()
+
+        name = loc_name or f"Location {loc_id}"
+        terrain_lower = terrain.lower()
+
+        # Terrain-based tables
+        NPC_POOLS: dict = {
+            "city": ["Merchant","Innkeeper","Guard Captain","Blacksmith","Alchemist","Herbalist","Noble","Banker","Bard","Scholar","Thief","Healer","Tailor","Baker"],
+            "forest": ["Ranger","Herbalist","Druid","Hunter","Woodcutter","Scout","Hermit","Poacher"],
+            "dungeon": ["Cultist Priest","Torturer","Dark Mage","Dungeon Keeper","Prisoner","Deserter"],
+            "ruins": ["Archaeologist","Treasure Hunter","Undead Historian","Cursed Knight","Relic Dealer"],
+            "mountain": ["Dwarven Miner","Mountain Guide","Goat Herder","Stone Mason","Reclusive Monk"],
+            "ocean": ["Fisherman","Sea Captain","Smuggler","Pearl Diver","Retired Pirate","Harbor Master"],
+            "desert": ["Nomad Elder","Sand Merchant","Water Seller","Desert Mystic","Caravan Guard"],
+            "wetlands": ["Bog Witch","Frog Farmer","Lost Traveler","Swamp Herbalist","Ferryman"],
+        }
+        ENEMY_POOLS: dict = {
+            "city": [("Street Thug","humanoid",25,1),("Corrupt Guard","humanoid",40,2),("Assassin","humanoid",60,4)],
+            "forest": [("Forest Bandit","humanoid",35,2),("Giant Spider","beast",45,3),("Dire Wolf","beast",55,3),("Treant Sapling","elemental",80,5)],
+            "dungeon": [("Skeleton Warrior","undead",50,3),("Dungeon Rat","beast",20,1),("Orc Brute","humanoid",70,4),("Shadow Specter","undead",65,4)],
+            "ruins": [("Cursed Knight","undead",75,4),("Stone Golem","construct",120,6),("Ancient Wraith","undead",90,5)],
+            "mountain": [("Mountain Troll","giant",100,5),("Harpy","beast",50,3),("Ice Elemental","elemental",85,5)],
+            "ocean": [("Sea Raider","humanoid",45,3),("Giant Crab","beast",60,3),("Kraken Tentacle","beast",130,7)],
+            "desert": [("Sandstorm Scorpion","beast",55,3),("Mirage Djinn","elemental",95,6),("Mummy Warrior","undead",70,4)],
+            "wetlands": [("Bog Zombie","undead",45,3),("Giant Leech","beast",30,2),("Will-o'-Wisp","elemental",40,3)],
+        }
+        BOSS_POOL: dict = {
+            "dungeon": [("The Dungeon Overlord","A massive armored tyrant who rules this dungeon with an iron fist",350,9,"Legendary armor set + 200 gold"),("Necromancer Lord","An ancient necromancer who raises the dead to protect his secrets",280,8,"Necromancy tome + 150 gold")],
+            "forest": [("Ancient Forest Guardian","A colossal treant who has watched these woods for centuries",300,8,"Heart of the Forest + 100 gold"),("Alpha Dire Wolf","An enormous wolf the size of a horse, leader of the pack",200,7,"Wolf pelt armor + 80 gold")],
+            "ruins": [("The Forsaken King","A cursed ruler trapped in his own collapsed kingdom",320,9,"Crown of the Forsaken + 180 gold"),("Runic Stone Colossus","An ancient construct built to guard forbidden knowledge",400,10,"Rune core shard + 200 gold")],
+            "mountain": [("Storm Drake","A powerful dragon who guards the mountain peaks",500,10,"Dragon scale + 300 gold"),("Frost Giant Chieftain","Leader of the mountain giants, wielding an icy maul",380,9,"Frost giant maul + 200 gold")],
+            "ocean": [("Sea Serpent","An ancient serpent guarding sunken treasure",420,9,"Serpent fang blade + 250 gold"),("Pirate King","A legendary captain who never lost a sea battle",300,8,"Pirate flagship deed + 200 gold")],
+            "city": [("Thieves Guild Master","The shadowy leader controlling all crime in the city",250,7,"Guild seal + 150 gold"),("Corrupt City Lord","A corrupt noble who answers to no one",280,8,"Noble signet ring + 200 gold")],
+            "desert": [("Sand Dragon","An ancient wyrm buried in the dunes for centuries",450,10,"Desert pearl + 300 gold"),("Djinn Emperor","A powerful djinn whose wishes reshape reality",350,9,"Djinn lamp fragment + 220 gold")],
+            "wetlands": [("Swamp Witch Queen","A powerful hag who controls the entire bog",280,8,"Witch cauldron recipe + 120 gold"),("Black Dragon Hatchling","Young but already deadly, nesting in the deepest swamp",320,9,"Black scale armor + 180 gold")],
+        }
+        MATERIAL_POOL: dict = {
+            "forest": ["Hardwood Log","Medicinal Herb","Spider Silk","Resin Crystal","Rare Mushroom","Feather Bundle"],
+            "dungeon": ["Dark Iron Ore","Bone Fragment","Cursed Gem","Venom Extract","Shadow Dust","Mana Crystal"],
+            "ruins": ["Ancient Stone","Rune Fragment","Lost Coin","Crumbled Script","Artifact Shard","Old Key"],
+            "mountain": ["Iron Ore","Quartz Crystal","Sulfur Rock","Granite Slab","Gold Vein","Frozen Mana Stone"],
+            "ocean": ["Pearl","Sea Salt","Driftwood","Mermaid Scale","Coral Fragment","Sea Glass"],
+            "desert": ["Sand Ruby","Cactus Sap","Desert Rose Crystal","Oasis Water Vial","Scarab Carapace","Mirage Stone"],
+            "wetlands": ["Bog Iron","Lotus Root","Swamp Moss","Frog Toxin","Reed Bundle","Marsh Crystal"],
+            "city": ["Iron Ingot","Leather Scrap","Glass Vial","Paper Bundle","Copper Wire","Wool Cloth"],
+        }
+        EQUIPMENT_POOL: dict = {
+            "forest": ["Hunter's Shortbow","Ranger Cloak","Leather Bracers","Nature's Staff","Vine Whip"],
+            "dungeon": ["Cursed Blade","Shadow Dagger","Dark Shield","Bone Armor","Soul Chain"],
+            "ruins": ["Runic Sword","Ancient Shield","Scholar's Robes","Lost Amulet","Forsaken Crown"],
+            "mountain": ["Dwarven Axe","Stone Shield","Mountain Boots","Iron Plate Helm","Pick of Ages"],
+            "ocean": ["Trident","Sailor's Coat","Wave Shield","Deep Sea Ring","Captain's Hat"],
+            "desert": ["Scimitar","Sand Cloak","Mirage Veil","Desert Walker Boots","Djinn's Bracelet"],
+            "wetlands": ["Bog Staff","Swamp Leather Armor","Toxic Dagger","Mushroom Shield","Hag's Necklace"],
+            "city": ["Iron Sword","Chain Mail","Merchant's Ring","Guard Shield","Noble's Rapier"],
+        }
+        LUXURY_POOL = ["Fine Wine Bottle","Silk Handkerchief","Golden Pocket Watch","Ivory Statuette","Jeweled Brooch","Rare Spice Pouch","Silver Mirror","Crystal Goblet","Embroidered Tapestry","Perfume Vial","Velvet Pouch","Ornate Music Box"]
+        CONSUMABLE_POOL = ["Health Potion","Mana Potion","Antidote","Stamina Elixir","Fire Resistance Potion","Invisibility Draught","Strength Tonic","Speed Boost Vial"]
+
+        # Determine terrain key
+        tkey = "city"
+        for k in ENEMY_POOLS:
+            if k in terrain_lower or (k == "dungeon" and any(x in name.lower() for x in ["dungeon","crypt","catacomb","cave","mine","vault"])):
+                tkey = k
+                break
+        # Also check name
+        if "ruin" in name.lower() or "ancient" in name.lower():
+            tkey = "ruins"
+        elif "forest" in name.lower() or "wood" in name.lower() or "grove" in name.lower():
+            tkey = "forest"
+        elif "dungeon" in name.lower() or "crypt" in name.lower() or "cave" in name.lower():
+            tkey = "dungeon"
+
+        now = now_iso()
+        inserted: dict = {"npcs": [], "enemies": [], "boss": None, "loot": [], "quests": []}
+
+        # Generate NPCs (2-4)
+        npc_profs = NPC_POOLS.get(tkey, NPC_POOLS["city"])
+        chosen_profs = _rand.sample(npc_profs, min(_rand.randint(2, 4), len(npc_profs)))
+        MOODS = ["friendly","neutral","suspicious","cautious","cheerful","weary","desperate","mysterious"]
+        npc_names_used = []
+        FNAME = ["Aldric","Mira","Theron","Lysa","Oren","Vex","Sera","Dain","Kyra","Brynn","Tomas","Elara","Gareth","Niara","Corvin","Faye","Soren","Yuna","Holt","Rinna"]
+        LNAME = ["the Bold","Ironhand","Swiftfoot","Moonwhisper","Stoneback","of the North","Ashwood","Blackthorn","Goldenrod","Frostborn","the Wanderer","Shadowstep","the Ancient","Brightblade"]
+        for prof in chosen_profs:
+            fname = _rand.choice(FNAME)
+            while fname in npc_names_used:
+                fname = _rand.choice(FNAME)
+            npc_names_used.append(fname)
+            lname = _rand.choice(LNAME)
+            npc_name = f"{fname} {lname}"
+            mood = _rand.choice(MOODS)
+            data = {"profession": prof, "mood": mood, "has_quest": _rand.random() < 0.5}
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "npc", npc_name, f"A {mood} {prof} you encounter here.", json.dumps(data), 1, 0, "common", now)
+            )
+            inserted["npcs"].append({"id": cur.lastrowid, "name": npc_name, "data": data, "description": f"A {mood} {prof}"})
+
+        # Generate enemies (1-3 types)
+        enemy_pool = ENEMY_POOLS.get(tkey, ENEMY_POOLS["city"])
+        num_etypes = _rand.randint(1, min(3, len(enemy_pool)))
+        chosen_enemies = _rand.sample(enemy_pool, num_etypes)
+        for (ename, etype, hp, lvl) in chosen_enemies:
+            count = _rand.randint(1, 4)
+            gold_drop = _rand.randint(lvl * 2, lvl * 8)
+            data = {"type": etype, "hp": hp, "level": lvl, "count": count, "gold_drop": gold_drop}
+            rarity = "uncommon" if lvl >= 4 else "common"
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "enemy", ename, f"Level {lvl} {etype}, {hp} HP", json.dumps(data), count, gold_drop, rarity, now)
+            )
+            inserted["enemies"].append({"id": cur.lastrowid, "name": ename, "data": data})
+
+        # Maybe spawn a boss (40% chance for dungeons/ruins, 15% otherwise)
+        boss_chance = 0.4 if tkey in ("dungeon","ruins","mountain","ocean","desert") else 0.15
+        boss_pool = BOSS_POOL.get(tkey, BOSS_POOL.get("city", []))
+        if boss_pool and _rand.random() < boss_chance:
+            (bname, bdesc, bhp, blvl, breward) = _rand.choice(boss_pool)
+            data = {"hp": bhp, "level": blvl, "reward": breward, "type": "boss"}
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "boss", bname, bdesc, json.dumps(data), 1, blvl * 50, "legendary", now)
+            )
+            boss_dict = {"id": cur.lastrowid, "name": bname, "description": bdesc, "data": data}
+            inserted["boss"] = boss_dict
+
+        # Generate loot (3-6 items)
+        # Gold
+        gold_amt = _rand.randint(10, 80) + (20 if tkey in ("ruins","dungeon") else 0)
+        cur = conn.execute(
+            "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (loc_id, world_id, "loot", "Gold Coins", "Scattered gold coins", json.dumps({"item_type":"currency","currency":"gold"}), gold_amt, gold_amt, "common", now)
+        )
+        inserted["loot"].append({"id": cur.lastrowid, "name": "Gold Coins", "quantity": gold_amt, "rarity": "common", "data": {"item_type":"currency"}})
+
+        # Materials (1-3)
+        mat_pool = MATERIAL_POOL.get(tkey, MATERIAL_POOL["city"])
+        for mat in _rand.sample(mat_pool, min(_rand.randint(1, 3), len(mat_pool))):
+            qty = _rand.randint(1, 5)
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "loot", mat, f"Raw material found in {name}", json.dumps({"item_type":"material"}), qty, _rand.randint(2,15)*qty, "common", now)
+            )
+            inserted["loot"].append({"id": cur.lastrowid, "name": mat, "quantity": qty, "rarity": "common", "data": {"item_type":"material"}})
+
+        # Maybe equipment (30% chance)
+        eq_pool = EQUIPMENT_POOL.get(tkey, EQUIPMENT_POOL["city"])
+        if _rand.random() < 0.3:
+            eq = _rand.choice(eq_pool)
+            rarity = _rand.choice(["common","uncommon","rare"])
+            val = {"common":25,"uncommon":75,"rare":200}[rarity]
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "loot", eq, f"Equipment found in {name}", json.dumps({"item_type":"equipment"}), 1, val, rarity, now)
+            )
+            inserted["loot"].append({"id": cur.lastrowid, "name": eq, "quantity": 1, "rarity": rarity, "data": {"item_type":"equipment"}})
+
+        # Consumables (0-2)
+        for _ in range(_rand.randint(0, 2)):
+            con = _rand.choice(CONSUMABLE_POOL)
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "loot", con, "A useful consumable", json.dumps({"item_type":"consumable"}), _rand.randint(1,3), _rand.randint(10,30), "common", now)
+            )
+            inserted["loot"].append({"id": cur.lastrowid, "name": con, "quantity": _rand.randint(1,3), "rarity": "common", "data": {"item_type":"consumable"}})
+
+        # Luxury (10% chance)
+        if _rand.random() < 0.1:
+            lux = _rand.choice(LUXURY_POOL)
+            val = _rand.randint(50, 300)
+            cur = conn.execute(
+                "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (loc_id, world_id, "loot", lux, "A valuable luxury item", json.dumps({"item_type":"luxury"}), 1, val, "rare", now)
+            )
+            inserted["loot"].append({"id": cur.lastrowid, "name": lux, "quantity": 1, "rarity": "rare", "data": {"item_type":"luxury"}})
+
+        # Generate quests from NPCs with has_quest flag (1-2 quests)
+        quest_givers = [n for n in inserted["npcs"] if n["data"].get("has_quest")]
+        QUEST_TYPES: dict = {
+            "forest": [("Clear the Bandit Camp","Bandits are terrorizing the roads. Clear them out.","50 gold + equipment"),("Find the Lost Herb","Gather rare herbs deep in the forest.","Healing potion x3 + 20 gold"),("Hunt the Alpha Wolf","A massive wolf is terrorizing hunters.","Wolf pelt armor + 60 gold")],
+            "dungeon": [("Retrieve the Lost Relic","A precious relic was taken into the dungeon.","100 gold + rune fragment"),("Survive the Depths","Explore as deep as you can and return.","Dark iron armor + 80 gold"),("Slay the Dungeon Master","Defeat whatever lurks at the bottom.","Legendary weapon + 150 gold")],
+            "ruins": [("Decipher the Ancient Tablets","Find and copy the inscriptions.","Scholar's robes + 60 gold"),("Recover the Lost Crown","A king's crown is hidden in these ruins.","150 gold + noble title"),("Destroy the Cursed Seal","Break the curse binding this place.","Runic blade + 90 gold")],
+            "city": [("Collect a Debt","Retrieve payment from a reluctant merchant.","30 gold + ring"),("Root Out the Spy","Find the informant leaking city secrets.","50 gold + guard armor"),("Win the Tournament","Enter and win the city's fighting contest.","100 gold + champion's belt")],
+            "mountain": [("Mine the Deep Vein","Extract rare ore from the mountain heart.","Dwarven axe + 70 gold"),("Guard the Mountain Pass","Protect a caravan through the pass.","60 gold + mountain boots"),("Slay the Stone Troll","A troll blocks the only mountain road.","Troll club + 80 gold")],
+            "ocean": [("Recover Sunken Treasure","Dive for a chest lost in the deep.","100 gold + sea captain's coat"),("Defeat the Corsairs","Pirates have been raiding fishing boats.","Trident + 70 gold"),("Find the Missing Ship","A merchant vessel vanished three days ago.","50 gold + trade contract")],
+            "desert": [("Guide Through the Sands","Lead a caravan safely through the desert.","70 gold + desert cloak"),("Find the Hidden Oasis","Locate a secret water source.","Djinn's bracelet + 50 gold"),("Break the Sandstorm Curse","Destroy the relic causing endless storms.","90 gold + mirage veil")],
+            "wetlands": [("Collect the Bog Ingredients","Gather rare swamp plants for a healer.","30 gold + potions x4"),("Drive Out the Bog Zombies","Undead have overrun the southern fen.","60 gold + enchanted cloak"),("Find the Lost Child","A child wandered into the swamp yesterday.","Gratitude + 40 gold + lucky charm")],
+        }
+        qt_pool = QUEST_TYPES.get(tkey, QUEST_TYPES["city"])
+        num_quests = min(len(quest_givers), 2, len(qt_pool))
+        if num_quests > 0:
+            chosen_quests = _rand.sample(qt_pool, num_quests)
+            for i, (qtitle, qdesc, qreward) in enumerate(chosen_quests):
+                giver_name = quest_givers[i]["name"] if i < len(quest_givers) else "Unknown"
+                data = {"giver": giver_name, "reward_desc": qreward, "terrain": tkey}
+                cur = conn.execute(
+                    "INSERT INTO location_content (location_id,world_id,content_type,name,description,data_json,quantity,value,rarity,spawned_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (loc_id, world_id, "quest", qtitle, qdesc, json.dumps(data), 1, 0, "common", now)
+                )
+                inserted["quests"].append({"id": cur.lastrowid, "name": qtitle, "description": qdesc, "data": data})
+
+        conn.commit()
+        return inserted
+    finally:
+        conn.close()
+
+
+@app.post("/api/locations/{loc_id}/loot/collect")
+def collect_loot(loc_id: int, loot_id: int, character_id: int = 0) -> dict:
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM location_content WHERE id=? AND location_id=? AND content_type='loot' AND depleted=0", (loot_id, loc_id)).fetchone()
+        if not row:
+            return {"error": "Item not found or already taken"}
+        item = dict(row)
+        data = json.loads(item.get("data_json") or "{}")
+        item_type = data.get("item_type","misc")
+        name = item["name"]
+        qty = item["quantity"]
+        val = item["value"]
+
+        if character_id:
+            if item_type == "currency":
+                conn.execute(
+                    "INSERT INTO economy (character_id, gold, credits, tokens) VALUES (?,?,0,0) ON CONFLICT(character_id) DO UPDATE SET gold=gold+excluded.gold",
+                    (character_id, qty)
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO inventory (character_id,item_name,item_type,quantity,value,description,source,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (character_id, name, item_type, qty, val, f"Found in location {loc_id}", "loot", now_iso())
+                )
+
+        conn.execute("UPDATE location_content SET depleted=1 WHERE id=?", (loot_id,))
+        conn.commit()
+        return {"collected": True, "name": name, "quantity": qty, "item_type": item_type, "gold": qty if item_type == "currency" else 0}
+    finally:
+        conn.close()
+
+
+@app.post("/api/locations/{loc_id}/quests/accept")
+def accept_location_quest(loc_id: int, quest_id: int, character_name: str = "", character_id: int = 0) -> dict:
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM location_content WHERE id=? AND location_id=? AND content_type='quest' AND depleted=0", (quest_id, loc_id)).fetchone()
+        if not row:
+            return {"error": "Quest not found or already taken"}
+        item = dict(row)
+        data = json.loads(item.get("data_json") or "{}")
+
+        if character_name:
+            conn.execute(
+                "INSERT INTO quests (character_id,character_name,quest_type,title,description,reward,hint,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (character_id or None, character_name, "location", item["name"], item["description"], data.get("reward_desc","Unknown reward"), f"Given by {data.get('giver','someone')} in location {loc_id}", 0, "active", now_iso())
+            )
+            conn.execute("UPDATE location_content SET depleted=1 WHERE id=?", (quest_id,))
+
+        conn.commit()
+        return {"accepted": True, "title": item["name"], "reward": data.get("reward_desc","")}
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SKILL TREE ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════
+from core.skill_tree_data import ALL_NODES, CATEGORIES, CATEGORY_LABELS, CATEGORY_ICONS, can_unlock
+
+@app.get("/api/skill-tree/all")
+def get_all_skill_nodes() -> dict:
+    return {"nodes": ALL_NODES, "categories": CATEGORIES,
+            "labels": CATEGORY_LABELS, "icons": CATEGORY_ICONS}
+
+@app.get("/api/characters/{character_id}/skill-tree")
+def get_char_skill_tree(character_id: int) -> dict:
+    conn = get_conn()
+    try:
+        char = conn.execute("SELECT skill_tree_json, skill_points_available, level, strength, dexterity, constitution, intelligence, wisdom, charisma_stat FROM characters WHERE id=?", (character_id,)).fetchone()
+        if not char:
+            raise HTTPException(404, "Character not found")
+        unlocked_state = json.loads(char["skill_tree_json"] or "{}")
+        unlocked = unlocked_state.get("unlocked", [])
+        stats = {k: char[k] for k in ["strength","dexterity","constitution","intelligence","wisdom","charisma_stat"] if k in char.keys()}
+        level = char["level"] or 1
+        unlockable = []
+        for nid, node in ALL_NODES.items():
+            if nid not in unlocked:
+                ok, _ = can_unlock(nid, unlocked, stats, level)
+                if ok:
+                    unlockable.append(nid)
+        return {
+            "unlocked": unlocked,
+            "unlockable": unlockable,
+            "skill_points": char["skill_points_available"] or 0,
+            "stats": stats,
+            "level": level,
+        }
+    finally:
+        conn.close()
+
+class SkillUnlockIn(BaseModel):
+    node_id: str
+
+@app.post("/api/characters/{character_id}/skill-tree/unlock")
+def unlock_skill_node(character_id: int, body: SkillUnlockIn) -> dict:
+    conn = get_conn()
+    try:
+        char = conn.execute("SELECT skill_tree_json, skill_points_available, level, strength, dexterity, constitution, intelligence, wisdom, charisma_stat FROM characters WHERE id=?", (character_id,)).fetchone()
+        if not char:
+            raise HTTPException(404, "Character not found")
+        unlocked_state = json.loads(char["skill_tree_json"] or "{}")
+        unlocked = unlocked_state.get("unlocked", [])
+        sp = char["skill_points_available"] or 0
+        if sp < 1:
+            return {"ok": False, "error": "No skill points available"}
+        stats = {k: char[k] for k in ["strength","dexterity","constitution","intelligence","wisdom","charisma_stat"] if k in char.keys()}
+        ok, reason = can_unlock(body.node_id, unlocked, stats, char["level"] or 1)
+        if not ok:
+            return {"ok": False, "error": reason}
+        unlocked.append(body.node_id)
+        unlocked_state["unlocked"] = unlocked
+        new_sp = sp - 1
+        conn.execute("UPDATE characters SET skill_tree_json=?, skill_points_available=? WHERE id=?",
+                     (json.dumps(unlocked_state), new_sp, character_id))
+        conn.commit()
+        return {"ok": True, "unlocked": body.node_id, "skill_points_remaining": new_sp, "all_unlocked": unlocked}
+    finally:
+        conn.close()
+
+# ═══════════════════════════════════════════════════════════════════
+# ORGANIZATIONS ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════
+from core.organizations import (
+    get_orgs_for_world, get_character_memberships, join_org, rank_up_member,
+    leave_org, seed_world_orgs, generate_story_org, TEMPLATE_ORGS,
+)
+
+@app.get("/api/worlds/{world_id}/organizations")
+def list_world_organizations(world_id: int) -> dict:
+    seed_world_orgs(world_id)
+    orgs = get_orgs_for_world(world_id)
+    for o in orgs:
+        try: o["ranks"] = json.loads(o.get("ranks_json") or "[]")
+        except: o["ranks"] = []
+        try: o["benefits"] = json.loads(o.get("benefits_json") or "{}")
+        except: o["benefits"] = {}
+    return {"organizations": orgs, "total": len(orgs)}
+
+@app.get("/api/characters/{character_id}/organizations")
+def get_char_organizations(character_id: int) -> dict:
+    memberships = get_character_memberships(character_id)
+    return {"memberships": memberships}
+
+class OrgJoinIn(BaseModel):
+    character_id: int
+
+@app.post("/api/organizations/{org_id}/join")
+def join_organization(org_id: int, body: OrgJoinIn) -> dict:
+    return join_org(org_id, body.character_id)
+
+@app.post("/api/organizations/{org_id}/rank-up")
+def rank_up_organization(org_id: int, body: OrgJoinIn) -> dict:
+    return rank_up_member(org_id, body.character_id)
+
+@app.post("/api/organizations/{org_id}/leave")
+def leave_organization(org_id: int, body: OrgJoinIn) -> dict:
+    return leave_org(org_id, body.character_id)
+
+class OrgGenerateIn(BaseModel):
+    world_id: int
+    world_name: str = ""
+    history: list = []
+
+@app.post("/api/organizations/generate")
+def generate_organization(body: OrgGenerateIn) -> dict:
+    return generate_story_org(body.world_id, body.history, body.world_name)
+
+# ═══════════════════════════════════════════════════════════════════
+# CUSTOM SPELLS (LLM-GENERATED FROM STORY CONTEXT)
+# ═══════════════════════════════════════════════════════════════════
+class CustomSpellIn(BaseModel):
+    character_id: int
+    description: str
+    history: list = []
+
+@app.post("/api/spells/generate")
+def generate_custom_spell(body: CustomSpellIn) -> dict:
+    import re as _re
+    history = body.history[-12:]
+    convo = "\n".join(f"{m.get('role','?')}: {m.get('content','')[:200]}" for m in history) or "(no context)"
+    prompt = (
+        "You are a D&D 5e spell designer. Based on the story context and the player's description, "
+        "create a unique custom spell as a structured D&D stat block.\n\n"
+        f"Recent story:\n{convo}\n\n"
+        f"Player's spell concept: {body.description}\n\n"
+        "Respond ONLY with a valid JSON object (no markdown backticks):\n"
+        '{"name":"Spell Name","school":"Evocation","level":1,"casting_time":"1 action",'
+        '"range":"60 ft","duration":"Instantaneous","components":"V, S",'
+        '"effect_type":"damage","damage":"2d6","damage_type":"fire",'
+        '"description":"Full spell description in D&D style (2-3 sentences).",'
+        '"story_origin":"One sentence tying this spell to the current story."}'
+    )
+    try:
+        raw = send_to_llm([{"role":"system","content":prompt}], temperature=0.7, max_tokens=500)
+        match = _re.search(r"\{.*\}", raw, _re.DOTALL)
+        if not match:
+            raise ValueError("No JSON in LLM response")
+        data = json.loads(match.group(0))
+        conn = get_conn()
+        cur = conn.execute(
+            "INSERT INTO custom_spells (character_id,name,school,level,casting_time,range,duration,"
+            "effect_type,damage,description,story_origin,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (body.character_id, data["name"], data.get("school","Evocation"),
+             int(data.get("level",1)), data.get("casting_time","1 action"),
+             data.get("range","30 ft"), data.get("duration","Instantaneous"),
+             data.get("effect_type","utility"), data.get("damage",""),
+             data.get("description",""), data.get("story_origin",""), now_iso()))
+        spell_id = cur.lastrowid; conn.commit(); conn.close()
+        data["id"] = spell_id
+        data["custom"] = True
+        return {"ok": True, "spell": data}
+    except Exception as exc:
+        log.info("Custom spell gen failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+@app.get("/api/characters/{character_id}/spells/custom")
+def get_custom_spells(character_id: int) -> dict:
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM custom_spells WHERE character_id=? ORDER BY created_at DESC", (character_id,)).fetchall()
+    conn.close()
+    return {"spells": [dict(r) for r in rows]}
+
+# ═══════════════════════════════════════════════════════════════════
+# WORLD SYSTEMS — economy, diplomacy, law
+# ═══════════════════════════════════════════════════════════════════
+@app.get("/api/worlds/{world_id}/economy")
+def get_world_economy(world_id: int) -> dict:
+    conn = get_conn()
+    world = conn.execute("SELECT treasury, law_level, crime_level, population FROM worlds WHERE id=?", (world_id,)).fetchone()
+    prices = conn.execute("SELECT * FROM market_prices WHERE world_id=? LIMIT 20", (world_id,)).fetchall()
+    conn.close()
+    return {
+        "treasury": world["treasury"] if world else 0,
+        "law_level": world["law_level"] if world else 50,
+        "crime_level": world["crime_level"] if world else 10,
+        "population": world["population"] if world else 0,
+        "market_prices": [dict(p) for p in prices],
+    }
+
+@app.get("/api/worlds/{world_id}/diplomacy")
+def get_world_diplomacy(world_id: int) -> dict:
+    conn = get_conn()
+    factions = conn.execute("SELECT name, alignment, reputation, military_strength, treasury, leader FROM factions WHERE world_id=?", (world_id,)).fetchall()
+    relations = conn.execute("SELECT * FROM diplomacy WHERE world_id=?", (world_id,)).fetchall()
+    laws = conn.execute("SELECT * FROM world_laws WHERE world_id=? AND active=1", (world_id,)).fetchall()
+    conn.close()
+    return {
+        "factions": [dict(f) for f in factions],
+        "diplomacy": [dict(r) for r in relations],
+        "laws": [dict(l) for l in laws],
+    }
+
 ASSETS_DIR = REACT_DIST / "assets"
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
+if MEDIA_DIR.exists():
+    app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 
 
 @app.get("/styles.css", include_in_schema=False)
@@ -1541,6 +3603,11 @@ def worldweaver_styles():
 @app.get("/game.js", include_in_schema=False)
 def worldweaver_script():
     return FileResponse(REACT_DIST / "game.js", media_type="application/javascript")
+
+
+@app.get("/journal.js", include_in_schema=False)
+def worldweaver_journal_script():
+    return FileResponse(REACT_DIST / "journal.js", media_type="application/javascript")
 
 
 @app.get("/worldweaver-icon.png", include_in_schema=False)

@@ -69,10 +69,12 @@ def test_send_to_llm_uses_active_model(temp_db):
 
 def test_send_to_llm_handles_connection_errors_without_raising(temp_db):
     with patch.object(chat_engine, "_req") as mock_req:
-        mock_req.post.side_effect = ConnectionError("LM Studio is not running")
+        mock_req.post.side_effect = ConnectionError("HTTPConnectionPool(host='127.0.0.1', port=1234): Max retries exceeded")
         result = send_to_llm([{"role": "user", "content": "hi"}])
-    assert "LM Studio is not running" in result
     assert result.startswith("[LM Studio error]")
+    # Players see a plain instruction, not the raw connection error.
+    assert "isn't running" in result and "port 1234" in result
+    assert "HTTPConnectionPool" not in result
 
 
 def test_send_to_llm_without_requests_library():

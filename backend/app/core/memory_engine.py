@@ -16,7 +16,7 @@ try:
     import chromadb
     from sentence_transformers import SentenceTransformer
     _VECTOR_OK = True
-except ImportError:
+except Exception:
     _VECTOR_OK = False
 
 try:
@@ -34,6 +34,11 @@ _ENTITY_PATTERNS = {
     "place": r'(?:in|at|to|from)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)',
     "item": r'(?:the|a|an)\s+(\w+\s+(?:sword|shield|ring|amulet|potion|scroll|key|book|weapon|armor|gem|stone|crystal|staff|wand|blade|bow|dagger))',
 }
+
+# Which facts a story may recall: its own, plus facts saved without a story
+# unless they were auto-captured (those belong to the story that produced them).
+STORY_FACTS_SQL = "(session_id=? OR (COALESCE(session_id,'')='' AND source<>'auto'))"
+
 
 class MemoryEngine:
     def __init__(self, max_context: int = 20):
@@ -76,8 +81,9 @@ class MemoryEngine:
     # ── Layer 2: SQLite facts (typed, scored) ───────────────
     def store_fact(self, fact: str, source: str = "user", memory_type: str = "general",
                    importance: float = 0.5, confidence: float = 1.0,
-                   character_name: str = "", tags: List[str] = None):
-        """Store a typed memory with importance scoring."""
+                   character_name: str = "", tags: List[str] = None, session_id: str = ""):
+        """Store a typed memory with importance scoring. `session_id` ties the
+        fact to one story so it is not recalled in others."""
         # Auto-classify if not specified
         if memory_type == "general":
             memory_type = self._classify_memory(fact)
@@ -89,9 +95,9 @@ class MemoryEngine:
         conn = get_conn()
         conn.execute(
             "INSERT INTO memory_facts (fact, source, memory_type, importance, confidence, "
-            "entities_json, tags, character_name, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "entities_json, tags, character_name, session_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (fact, source, memory_type, importance, confidence,
-             json.dumps(entities), json.dumps(tags or []), character_name, now_iso()))
+             json.dumps(entities), json.dumps(tags or []), character_name, session_id or "", now_iso()))
         conn.commit(); conn.close()
         # Graph: add entity relationships
         if entities and self._graph is not None:
@@ -271,7 +277,7 @@ class MemoryEngine:
     def apply_decay(self, decay_rate: float = 0.01):
         """Reduce importance of old, unaccessed memories."""
         conn = get_conn()
-        rows = conn.execute("SELECT id, importance, last_accessed, created_at FROM memory_facts").fetchall()
+        rows = conn.execute("SELECT id, importance, last_accessed, created_at FROM memory_facts WHERE COALESCE(pinned,0)=0").fetchall()
         now = datetime.now()
         for r in rows:
             last = r["last_accessed"] or r["created_at"]
@@ -288,8 +294,38 @@ class MemoryEngine:
         conn.commit(); conn.close()
 
     # ── Build context for chat ──────────────────────────────
-    def build_memory_context(self, query: str = "", character_name: str = "", max_items: int = 8) -> str:
+    def _story_memory_context(self, query: str, character_name: str, session_id: str) -> str:
+        """Memory context for one story: its own facts plus facts the user
+        saved without a story. Auto-captured facts from other stories (or from
+        before stories were tracked) are left out, so a character who shares a
+        name with one in another story starts with a clean slate."""
+        conn = get_conn()
+        rows = [dict(r) for r in conn.execute(
+            "SELECT fact, importance, character_name FROM memory_facts "
+            f"WHERE {STORY_FACTS_SQL} "
+            "ORDER BY COALESCE(pinned,0) DESC, importance DESC, id DESC", (session_id,)).fetchall()]
+        conn.close()
+        parts = []
+        important = [r for r in rows if (r["importance"] or 0) >= 0.7][:3]
+        if important:
+            parts.append("Important: " + "; ".join(r["fact"][:80] for r in important))
+        if character_name:
+            mine = [r for r in rows if r["character_name"] == character_name][:3]
+            if mine:
+                parts.append(f"About {character_name}: " + "; ".join(r["fact"][:60] for r in mine))
+        words = query.lower().split()
+        if words:
+            scored = [(sum(1 for w in words if w in r["fact"].lower()), r["fact"]) for r in rows]
+            relevant = [fact for score, fact in sorted(scored, key=lambda x: -x[0]) if score > 0][:3]
+            if relevant:
+                parts.append("Relevant: " + "; ".join(f[:60] for f in relevant))
+        return " | ".join(parts)[:600] if parts else ""
+
+    def build_memory_context(self, query: str = "", character_name: str = "", max_items: int = 8,
+                             session_id: str = "") -> str:
         """Build rich memory context for chat prompt injection."""
+        if session_id:
+            return self._story_memory_context(query, character_name, session_id)
         parts = []
         # Important memories first
         important = self.get_important_facts(0.7)[:3]
@@ -320,5 +356,6 @@ class MemoryEngine:
     def prune(self, keep: int = 200):
         conn = get_conn()
         conn.execute("DELETE FROM memory_facts WHERE id NOT IN "
-                     "(SELECT id FROM memory_facts ORDER BY importance DESC, id DESC LIMIT ?)", (keep,))
+                     "(SELECT id FROM memory_facts ORDER BY COALESCE(pinned,0) DESC, importance DESC, id DESC LIMIT ?) "
+                     "AND COALESCE(pinned,0)=0", (keep,))
         conn.commit(); conn.close()

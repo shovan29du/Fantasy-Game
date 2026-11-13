@@ -16,12 +16,22 @@ psutil>=5.9.0         # CPU/RAM/Disk dashboard in Settings > Stability
 networkx>=3.0         # memory relationship graph + map pathfinding
 
 # â•â•â• Optional â€” Voice (Settings > Stability will report these as missing if unused) â•â•â•
-edge-tts>=6.1.0        # text-to-speech (free, no API key)
+edge-tts>=6.1.0        # text-to-speech (free, no API key) -- powers the chat "avatar talking" voice output
+# Chat voice INPUT (the mic button next to the chat box) uses the browser's
+# built-in Web Speech API (Chrome/Edge) -- no Python package or network call
+# needed for it. SpeechRecognition below is only used by the older
+# core/voice_system.py server-side STT path, not the chat mic button.
 SpeechRecognition>=3.10.0   # speech-to-text for the chat voice input widget
 # pyttsx3>=2.90         # offline TTS fallback if edge-tts is unavailable
 # gTTS>=2.5.0           # online TTS fallback if edge-tts is unavailable
 # openai-whisper        # higher-quality local speech-to-text (core/voice_system.py)
 # pvporcupine           # wake-word detection (core/voice_system.py)
+
+# Optional -- Media: Animation/Video tools in Media Production
+imageio-ffmpeg>=0.5.0  # bundles a static ffmpeg binary -- Text-to-Animation and
+                       # Text-to-Video work out of the box without a separate
+                       # system ffmpeg install. A system ffmpeg on PATH is still
+                       # preferred/used instead if one is already installed.
 
 # â•â•â• Optional â€” Knowledge base document import (modules/settings.py > Knowledge) â•â•â•
 # pypdf>=4.0.0          # index .pdf files
@@ -36,5 +46,5 @@ SpeechRecognition>=3.10.0   # speech-to-text for the chat voice input widget
 # LM Studio  â€” local LLM server, http://127.0.0.1:1234/v1 by default
 # ComfyUI    â€” local image generation, http://127.0.0.1:8188 by default
 # Automatic1111/SD WebUI â€” local image generation, http://127.0.0.1:7860 by default
-# FFmpeg     â€” required on PATH for the Animation/Video tools in Media Production
+# FFmpeg     -- optional system install; used instead of the bundled imageio-ffmpeg binary above if present on PATH
 

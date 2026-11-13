@@ -1,7 +1,7 @@
 """AiChat Pro — Core Storage
 All tables. WAL mode. Table creation and column migrations run BEFORE any
 module import, via init_db(), and are both idempotent."""
-import json, sqlite3
+import json, os, sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,11 +10,12 @@ from core.logging_setup import get_logger
 
 log = get_logger(__name__)
 
-DB_PATH = DATA_DIR / "aichat_pro.db"
+# AICHAT_DB_PATH lets tests and tools run the server against a throwaway database.
+DB_PATH = Path(os.environ.get("AICHAT_DB_PATH") or DATA_DIR / "aichat_pro.db")
 
 # Bump whenever a new entry is added to _MIGRATIONS or _TABLES so the
 # schema_version table reflects the schema the app expects.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 10
 
 def get_conn():
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
@@ -102,6 +103,10 @@ _TABLES = [
     "CREATE TABLE IF NOT EXISTS relationship_events (id INTEGER PRIMARY KEY AUTOINCREMENT, character_name TEXT NOT NULL, sentiment TEXT NOT NULL, trust_delta INTEGER NOT NULL, note TEXT, created_at TEXT NOT NULL)",
     # Quests
     "CREATE TABLE IF NOT EXISTS quests (id INTEGER PRIMARY KEY AUTOINCREMENT, character_name TEXT NOT NULL, quest_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, reward TEXT NOT NULL, hint TEXT, progress INTEGER DEFAULT 0, status TEXT DEFAULT 'active', depends_on INTEGER, chain_id TEXT, created_at TEXT NOT NULL)",
+    # Player-written journal notes, one set per story
+    "CREATE TABLE IF NOT EXISTS journal_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '', pinned INTEGER NOT NULL DEFAULT 0, kind TEXT NOT NULL DEFAULT 'note', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+    # Generated images keyed by a stable id, so e.g. a map location is only generated once
+    "CREATE TABLE IF NOT EXISTS image_cache (cache_key TEXT PRIMARY KEY, path TEXT NOT NULL, created_at TEXT NOT NULL)",
     # Knowledge
     "CREATE TABLE IF NOT EXISTS knowledge_documents (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT UNIQUE, title TEXT NOT NULL, content TEXT NOT NULL, embedding_json TEXT, indexed_at TEXT NOT NULL)",
     # Users
@@ -124,6 +129,7 @@ _TABLES = [
     # Combat
     "CREATE TABLE IF NOT EXISTS combat_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, world_id INTEGER, attacker TEXT NOT NULL, defender TEXT NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL)",
     "CREATE TABLE IF NOT EXISTS combat_state (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, unit_name TEXT NOT NULL, unit_type TEXT DEFAULT 'player', hp INTEGER DEFAULT 100, max_hp INTEGER DEFAULT 100, x INTEGER DEFAULT 0, y INTEGER DEFAULT 0, status_effects TEXT DEFAULT '[]', initiative INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1)",
+    "CREATE TABLE IF NOT EXISTS combat_encounters (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, world_id INTEGER, character_id INTEGER, grid_width INTEGER DEFAULT 16, grid_height INTEGER DEFAULT 16, obstacles_json TEXT DEFAULT '[]', turn_order_json TEXT DEFAULT '[]', turn_index INTEGER DEFAULT 0, round_number INTEGER DEFAULT 1, status TEXT DEFAULT 'active', log_json TEXT DEFAULT '[]', turn_state_json TEXT DEFAULT '{}', created_at TEXT NOT NULL)",
     # Campaign / Timeline
     "CREATE TABLE IF NOT EXISTS campaign_events (id INTEGER PRIMARY KEY AUTOINCREMENT, world_id INTEGER, event_type TEXT NOT NULL, description TEXT NOT NULL, tick INTEGER DEFAULT 0, created_at TEXT NOT NULL)",
     "CREATE TABLE IF NOT EXISTS campaign_saves (id INTEGER PRIMARY KEY AUTOINCREMENT, world_id INTEGER NOT NULL, save_name TEXT NOT NULL, save_json TEXT NOT NULL, created_at TEXT NOT NULL)",
@@ -175,6 +181,9 @@ _MIGRATIONS = [
     ("factions", "military_strength", "INTEGER DEFAULT 100"),
     ("quests", "depends_on", "INTEGER"),
     ("quests", "chain_id", "TEXT"),
+    ("quests", "character_id", "INTEGER"),
+    ("memory_facts", "session_id", "TEXT DEFAULT ''"),
+    ("memory_facts", "pinned", "INTEGER DEFAULT 0"),
     ("achievements", "bonus_stat", "TEXT"),
     ("achievements", "bonus_value", "INTEGER DEFAULT 0"),
     ("inventory", "equip_slot", "TEXT"),
@@ -184,7 +193,88 @@ _MIGRATIONS = [
     ("world_weather_log", "travel_blocked", "INTEGER DEFAULT 0"),
     ("world_weather_log", "food_modifier", "REAL DEFAULT 1.0"),
     ("world_weather_log", "army_modifier", "REAL DEFAULT 1.0"),
+    # Multiverse system: reality signature + power tier per character, and
+    # 0-10 world-scale ratings + reality type per world (see
+    # backend.app.domain.worldscale / domain.multiverse).
+    ("characters", "reality_signature", "TEXT DEFAULT '{}'"),
+    ("characters", "power_tier", "INTEGER DEFAULT 2"),
+    ("worlds", "ratings_json", "TEXT DEFAULT '{}'"),
+    ("worlds", "reality_type", "TEXT DEFAULT 'Prime Reality'"),
+    # New/saved game selection needs a save to resolve back to the exact
+    # world + character it was made in, not just free-text labels.
+    ("chat_saves", "world_id", "INTEGER"),
+    ("chat_saves", "character_id", "INTEGER"),
+    # Tactical grid combat: links a unit row to its encounter, and caches
+    # the combat-relevant stats (str/con/dex modifiers, weapon tier, and the
+    # real character_id for the one human-controlled unit) computed once at
+    # encounter start rather than re-deriving them on every action.
+    ("combat_state", "encounter_id", "INTEGER"),
+    ("combat_state", "stats_json", "TEXT DEFAULT '{}'"),
+    # Multiverse character fields: origin world type (17 options), optional
+    # secondary ancestry for mixed-heritage characters, and values tracking.
+    ("characters", "origin", "TEXT DEFAULT 'Original fantasy world'"),
+    ("characters", "secondary_ancestry", "TEXT DEFAULT ''"),
+    ("characters", "values_json", "TEXT DEFAULT '{}'"),
+    # Quest reward tracking: type and actual payload granted
+    ("quests", "reward_type", "TEXT DEFAULT 'gold'"),
+    ("quests", "reward_payload", "TEXT DEFAULT '{}'"),
 ]
+
+# Level-up pending choices table (append-only, claimed flag)
+_TABLES.append("""CREATE TABLE IF NOT EXISTS level_up_pending (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id INTEGER NOT NULL,
+    new_level INTEGER NOT NULL,
+    choices_json TEXT DEFAULT '{}',
+    claimed INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL
+)""")
+
+# Organizations (guilds, families, businesses, academies, orders, etc.)
+_TABLES.append("""CREATE TABLE IF NOT EXISTS organizations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    world_id INTEGER,
+    name TEXT NOT NULL,
+    org_type TEXT NOT NULL,
+    focus TEXT DEFAULT '',
+    primary_attr TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    ranks_json TEXT DEFAULT '[]',
+    benefits_json TEXT DEFAULT '{}',
+    join_req_json TEXT DEFAULT '{}',
+    npc_leader TEXT DEFAULT '',
+    location TEXT DEFAULT '',
+    treasury INTEGER DEFAULT 0,
+    reputation INTEGER DEFAULT 50,
+    story_origin TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+)""")
+
+_TABLES.append("""CREATE TABLE IF NOT EXISTS org_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER NOT NULL,
+    character_id INTEGER NOT NULL,
+    rank INTEGER DEFAULT 0,
+    joined_at TEXT NOT NULL,
+    contributions INTEGER DEFAULT 0
+)""")
+
+# Custom spells generated from chat/story context
+_TABLES.append("""CREATE TABLE IF NOT EXISTS custom_spells (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id INTEGER,
+    name TEXT NOT NULL,
+    school TEXT DEFAULT 'Transmutation',
+    level INTEGER DEFAULT 1,
+    casting_time TEXT DEFAULT '1 action',
+    range TEXT DEFAULT '30 ft',
+    duration TEXT DEFAULT 'Instantaneous',
+    effect_type TEXT DEFAULT 'utility',
+    damage TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    story_origin TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+)""")
 
 def _create_tables(conn):
     """Create all tables that don't already exist. Pure CREATE TABLE IF NOT EXISTS,
@@ -246,6 +336,17 @@ def get_schema_version(conn=None) -> int:
             conn.close()
 
 
+def _backfill_quest_owners(conn):
+    """Quests used to be keyed by character name only. Give each legacy quest
+    to the oldest character with that name so same-named characters stop
+    sharing quests."""
+    conn.execute(
+        "UPDATE quests SET character_id=(SELECT MIN(id) FROM characters WHERE name=quests.character_name) "
+        "WHERE character_id IS NULL"
+    )
+    conn.commit()
+
+
 def init_db():
     """Create all tables + run column migrations. Called BEFORE any module
     import, deterministically, on every startup. Safe to call repeatedly."""
@@ -253,8 +354,26 @@ def init_db():
     conn = get_conn()
     _create_tables(conn)
     _run_migrations(conn)
+    _backfill_quest_owners(conn)
     _record_schema_version(conn)
     conn.close()
+
+
+def get_cached_image(cache_key: str) -> str:
+    """Path of the image stored for cache_key, or '' if none or the file is gone."""
+    conn = get_conn()
+    row = conn.execute("SELECT path FROM image_cache WHERE cache_key=?", (cache_key,)).fetchone()
+    conn.close()
+    return row["path"] if row and Path(row["path"]).is_file() else ""
+
+
+def set_cached_image(cache_key: str, path: str) -> None:
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO image_cache (cache_key, path, created_at) VALUES (?,?,?)",
+        (cache_key, path, now_iso()),
+    )
+    conn.commit(); conn.close()
 
 
 # ═══ Cascading delete ═══
@@ -265,7 +384,7 @@ def init_db():
 _CHARACTER_ID_TABLES = [
     "economy", "transactions", "inventory", "character_assets",
     "media_items", "achievements", "memory_snapshots",
-    "personality_snapshots", "skill_trees",
+    "personality_snapshots", "skill_trees", "combat_encounters",
 ]
 _CHARACTER_NAME_TABLES = [
     "relationships", "relationship_events", "quests", "memory_facts",
@@ -274,7 +393,7 @@ _WORLD_ID_TABLES = [
     "world_locations", "npcs", "factions", "dungeons", "market_prices",
     "combat_logs", "campaign_events", "campaign_saves", "npc_schedules",
     "world_weather_log", "world_resources", "diplomacy", "world_laws",
-    "random_events", "faction_wars", "ai_director",
+    "random_events", "faction_wars", "ai_director", "combat_encounters",
 ]
 
 
@@ -288,7 +407,13 @@ def delete_character(character_id: int) -> bool:
         name = row["name"]
         for tbl in _CHARACTER_ID_TABLES:
             conn.execute(f"DELETE FROM {tbl} WHERE character_id=?", (character_id,))
-        if name:
+        conn.execute("DELETE FROM quests WHERE character_id=?", (character_id,))
+        namesakes = conn.execute(
+            "SELECT COUNT(*) FROM characters WHERE name=? AND id<>?", (name, character_id)
+        ).fetchone()[0]
+        # Name-keyed rows are shared by same-named characters, so only clear
+        # them when this was the last character with that name.
+        if name and not namesakes:
             for tbl in _CHARACTER_NAME_TABLES:
                 conn.execute(f"DELETE FROM {tbl} WHERE character_name=?", (name,))
         conn.execute("DELETE FROM characters WHERE id=?", (character_id,))
@@ -353,4 +478,46 @@ _TABLES.append("""CREATE TABLE IF NOT EXISTS lorebook (
     case_sensitive INTEGER DEFAULT 0,
     enabled INTEGER DEFAULT 1,
     created_at TEXT NOT NULL
+)""")
+
+_TABLES.append("""CREATE TABLE IF NOT EXISTS world_visits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    world_id INTEGER NOT NULL,
+    character_id INTEGER,
+    location_name TEXT DEFAULT '',
+    visited_at TEXT NOT NULL
+)""")
+
+_TABLES.append("""CREATE TABLE IF NOT EXISTS npc_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id INTEGER NOT NULL,
+    npc_name TEXT NOT NULL,
+    fact TEXT NOT NULL,
+    session_id TEXT DEFAULT 'default',
+    created_at TEXT NOT NULL
+)""")
+
+_TABLES.append("""CREATE TABLE IF NOT EXISTS game_saves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_name TEXT NOT NULL,
+    character_id INTEGER,
+    session_id TEXT DEFAULT 'default',
+    world_id INTEGER,
+    notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+)""")
+
+_TABLES.append("""CREATE TABLE IF NOT EXISTS location_content (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    location_id INTEGER NOT NULL,
+    world_id INTEGER,
+    content_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    data_json TEXT DEFAULT '{}',
+    quantity INTEGER DEFAULT 1,
+    value INTEGER DEFAULT 0,
+    rarity TEXT DEFAULT 'common',
+    depleted INTEGER DEFAULT 0,
+    spawned_at TEXT NOT NULL
 )""")
