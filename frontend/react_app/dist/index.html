@@ -19,6 +19,7 @@
       <button data-view="settings"><span>⚙</span>Settings</button>
       <button data-view="media"><span>▣</span>Media</button>
       <button data-view="explore"><span>⌕</span>Explore</button>
+      <button data-view="help"><span>?</span>Help</button>
     </nav>
     <div class="side-status"><i></i><div><b>Local systems</b><small>Database ready</small></div></div>
   </aside>
@@ -119,6 +120,7 @@
     <div class="world-readout"><span class="eyebrow">CURRENT REALITY</span><b id="worldName">Aethoria Prime</b><span id="worldTags">Fantasy · Magic 8 · Tech 2</span></div>
     <div class="top-actions">
       <button id="sidebarToggleBtn" class="ghost" title="Show or hide the main menu" aria-label="Show or hide the main menu">☰</button>
+      <button id="gameHelpBtn" class="ghost" title="Help: rules, options and reference" aria-label="Help">?</button>
       <button id="gameBackBtn" class="ghost" title="Back to scenario selection">‹ Back</button>
       <button id="gameCloseBtn" class="ghost" title="Close game and return to main menu">✕ Close</button>
       <button id="switchGameBtn" class="ghost" title="Start new game or load a saved one" style="display:none">⇄ New / Load Game</button>
@@ -409,6 +411,16 @@
     </div>
   </section>
 
+  <section id="view-help" class="app-view workspace-view">
+    <header class="workspace-head"><div><span class="eyebrow">REFERENCE</span><h1>Help</h1><p>Every option, rule and game term in one place. Search, or pick a topic.</p></div></header>
+    <div class="help-layout">
+      <nav id="helpNav" class="help-nav" aria-label="Help topics"></nav>
+      <div class="help-main">
+        <div class="help-search"><input id="helpSearch" type="search" placeholder="Search rules, classes, races, feats, spells, tags…" autocomplete="off" aria-label="Search help"><small id="helpCount"></small></div>
+        <div id="helpContent" class="help-content"><div class="empty-state">Loading…</div></div>
+      </div>
+    </div>
+  </section>
   <section id="view-explore" class="app-view workspace-view">
     <header class="workspace-head"><div><span class="eyebrow">CHARACTER ATLAS</span><h1>Explore</h1><p>Browse the built-in character library, or search and import from the web.</p></div></header>
     <div class="workspace-grid">

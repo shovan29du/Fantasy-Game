@@ -110,6 +110,18 @@ const check = (ok, label) => { console.log((ok ? 'ok   ' : 'FAIL ') + label); if
   l = await layout();
   check(l.game && !l.sidebar, 'Play returns to the running game');
 
+  // --- help
+  await page.locator('#gameHelpBtn').click();
+  await page.locator('.help-section').first().waitFor({ timeout: 10000 });
+  check(await visible('#view-help') && (await layout()).sidebar, 'Help opens from a running game');
+  check(await page.locator('.help-section').count() >= 15, 'Help lists its topics');
+  await page.locator('#helpSearch').fill('fireball');
+  check((await page.locator('.help-entry h3').allTextContents()).includes('Fireball'), 'Help search finds a spell');
+  await page.locator('#helpSearch').fill('zzzz-no-such-thing');
+  check(await page.locator('.help-entry').count() === 0, 'Help search reports no matches');
+  await page.locator('.side-nav button', { hasText: 'Play' }).click();
+  check((await layout()).game, 'Play returns from Help to the game');
+
   // --- a second story with the same character name gets its own character
   const namesakes = async () => (await (await page.request.get(`${APP}/api/characters`)).json()).filter(c => c.name === 'Smoke Tester');
   const firstId = (await namesakes())[0].id;

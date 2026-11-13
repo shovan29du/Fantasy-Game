@@ -1569,6 +1569,7 @@ function showStartStep(name){$$('.start-step').forEach(s=>s.hidden=(s.id!==`star
 function showPlayHub(){$('#playHub').hidden=false;$('#gameArea').hidden=true;showStartStep('choice');$('#hubCloseBtn').hidden=!state.hasActiveGame;document.body.classList.remove('game-active','sidebar-open')}
 function hidePlayHub(){$('#playHub').hidden=true;$('#gameArea').hidden=false;state.hasActiveGame=true;document.body.classList.add('game-active');document.body.classList.remove('sidebar-open')}
 $('#sidebarToggleBtn').onclick=()=>document.body.classList.toggle('sidebar-open');
+$('#gameHelpBtn').onclick=()=>openView('help');
 $('#hubCloseBtn').onclick=hidePlayHub;
 $('#switchGameBtn').onclick=showPlayHub;
 $$('.back-btn').forEach(b=>b.onclick=()=>showStartStep(b.dataset.back));
@@ -2261,6 +2262,45 @@ $('#map').addEventListener('click',e=>{
   const rip=$('#mapMoveRipple');
   if(rip){rip.style.left=(e.clientX-r.left)+'px';rip.style.top=(e.clientY-r.top)+'px';rip.classList.remove('ripple-active');void rip.offsetWidth;rip.classList.add('ripple-active');}
 });
+// ── Help view: sections come from /api/help, built from the game's own data ──
+let _helpSections=null;
+function _helpEntryHtml(e){
+  const fields=Object.entries(e.fields||{});
+  const rows=fields.map(([k,v])=>`<div class="help-field"><dt>${safe(k)}</dt><dd>${safe(v)}</dd></div>`).join('');
+  return `<article class="help-entry"><h3>${safe(e.name)}</h3>${e.summary?`<p>${safe(e.summary)}</p>`:''}${rows?`<dl>${rows}</dl>`:''}</article>`;
+}
+function renderHelp(){
+  if(!_helpSections)return;
+  const words=($('#helpSearch').value||'').toLowerCase().split(/\s+/).filter(Boolean);
+  const matches=e=>{const hay=(e.name+' '+e.summary+' '+Object.entries(e.fields||{}).map(([k,v])=>k+' '+v).join(' ')).toLowerCase();return words.every(w=>hay.includes(w));};
+  let shown=0;
+  const html=_helpSections.map(sec=>{
+    const entries=words.length?sec.entries.filter(matches):sec.entries;
+    if(!entries.length)return '';
+    shown+=entries.length;
+    // Long reference sections start collapsed; a search opens whatever matched.
+    const open=words.length||sec.entries.length<=16;
+    return `<details class="help-section" id="help-${safe(sec.id)}"${open?' open':''}><summary><b>${safe(sec.title)}</b><small>${entries.length}${words.length?` of ${sec.entries.length}`:''}</small><span>${safe(sec.intro||'')}</span></summary><div class="help-entries">${entries.map(_helpEntryHtml).join('')}</div></details>`;
+  }).join('');
+  $('#helpContent').innerHTML=html||'<div class="empty-state">Nothing matches that search.</div>';
+  const total=_helpSections.reduce((n,s)=>n+s.entries.length,0);
+  $('#helpCount').textContent=words.length?`${shown} of ${total} entries`:`${total} entries`;
+}
+async function loadHelp(){
+  if(_helpSections){renderHelp();return;}
+  try{
+    _helpSections=await api('/api/help');
+    $('#helpNav').innerHTML=_helpSections.map(s=>`<button type="button" data-help-section="${safe(s.id)}">${safe(s.title)}</button>`).join('');
+    $('#helpNav').onclick=e=>{
+      const btn=e.target.closest('[data-help-section]');if(!btn)return;
+      if($('#helpSearch').value){$('#helpSearch').value='';renderHelp();}
+      const sec=document.getElementById('help-'+btn.dataset.helpSection);
+      if(sec){sec.open=true;sec.scrollIntoView({behavior:'smooth',block:'start'});}
+    };
+    $('#helpSearch').oninput=renderHelp;
+    renderHelp();
+  }catch(error){$('#helpContent').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`;}
+}
 function closeTopDialog(){
   for(const id of ['levelUpModal','questRewardModal','craftModal','saveLoadModal','recruitModal']){const m=document.getElementById(id);if(m&&!m.hidden){m.hidden=true;return true;}}
   const opts=document.getElementById('mediaOptsModal');if(opts){opts.remove();return true;}
@@ -2801,7 +2841,9 @@ $('#chatForm').onsubmit=async e=>{
 <b style="color:var(--gold)">Party</b><br>
 Click a party member card — Speak as that character<br>
 ✕ Narrator — Return to GM narrator mode<br>
-+ Add Member — Recruit a saved character as companion</div>`;
++ Add Member — Recruit a saved character as companion<br>
+<hr style="border-color:var(--line);margin:6px 0">
+<button type="button" class="ghost" onclick="openView('help')" style="padding:5px 12px;cursor:pointer">? Open the full Help — rules, classes, races, feats, spells, tags</button></div>`;
     const chatLog=$('#chatLog');
     chatLog.insertAdjacentHTML('beforeend',`<div class="chat-msg gm"><div class="msg-body"><b>WORLDWEAVER</b>${HELP_HTML}</div></div>`);
     chatLog.scrollTop=chatLog.scrollHeight;
@@ -2953,7 +2995,7 @@ Click a party member card — Speak as that character<br>
 };
 
 // ═══ AI Companion-style workspace navigation and studios ═══
-function openView(name){$$('.app-view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.side-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));document.body.classList.toggle('sidebar-open',name!=='play');if(name==='play'){$('#playHub').hidden=state.hasActiveGame;$('#gameArea').hidden=!state.hasActiveGame;document.body.classList.toggle('game-active',!!state.hasActiveGame)}if(name==='characters')loadCharacterStudio();if(name==='explore')loadExplore();if(name==='worlds')loadWorlds();if(name==='knowledge'){loadLore();loadKnowledgeDocs()}if(name==='media')loadMediaTab();if(name==='settings'){checkModelStatus();loadSettingsExtras()}}
+function openView(name){$$('.app-view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.side-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));document.body.classList.toggle('sidebar-open',name!=='play');if(name==='play'){$('#playHub').hidden=state.hasActiveGame;$('#gameArea').hidden=!state.hasActiveGame;document.body.classList.toggle('game-active',!!state.hasActiveGame)}if(name==='characters')loadCharacterStudio();if(name==='explore')loadExplore();if(name==='worlds')loadWorlds();if(name==='knowledge'){loadLore();loadKnowledgeDocs()}if(name==='media')loadMediaTab();if(name==='settings'){checkModelStatus();loadSettingsExtras()}if(name==='help')loadHelp()}
 $$('.side-nav button').forEach(button=>button.onclick=()=>openView(button.dataset.view));
 
 let studioOptions={};

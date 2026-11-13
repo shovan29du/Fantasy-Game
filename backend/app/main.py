@@ -630,6 +630,13 @@ def options() -> dict:
     }
 
 
+@app.get("/api/help")
+def help_reference() -> list[dict]:
+    """The in-app Help: rules, options and reference tables built from game data."""
+    from backend.app.domain.help_content import build_help
+    return build_help()
+
+
 @app.get("/api/random/prompts")
 def random_prompts(race: str = "", profession: str = "") -> dict:
     return {

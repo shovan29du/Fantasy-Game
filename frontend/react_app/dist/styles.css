@@ -146,3 +146,26 @@ body.game-active:not(.sidebar-open) .app-content{margin-left:0}
 .llm-error{margin-top:6px;color:#e8b08a;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .llm-error .llm-retry{padding:5px 12px;cursor:pointer;font-size:12px}
 .top-actions button{white-space:nowrap}
+.help-layout{max-width:1240px;margin:auto;display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}
+.help-nav{position:sticky;top:16px;display:flex;flex-direction:column;gap:2px}
+.help-nav button{background:transparent;border:0;border-left:2px solid var(--line);color:#aab3bd;text-align:left;padding:7px 12px;font-size:12px;cursor:pointer}
+.help-nav button:hover{color:#fff;border-left-color:var(--gold)}
+.help-search{display:flex;align-items:center;gap:12px;margin-bottom:14px;position:sticky;top:0;z-index:2;background:#0b1015;padding:8px 0}
+.help-search input{flex:1;background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:11px 12px;font-size:13px;outline:none}
+.help-search input:focus{border-color:var(--gold)}
+.help-search small{color:var(--muted);font-size:11px;white-space:nowrap}
+.help-section{border:1px solid var(--line);background:linear-gradient(145deg,#141c24,#0e141a);margin-bottom:10px}
+.help-section>summary{cursor:pointer;padding:13px 16px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;list-style-position:inside}
+.help-section>summary b{font:17px Georgia;color:#f2f0eb}
+.help-section>summary small{color:var(--gold);font-size:10px}
+.help-section>summary span{color:var(--muted);font-size:11px}
+.help-entries{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;padding:0 14px 14px}
+.help-entry{border:1px solid #242e38;background:#10171d;padding:12px;min-width:0}
+.help-entry h3{margin:0 0 5px;font-size:13px;color:var(--gold)}
+.help-entry p{margin:0 0 7px;font-size:12px;line-height:1.55;color:#d3d9df}
+.help-entry dl{margin:0;display:grid;gap:4px}
+.help-field{display:grid;grid-template-columns:minmax(90px,34%) 1fr;gap:8px;font-size:11px;line-height:1.45}
+.help-field dt{color:var(--muted)}
+.help-field dd{margin:0;color:#c7cdd3;overflow-wrap:anywhere}
+@media(max-width:900px){.help-layout{grid-template-columns:1fr}.help-nav{position:static;flex-direction:row;flex-wrap:wrap}.help-nav button{border-left:0;border-bottom:2px solid var(--line)}}
+.help-section{scroll-margin-top:70px}
