@@ -160,8 +160,16 @@ function addCharToParty(ch){
 window._addStoryChar=async(id)=>{
   try{const chars=await api('/api/characters');const ch=chars.find(c=>c.id===id);if(ch)addCharToParty(ch);}catch{}
 };
+function chatNote(text){
+  const log=$('#chatLog');if(!log)return;
+  log.insertAdjacentHTML('beforeend',`<div class="chat-note">${safe(text)}</div>`);
+  log.scrollTop=log.scrollHeight;
+}
 function updateSpeakerUI(){
   const sp=state.activeSpeaker;
+  const spId=sp?sp.id:null;
+  if(state._spkAnnounced===undefined)state._spkAnnounced=spId;
+  else if(state._spkAnnounced!==spId){state._spkAnnounced=spId;chatNote(sp?`🎭 Now speaking as ${sp.name}`:'🎭 Back to the narrator');}
   const hn=$('#chatHeadName'),ai=$('#aiStatus'),ci=$('#chatInput'),eb=$('#exitSpeakerBtn');
   if(sp){
     if(hn)hn.textContent=sp.name;
@@ -1281,9 +1289,9 @@ function fmtInline(s){
 }
 
 // ── Chat message renderer + per-message action toolbar ──
-function chatMsg(cls,html,id){
+function chatMsg(cls,html,id,who){
  const idAttr=id?` data-mid="${id}"`:'';
- const label=cls==='player'?'<b>YOU</b>':'<b>WORLDWEAVER</b>';
+ const label=who?`<b>${safe(who)}</b>`:cls==='player'?'<b>YOU</b>':'<b>WORLDWEAVER</b>';
  return `<div class="chat-msg ${cls}"${idAttr}><div class="msg-body">${label}${html}</div><div class="msg-actions"><button class="ma" data-act="copy" title="Copy">⎘</button><button class="ma" data-act="edit" title="Edit">✎</button><button class="ma" data-act="delete" title="Delete">🗑</button><button class="ma" data-act="rewind" title="Delete this and everything after">⏪</button><button class="ma" data-act="regenerate" title="Regenerate AI response">♻</button><button class="ma" data-act="memory" title="Save to memory">🧠</button><button class="ma" data-act="moment" title="Mark as a key moment">⭐</button><button class="ma" data-act="note" title="Add to journal notes">📝</button><button class="ma" data-act="select" title="Select">☐</button><button class="ma" data-act="paste" title="Paste to input">→✏</button><button class="ma" data-act="forward" title="Progress story forward">↗</button><button class="ma" data-act="media" title="Generate media from this message">🎨</button></div></div>`;
 }
 
@@ -3006,9 +3014,9 @@ Click a party member card — Speak as that character<br>
   }
 
   const sp=state.activeSpeaker;
-  const playerLabel=sp?`<b style="color:var(--gold)">${safe(sp.name)}:</b> `:'';
+  const playerLabel='';
   const isRetry=state._retryPending===true;state._retryPending=false;
-  if(!isRetry)$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',playerLabel+fmtChat(msg)));
+  if(!isRetry)$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('player',playerLabel+fmtChat(msg),null,sp?.name));
   input.value='';if(input.tagName==='TEXTAREA'){input.style.height='auto';}$('#aiStatus').textContent='Thinking…';
   // typing indicator bubble
   const typingId='typing-'+Date.now();
@@ -3032,7 +3040,7 @@ Click a party member card — Speak as that character<br>
       const fallResp=await api('/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
       const reply=fallResp?.reply||fallResp?.content||'';
       if(isLlmError(reply)){$('#chatLog').insertAdjacentHTML('beforeend',llmErrorBubble(reply,msg));}
-      else if(reply){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',replyLabel+fmtChat(reply)));speakReply(reply);detectStoryChars(reply);const _ds=detectScaleFromChat(reply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(reply);addLocationsFromChat(msg);}
+      else if(reply){$('#chatLog').insertAdjacentHTML('beforeend',chatMsg('gm',fmtChat(reply),null,sp?.name));speakReply(reply);detectStoryChars(reply);const _ds=detectScaleFromChat(reply);if(_ds&&_ds!==state.scale)setScale(_ds);addLocationsFromChat(reply);addLocationsFromChat(msg);}
       $('#aiStatus').textContent=llmStatus(sp,reply);
       saveSessionToStorage();$('#chatLog').scrollTop=$('#chatLog').scrollHeight;return;
     }

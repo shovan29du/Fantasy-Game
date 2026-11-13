@@ -70,6 +70,24 @@ const check = (ok, label) => { console.log((ok ? 'ok   ' : 'FAIL ') + label); if
   await page.waitForFunction(() => document.querySelector('#detailContent .character-hero h2')?.textContent === 'Smoke Tester', null, { timeout: 8000 });
   check(await page.locator('#detailContent button', { hasText: 'Level Up' }).count() === 1, 'deselecting returns to your own sheet');
 
+  // --- the selected party member's name shows in the chat
+  await page.locator('#partyList .party-card', { hasText: 'Kael Companion' }).click();
+  await page.locator('#chatLog .chat-note', { hasText: 'Now speaking as Kael Companion' }).waitFor({ timeout: 8000 });
+  check(true, 'selecting a party member adds a note to the chat');
+  await page.locator('#chatInput').fill('I take first watch.');
+  await page.locator('#chatForm button', { hasText: /^Send$/ }).click();
+  await page.waitForFunction(() => document.querySelector('#chatLog .chat-msg.gm:last-child')?.textContent.includes('sealed scroll'), null, { timeout: 20000 });
+  const labels = await page.evaluate(() => {
+    const lastPlayer = [...document.querySelectorAll('#chatLog .chat-msg.player')].pop();
+    const lastReply = [...document.querySelectorAll('#chatLog .chat-msg.gm')].pop();
+    return [lastPlayer?.querySelector('b')?.textContent, lastReply?.querySelector('b')?.textContent];
+  });
+  check(labels[0] === 'Kael Companion', 'your message is labelled with the selected member, not YOU');
+  check(labels[1] === 'Kael Companion', 'the reply is labelled with the selected member');
+  await page.locator('#partyList .party-card', { hasText: 'Kael Companion' }).click();
+  await page.waitForFunction(() => document.querySelector('#chatLog .chat-note:last-child')?.textContent.includes('Back to the narrator'), null, { timeout: 8000 });
+  check(true, 'releasing the member says so in the chat');
+
   // --- menu toggle and Escape
   await page.locator('#sidebarToggleBtn').click();
   check((await layout()).sidebar, 'Menu button shows the sidebar');
