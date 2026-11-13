@@ -249,3 +249,4 @@ body.game-active:not(.sidebar-open) .app-content{margin-left:0}
 @media(max-width:600px){.journal-drawer{width:100vw}}
 .jrow input:not([type=checkbox]),.jbar input{background:#0a0f14;color:#e8edf2;border:1px solid #303b46;padding:8px 9px;font:12px inherit;outline:none}
 .jrow input:focus,.jbar input:focus{border-color:var(--gold)}
+.panel-note{margin:0 0 10px;padding:7px 10px;border:1px solid #4a3f6e;background:#1a1530;color:#cdbdf5;font-size:11px;line-height:1.5}

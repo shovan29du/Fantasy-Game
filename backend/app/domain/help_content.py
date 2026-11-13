@@ -387,10 +387,11 @@ def _controls() -> dict:
            links=[("Memory", "journal/Memory"), ("Moments", "journal/Moments"), ("Notes", "journal/Notes")]),
         _entry("How replies are formatted", "“Name: text” is dialogue. **Bold text** is action or narration.",
                example="**The door creaks open.** Captain Hayate: “You are late.”"),
-        _entry("Party", "Click a party member to speak as them; “Narrator” returns to the storyteller. "
+        _entry("Party", "Click a party member to speak as them and see their sheet in the Character panel; click them again to "
+               "return to the narrator and to your own sheet. A companion's sheet is read-only. "
                "“Recruit companion” adds a saved character (up to 6 in the party) and can delete saved characters.",
-               example="Click your companion Kael's card and type “I'll take first watch” — the line is spoken "
-                       "as Kael.",
+               example="Click your companion Kael's card: his stats, health and mana appear on the right, and “I'll take first "
+                       "watch” is spoken as Kael. Click the card again to go back.",
                links=[("Relationships", "relationships")]),
     ]}
 

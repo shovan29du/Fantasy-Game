@@ -88,6 +88,29 @@ async function refreshCharacterState(){
  // Check for any pending level-up
  try{const pend=await api(`/api/characters/${state.characterId}/level-up/pending`);if(pend.has_pending)state.pendingLevelUp=true;}catch{}
 }
+// The Character panel shows the selected party member (the one you are speaking as),
+// otherwise the story's own character. It is redrawn whenever either changes.
+function panelSubject(){
+  const sp=state.activeSpeaker;
+  if(sp&&sp.id!==state.characterId){
+    const sh=state.partySheets[sp.id];
+    if(sh&&sh.total_stats)return {sheet:sh,id:sp.id,main:false,name:sp.name};
+  }
+  return {sheet:state.sheet,id:state.characterId,main:true,name:state.sheet?.name};
+}
+async function ensurePartySheet(id){
+  const have=state.partySheets[id];
+  if(have&&have.total_stats)return have;
+  const sheet=await api(`/api/characters/${id}/sheet`);
+  state.partySheets[id]=sheet;
+  return sheet;
+}
+function refreshCharacterPanel(){
+  if($('.detail-tabs button.active')?.dataset?.panel!=='character')return;
+  const editing=$('#backstoryEditBox');
+  if(editing&&editing.offsetParent!==null)return; // do not clobber a backstory being edited
+  showPanel('character');
+}
 function statMod(v){return Math.floor(((v||10)-10)/2)}
 function derivedResources(sheet){
  const con=sheet?.total_stats?.constitution?.total ?? 10, int=sheet?.total_stats?.intelligence?.total ?? 10, wis=sheet?.total_stats?.wisdom?.total ?? 10;
@@ -131,7 +154,7 @@ function addCharToParty(ch){
   if(state.partyChars.length>=6){toast('Party is full (max 6)');return;}
   state.partyChars.push({id:ch.id,name:ch.name,race:ch.race||'Unknown',profession:ch.profession||'Adventurer',gender:ch.gender||'',photo_path:ch.photo_path||'',initials:(ch.name||'??').slice(0,2).toUpperCase(),level:ch.level||1,backstory:ch.backstory||''});
   // Fetch and cache full sheet for combat context
-  api(`/api/characters/${ch.id}`).then(s=>{state.partySheets[ch.id]=s;}).catch(()=>{});
+  api(`/api/characters/${ch.id}/sheet`).then(s=>{state.partySheets[ch.id]=s;refreshCharacterPanel();}).catch(()=>{});
   savePartyToStorage();renderParty();toast(`${ch.name} joined the party!`);
 }
 window._addStoryChar=async(id)=>{
@@ -226,12 +249,15 @@ function renderParty(){
       </div>
     </div>`;
   }).join('');
-  $$('[data-party]').forEach(card=>card.onclick=e=>{
+  $$('[data-party]').forEach(card=>card.onclick=async e=>{
     if(e.target.closest('[data-remove-party]'))return;
     const i=+card.dataset.party,ch=state.partyChars[i];if(!ch)return;
     if(state.activeSpeaker?.id===ch.id){state.activeSpeaker=null;}
     else{state.activeSpeaker=ch;}
+    if(state.activeSpeaker&&ch.id!==state.characterId){try{await ensurePartySheet(ch.id);}catch{}}
     updateSpeakerUI();renderParty();
+    const charTab=document.querySelector('.detail-tabs button[data-panel="character"]');
+    if(charTab&&!charTab.classList.contains('active'))charTab.click();
     toast(state.activeSpeaker?`Now speaking as ${ch.name} — click again to return to narrator`:'Returned to narrator mode');
   });
   $$('[data-remove-party]').forEach(btn=>btn.onclick=e=>{
@@ -242,6 +268,7 @@ function renderParty(){
     state.partyChars.splice(i,1);delete state.partySheets[ch.id];savePartyToStorage();renderParty();
     toast(`${ch.name} left the party`);
   });
+  refreshCharacterPanel();
 }
 function renderQuests(){
  if(!state.quests.length){$('#questList').innerHTML=`<div class="quest"><p>No active quests.</p><div class="quest-progress"><span>Generate one from the current reality</span><button id="genQuestBtn" class="ghost">✦ Generate</button></div></div>`;const b=$('#genQuestBtn');if(b)b.onclick=generateQuest;return}
@@ -470,14 +497,14 @@ async function loadCustomSpells(){
 }
 const panels={
  character:()=>{
-  const s=state.sheet; if(!s) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
+  const subj=panelSubject(); const s=subj.sheet; if(!s) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;
   const stats=s.total_stats||{}; const xp=s.xp_progress||{into:0,need:1,fraction:0};
   const rows=[['STR','strength'],['DEX','dexterity'],['CON','constitution'],['INT','intelligence'],['WIS','wisdom'],['CHA','charisma_stat']];
   const {maxHp,maxMana}=derivedResources(s);
-  const hpSt=state.characterId?getHpState(state.characterId,maxHp,maxMana):{currentHp:maxHp,currentMp:maxMana};
+  const hpSt=subj.id?getHpState(subj.id,maxHp,maxMana):{currentHp:maxHp,currentMp:maxMana};
   const curHp=hpSt.currentHp;const curMp=hpSt.currentMp;
   const sig=s.reality_signature||{}; const tier=s.power_tier_info||{name:'Heroic'};
-  const equippedWeapon=(state.inventory.items||[]).find(it=>it.equip_slot==='weapon');
+  const equippedWeapon=subj.main?(state.inventory.items||[]).find(it=>it.equip_slot==='weapon'):null;
   const dexMod=statMod((stats.dexterity||{}).total);const strMod=statMod((stats.strength||{}).total);
   const weaponData=equippedWeapon?state.dndWeapons[equippedWeapon.item_name]:null;
   const atkBonus=weaponData?(weaponData.properties?.includes('finesse')?Math.max(strMod,dexMod):strMod):strMod;
@@ -485,8 +512,10 @@ const panels={
   const pendingLvl=state.pendingLevelUp;
   const lvlBtnStyle=pendingLvl?'background:linear-gradient(135deg,#c8a93e,#e6c35a);color:#000;font-weight:900;animation:glowPulse 1.8s infinite;':'background:var(--panel);color:var(--gold);border-color:var(--gold);';
   const backstory=s.backstory||'';
+  const backstoryView=backstory?`<div class="panel-title" style="margin-top:10px"><span>BACKSTORY</span></div><div style="font-size:11px;color:var(--muted);line-height:1.6;padding:4px 0;white-space:pre-wrap">${safe(backstory)}</div>`:'';
+  const viewingNote=subj.main?'':`<div class="panel-note">Viewing <b>${safe(subj.name)}</b>. Click their party card again to return to ${safe(state.sheet?.name||'your character')}. Inventory, Spellbook and Skills still show ${safe(state.sheet?.name||'your character')}.</div>`;
   const backstoryHtml=`<div class="panel-title" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between"><span>BACKSTORY</span><button id="editBackstoryBtn" class="ghost" style="font-size:10px;padding:2px 8px" onclick="toggleBackstoryEdit()">✏ Edit</button></div><div id="backstoryDisplay" style="font-size:11px;color:var(--muted);line-height:1.6;padding:4px 0;white-space:pre-wrap">${safe(backstory)||'<em>No backstory yet — click Edit to add one.</em>'}</div><div id="backstoryEditBox" hidden style="display:flex;flex-direction:column;gap:6px"><textarea id="backstoryTextarea" rows="12" style="width:100%;background:#0a0f14;border:1px solid var(--line);border-radius:5px;color:#e9ecf1;font-size:11px;line-height:1.6;padding:8px;resize:vertical;box-sizing:border-box">${safe(backstory)}</textarea><div style="display:flex;gap:6px;justify-content:flex-end"><button class="ghost" style="font-size:10px;padding:3px 10px" onclick="cancelBackstoryEdit()">Cancel</button><button class="gold" style="font-size:10px;padding:3px 10px" onclick="saveBackstory()">💾 Save</button></div></div>`;
-  return `<div class="character-hero"><div class="hero-portrait">${safe((s.name||'?').slice(0,2).toUpperCase())}</div><h2>${safe(s.name)}</h2><p>${safe(s.race||'Unknown')} · Level ${safe(s.calc_lv||s.level||1)} ${safe(s.profession||'Adventurer')}</p><p>${safe(tier.name)} tier · ${safe(sig.reality_type||'Prime Reality')} (${safe(sig.universe_tag||'—')})</p></div><div class="xp-row"><div><span>EXPERIENCE</span><span>${safe(s.xp||0)} XP (${xp.into}/${xp.need} to next)</span></div><div class="meter"><i style="width:${Math.round((xp.fraction||0)*100)}%"></i></div></div><div class="stats">${rows.map(([label,key])=>`<div class="stat"><b>${(stats[key]||{}).total ?? 10}</b><small>${label} · +${statMod((stats[key]||{}).total)}</small></div>`).join('')}</div><div class="resource"><div><span>Health</span><b>${curHp} / ${maxHp}</b></div><div class="meter"><i style="width:${Math.round(curHp/maxHp*100)}%;background:var(--green)"></i></div></div><div class="resource"><div><span>Mana</span><b>${curMp} / ${maxMana}</b></div><div class="meter"><i style="width:${Math.round(curMp/maxMana*100)}%;background:var(--purple)"></i></div></div>${weaponHtml}<button onclick="openLevelUpModal()" style="${lvlBtnStyle}width:100%;margin-top:10px;padding:9px 0;border:1px solid var(--gold);border-radius:6px;cursor:pointer;font-size:12px;letter-spacing:1px;transition:all .2s">${pendingLvl?'🌟 LEVEL UP READY!':'⬆ Level Up'}</button>${backstoryHtml}`;
+  return `${viewingNote}<div class="character-hero"><div class="hero-portrait">${safe((s.name||'?').slice(0,2).toUpperCase())}</div><h2>${safe(s.name)}</h2><p>${safe(s.race||'Unknown')} · Level ${safe(s.calc_lv||s.level||1)} ${safe(s.profession||'Adventurer')}</p><p>${safe(tier.name)} tier · ${safe(sig.reality_type||'Prime Reality')} (${safe(sig.universe_tag||'—')})</p></div><div class="xp-row"><div><span>EXPERIENCE</span><span>${safe(s.xp||0)} XP (${xp.into}/${xp.need} to next)</span></div><div class="meter"><i style="width:${Math.round((xp.fraction||0)*100)}%"></i></div></div><div class="stats">${rows.map(([label,key])=>`<div class="stat"><b>${(stats[key]||{}).total ?? 10}</b><small>${label} · +${statMod((stats[key]||{}).total)}</small></div>`).join('')}</div><div class="resource"><div><span>Health</span><b>${curHp} / ${maxHp}</b></div><div class="meter"><i style="width:${Math.round(curHp/maxHp*100)}%;background:var(--green)"></i></div></div><div class="resource"><div><span>Mana</span><b>${curMp} / ${maxMana}</b></div><div class="meter"><i style="width:${Math.round(curMp/maxMana*100)}%;background:var(--purple)"></i></div></div>${weaponHtml}${subj.main?`<button onclick="openLevelUpModal()" style="${lvlBtnStyle}width:100%;margin-top:10px;padding:9px 0;border:1px solid var(--gold);border-radius:6px;cursor:pointer;font-size:12px;letter-spacing:1px;transition:all .2s">${pendingLvl?'🌟 LEVEL UP READY!':'⬆ Level Up'}</button>`:''}${subj.main?backstoryHtml:backstoryView}`;
  },
  inventory:()=>{
   if(!state.characterId) return `<div class="empty-state">No adventurer yet.<br><button id="goCreateCharacterBtn" class="gold" style="margin-top:10px">Create a character</button></div>`;

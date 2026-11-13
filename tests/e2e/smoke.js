@@ -47,6 +47,29 @@ const check = (ok, label) => { console.log((ok ? 'ok   ' : 'FAIL ') + label); if
   check((await page.locator('#partyCount').textContent()).trim() === '1 / 6', 'party has only the new character');
   check((await page.locator('#partyList').textContent()).includes('Smoke Tester'), 'party shows the new character');
 
+  // --- the Character panel shows the selected character
+  const panelName = () => page.locator('#detailContent .character-hero h2').textContent();
+  check((await panelName()) === 'Smoke Tester', "the Character panel shows the story's character");
+  const companion = await (await page.request.post(`${APP}/api/characters`, { data: { name: 'Kael Companion', profession: 'Fighter' } })).json();
+  // a newer saved character exists: after a reload the panel must still show this story's character
+  await page.reload();
+  await page.waitForFunction(() => !document.querySelector('#gameArea').hidden && document.querySelector('#partyCount')?.textContent.trim().startsWith('1'), null, { timeout: 30000 });
+  await page.waitForTimeout(500);
+  check((await panelName()) === 'Smoke Tester', 'the panel is not replaced by the newest saved character');
+  check((await page.locator('#partyList').textContent()).includes('Smoke Tester'), 'the party bar and the panel agree');
+
+  await page.locator('.add-member').click();
+  await page.locator(`[data-recruit-id="${companion.id}"]`).click();
+  await page.keyboard.press('Escape');
+  await page.locator('#partyList .party-card', { hasText: 'Kael Companion' }).click();
+  await page.waitForFunction(() => document.querySelector('#detailContent .character-hero h2')?.textContent === 'Kael Companion', null, { timeout: 8000 });
+  check(true, 'selecting a party member shows their sheet');
+  check(await page.locator('#detailContent .panel-note').count() === 1, 'the panel says whose sheet it is showing');
+  check(await page.locator('#detailContent button', { hasText: 'Level Up' }).count() === 0, "a companion's sheet cannot be levelled from here");
+  await page.locator('#partyList .party-card', { hasText: 'Kael Companion' }).click();
+  await page.waitForFunction(() => document.querySelector('#detailContent .character-hero h2')?.textContent === 'Smoke Tester', null, { timeout: 8000 });
+  check(await page.locator('#detailContent button', { hasText: 'Level Up' }).count() === 1, 'deselecting returns to your own sheet');
+
   // --- menu toggle and Escape
   await page.locator('#sidebarToggleBtn').click();
   check((await layout()).sidebar, 'Menu button shows the sidebar');
