@@ -20,6 +20,8 @@ const check = (ok, label) => { console.log((ok ? 'ok   ' : 'FAIL ') + label); if
   context.on('page', () => pageErrors.push('a new tab was opened'));
   // Keep the run offline: nothing outside the app under test.
   await page.route(url => !url.href.startsWith(APP), route => route.abort());
+  // Help pictures are generated on demand and need an image service; this run is offline.
+  await page.route('**/api/help/picture', route => route.abort());
 
   const layout = () => page.evaluate(() => ({
     game: !document.querySelector('#gameArea').hidden,
@@ -116,7 +118,7 @@ const check = (ok, label) => { console.log((ok ? 'ok   ' : 'FAIL ') + label); if
   check(await visible('#view-help') && (await layout()).sidebar, 'Help opens from a running game');
   check(await page.locator('.help-section').count() >= 15, 'Help lists its topics');
   await page.locator('#helpSearch').fill('fireball');
-  check((await page.locator('.help-entry h3').allTextContents()).includes('Fireball'), 'Help search finds a spell');
+  check((await page.locator('.help-entry h3').allTextContents()).some(t => t.includes('Fireball')), 'Help search finds a spell');
   await page.locator('#helpSearch').fill('zzzz-no-such-thing');
   check(await page.locator('.help-entry').count() === 0, 'Help search reports no matches');
   await page.locator('.side-nav button', { hasText: 'Play' }).click();

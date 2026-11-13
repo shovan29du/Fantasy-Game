@@ -66,3 +66,60 @@ def test_alignments_quests_and_rules_are_covered():
 def test_help_states_the_content_limits():
     text = _text(_sections()["limits"]) + _text(_sections()["tags"])
     assert "minors" in text and "under 18" in text
+
+
+def test_every_link_points_at_a_real_entry_or_view():
+    sections = {s["id"]: s for s in build_help()}
+    ids = {sid: {e["id"] for e in s["entries"]} for sid, s in sections.items()}
+    from backend.app.domain.help_content import _sections as raw_sections
+
+    links = 0
+    for section in raw_sections():
+        for entry in section["entries"]:
+            for label, target in entry["links"]:
+                links += 1
+                if target.startswith("view:"):
+                    continue
+                sec, _, name = target.partition("/")
+                assert sec in sections, f"{section['id']}/{entry['name']}: unknown topic in link {target!r}"
+                if name:
+                    assert any(e["name"] == name for e in sections[sec]["entries"]), \
+                        f"{section['id']}/{entry['name']}: link {target!r} has no such entry"
+    assert links > 500
+
+
+def test_entries_carry_stats_examples_and_links():
+    entries = [e for s in build_help() for e in s["entries"]]
+    assert sum(1 for e in entries if e["example"]) / len(entries) > 0.95
+    assert sum(1 for e in entries if e["stats"]) / len(entries) > 0.8
+    assert sum(1 for e in entries if e["links"]) / len(entries) > 0.95
+    assert len({(s["id"], e["id"]) for s in build_help() for e in s["entries"]}) == len(entries)
+
+
+def test_worked_examples_use_real_numbers():
+    entries = {e["name"]: e for s in build_help() for e in s["entries"]}
+    assert "55% chance" in entries["Attack rolls"]["example"]  # +5 against AC 15
+    assert entries["Fireball"]["stats"]["Damage"].startswith("8d6")
+    assert "8–48, average 28" in entries["Fireball"]["example"]
+    assert entries["Goblin"]["stats"]["AC"] == 15
+    assert "d10" in entries["Fighter"]["stats"]["Hit die"]
+
+
+def test_every_topic_has_a_banner_and_pictures_have_unique_paths():
+    from backend.app.domain.help_content import picture_specs
+
+    specs = picture_specs()
+    assert len({str(s["path"]) for s in specs}) == len(specs)
+    banners = {s["id"] for s in specs if s["section"] == "sections"}
+    assert banners == {s["id"] for s in build_help()}
+    assert all(s["prompt"] and "no text" in s["prompt"] for s in specs)
+
+
+def test_picture_endpoint_only_serves_defined_pictures():
+    import pytest
+    from fastapi import HTTPException
+    from backend.app.main import HelpPictureIn, help_picture
+
+    with pytest.raises(HTTPException) as err:
+        help_picture(HelpPictureIn(section="spells", id="not-a-real-entry"))
+    assert err.value.status_code == 404

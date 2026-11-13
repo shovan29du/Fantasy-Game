@@ -637,6 +637,33 @@ def help_reference() -> list[dict]:
     return build_help()
 
 
+class HelpPictureIn(BaseModel):
+    section: str
+    id: str
+
+
+@app.post("/api/help/picture")
+def help_picture(payload: HelpPictureIn) -> dict:
+    """Generate (once) the illustration for one Help entry. Only pictures
+    defined by the Help content can be requested; the prompt is never taken
+    from the client."""
+    from backend.app.domain.help_content import find_picture_spec, HELP_MEDIA
+    spec = find_picture_spec(payload.section, payload.id)
+    if not spec:
+        raise HTTPException(status_code=404, detail="No picture is defined for that Help entry.")
+    target = spec["path"]
+    if not target.is_file():
+        source = download_image(spec["prompt"], width=768, height=432,
+                                providers=["pollinations", "comfyui", "automatic1111"])
+        if not source:
+            raise HTTPException(status_code=503, detail="No image generator is available right now. Try again later.")
+        from PIL import Image
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(source) as im:
+            im.convert("RGB").resize((640, 360)).save(target, "JPEG", quality=82, optimize=True)
+    return {"url": "/media/" + str(target.relative_to(MEDIA_DIR)).replace("\\", "/")}
+
+
 @app.get("/api/random/prompts")
 def random_prompts(race: str = "", profession: str = "") -> dict:
     return {

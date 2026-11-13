@@ -169,3 +169,21 @@ body.game-active:not(.sidebar-open) .app-content{margin-left:0}
 .help-field dd{margin:0;color:#c7cdd3;overflow-wrap:anywhere}
 @media(max-width:900px){.help-layout{grid-template-columns:1fr}.help-nav{position:static;flex-direction:row;flex-wrap:wrap}.help-nav button{border-left:0;border-bottom:2px solid var(--line)}}
 .help-section{scroll-margin-top:70px}
+.help-icon{display:inline-block;min-width:1.3em;margin-right:6px;text-align:center}
+.help-pic{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;margin-bottom:10px;border:1px solid #242e38;background:#0a0f14}
+.help-pic-pending{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--muted);background:radial-gradient(circle at 50% 40%,#2a2140,#0a0f14 75%)}
+.help-pic-pending span{font-size:34px;opacity:.8}
+.help-pic-pending small{font-size:10px}
+.help-banner{aspect-ratio:auto;height:170px;margin:0 14px 12px;width:calc(100% - 28px)}
+.help-stats{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 9px}
+.help-stat{display:flex;flex-direction:column;min-width:62px;padding:5px 9px;border:1px solid #3a3222;background:#1a160e;font-size:9px;letter-spacing:.4px;text-transform:uppercase;color:#a99a78}
+.help-stat b{font-size:13px;color:var(--gold);letter-spacing:0;text-transform:none}
+.help-example{margin-top:9px;padding:8px 10px;border-left:2px solid #9877db;background:#16122033;font-size:11.5px;line-height:1.55;color:#d6d0e6}
+.help-example b{display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#b49cf0;margin-bottom:2px}
+.help-links{margin-top:9px;display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.help-links small{color:var(--muted);font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-right:2px}
+.help-link{background:#18212a;border:1px solid var(--line);color:#b7c9d6;padding:3px 9px;font-size:10.5px;border-radius:10px;cursor:pointer}
+.help-link:hover{border-color:var(--gold);color:#fff}
+.help-link-app{border-color:#4a3f6e;color:#cdbdf5}
+.help-flash{outline:2px solid var(--gold);outline-offset:2px}
+.help-nav button{display:flex;align-items:center}

@@ -2264,15 +2264,62 @@ $('#map').addEventListener('click',e=>{
 });
 // ── Help view: sections come from /api/help, built from the game's own data ──
 let _helpSections=null;
-function _helpEntryHtml(e){
-  const fields=Object.entries(e.fields||{});
-  const rows=fields.map(([k,v])=>`<div class="help-field"><dt>${safe(k)}</dt><dd>${safe(v)}</dd></div>`).join('');
-  return `<article class="help-entry"><h3>${safe(e.name)}</h3>${e.summary?`<p>${safe(e.summary)}</p>`:''}${rows?`<dl>${rows}</dl>`:''}</article>`;
+// Pictures are generated one at a time, only for entries scrolled into view.
+let _helpPicQueue=[],_helpPicBusy=false,_helpPicObserver=null,_helpPicOff=false;
+function _helpPicHtml(sec,id,image,canPicture,icon,alt,extraClass){
+  const cls='help-pic'+(extraClass?' '+extraClass:'');
+  if(image)return `<img class="${cls}" src="${safe(image)}" alt="${safe(alt)}" loading="lazy">`;
+  if(canPicture)return `<div class="${cls} help-pic-pending" data-help-pic="${safe(sec)}/${safe(id)}" data-alt="${safe(alt)}"><span>${safe(icon||'✦')}</span><small>Picture loads when viewed</small></div>`;
+  return '';
+}
+async function _helpPicNext(){
+  if(_helpPicBusy)return;
+  const el=_helpPicQueue.shift();if(!el)return;
+  if(!el.isConnected){_helpPicNext();return;}
+  if(_helpPicOff){const sm=el.querySelector('small');if(sm)sm.textContent='Picture unavailable';_helpPicNext();return;}
+  _helpPicBusy=true;
+  const [section,id]=el.dataset.helpPic.split('/');
+  const stop=startGenTimer(el.querySelector('small'),'Painting');
+  try{
+    const r=await api('/api/help/picture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({section,id})});
+    stop();
+    const target=section==='sections'?_helpSections.find(x=>x.id===id):_helpSections.find(x=>x.id===section)?.entries.find(e=>e.id===id);
+    if(target)target.image=r.url;
+    if(el.isConnected)el.outerHTML=`<img class="${el.className.replace(' help-pic-pending','')}" src="${safe(r.url)}" alt="${safe(el.dataset.alt||'')}">`;
+  }catch(error){stop();_helpPicOff=true;const sm=el.querySelector('small');if(sm)sm.textContent='Picture unavailable';}
+  _helpPicBusy=false;_helpPicNext();
+}
+function _helpWatchPictures(){
+  if(_helpPicObserver)_helpPicObserver.disconnect();
+  _helpPicQueue=[];
+  if(!('IntersectionObserver' in window))return;
+  _helpPicObserver=new IntersectionObserver(items=>{
+    for(const it of items){if(it.isIntersecting){_helpPicObserver.unobserve(it.target);_helpPicQueue.push(it.target);}}
+    _helpPicNext();
+  },{rootMargin:'100px'});
+  $$('#helpContent [data-help-pic]').forEach(el=>_helpPicObserver.observe(el));
+}
+function _helpEntryHtml(sec,e){
+  const stats=Object.entries(e.stats||{}).map(([k,v])=>`<span class="help-stat"><b>${safe(v)}</b>${safe(k)}</span>`).join('');
+  const rows=Object.entries(e.fields||{}).map(([k,v])=>`<div class="help-field"><dt>${safe(k)}</dt><dd>${safe(v)}</dd></div>`).join('');
+  const links=(e.links||[]).map(l=>l.view
+    ?`<button type="button" class="help-link help-link-app" data-help-view="${safe(l.view)}">${safe(l.label)} ↗</button>`
+    :`<button type="button" class="help-link" data-help-goto="${safe(l.section)}/${safe(l.entry||'')}">${safe(l.label)}</button>`).join('');
+  return `<article class="help-entry" id="help-${safe(sec.id)}-${safe(e.id)}">
+    ${_helpPicHtml(sec.id,e.id,e.image,e.can_picture,e.icon,e.name)}
+    <h3><span class="help-icon">${safe(e.icon||'')}</span>${safe(e.name)}</h3>
+    ${e.summary?`<p>${safe(e.summary)}</p>`:''}
+    ${stats?`<div class="help-stats">${stats}</div>`:''}
+    ${rows?`<dl>${rows}</dl>`:''}
+    ${e.example?`<div class="help-example"><b>Example</b>${safe(e.example)}</div>`:''}
+    ${links?`<div class="help-links"><small>See also</small>${links}</div>`:''}
+  </article>`;
 }
 function renderHelp(){
   if(!_helpSections)return;
   const words=($('#helpSearch').value||'').toLowerCase().split(/\s+/).filter(Boolean);
-  const matches=e=>{const hay=(e.name+' '+e.summary+' '+Object.entries(e.fields||{}).map(([k,v])=>k+' '+v).join(' ')).toLowerCase();return words.every(w=>hay.includes(w));};
+  const text=e=>(e.name+' '+e.summary+' '+(e.example||'')+' '+Object.entries(e.fields||{}).concat(Object.entries(e.stats||{})).map(([k,v])=>k+' '+v).join(' ')).toLowerCase();
+  const matches=e=>{const hay=text(e);return words.every(w=>hay.includes(w));};
   let shown=0;
   const html=_helpSections.map(sec=>{
     const entries=words.length?sec.entries.filter(matches):sec.entries;
@@ -2280,23 +2327,37 @@ function renderHelp(){
     shown+=entries.length;
     // Long reference sections start collapsed; a search opens whatever matched.
     const open=words.length||sec.entries.length<=16;
-    return `<details class="help-section" id="help-${safe(sec.id)}"${open?' open':''}><summary><b>${safe(sec.title)}</b><small>${entries.length}${words.length?` of ${sec.entries.length}`:''}</small><span>${safe(sec.intro||'')}</span></summary><div class="help-entries">${entries.map(_helpEntryHtml).join('')}</div></details>`;
+    const banner=words.length?'':_helpPicHtml('sections',sec.id,sec.image,sec.can_picture,sec.icon,sec.title,'help-banner');
+    return `<details class="help-section" id="help-${safe(sec.id)}"${open?' open':''}><summary><b><span class="help-icon">${safe(sec.icon||'')}</span>${safe(sec.title)}</b><small>${entries.length}${words.length?` of ${sec.entries.length}`:''}</small><span>${safe(sec.intro||'')}</span></summary>${banner}<div class="help-entries">${entries.map(e=>_helpEntryHtml(sec,e)).join('')}</div></details>`;
   }).join('');
   $('#helpContent').innerHTML=html||'<div class="empty-state">Nothing matches that search.</div>';
   const total=_helpSections.reduce((n,s)=>n+s.entries.length,0);
   $('#helpCount').textContent=words.length?`${shown} of ${total} entries`:`${total} entries`;
+  _helpWatchPictures();
+}
+function helpGoto(sectionId,entryId){
+  if($('#helpSearch').value){$('#helpSearch').value='';renderHelp();}
+  const sec=document.getElementById('help-'+sectionId);if(!sec)return;
+  sec.open=true;
+  const target=entryId?document.getElementById(`help-${sectionId}-${entryId}`):sec;
+  if(!target)return;
+  target.scrollIntoView({behavior:'smooth',block:entryId?'center':'start'});
+  if(entryId){target.classList.add('help-flash');setTimeout(()=>target.classList.remove('help-flash'),1600);}
 }
 async function loadHelp(){
   if(_helpSections){renderHelp();return;}
   try{
     _helpSections=await api('/api/help');
-    $('#helpNav').innerHTML=_helpSections.map(s=>`<button type="button" data-help-section="${safe(s.id)}">${safe(s.title)}</button>`).join('');
-    $('#helpNav').onclick=e=>{
-      const btn=e.target.closest('[data-help-section]');if(!btn)return;
-      if($('#helpSearch').value){$('#helpSearch').value='';renderHelp();}
-      const sec=document.getElementById('help-'+btn.dataset.helpSection);
-      if(sec){sec.open=true;sec.scrollIntoView({behavior:'smooth',block:'start'});}
-    };
+    $('#helpNav').innerHTML=_helpSections.map(s=>`<button type="button" data-help-section="${safe(s.id)}"><span class="help-icon">${safe(s.icon||'')}</span>${safe(s.title)}</button>`).join('');
+    $('#helpNav').onclick=e=>{const btn=e.target.closest('[data-help-section]');if(btn)helpGoto(btn.dataset.helpSection,'');};
+    $('#helpContent').addEventListener('click',e=>{
+      const go=e.target.closest('[data-help-goto]');
+      if(go){const [sec,entry]=go.dataset.helpGoto.split('/');helpGoto(sec,entry);return;}
+      const view=e.target.closest('[data-help-view]');
+      if(view)openView(view.dataset.helpView);
+    });
+    // Sections opened by hand reveal new picture placeholders.
+    $('#helpContent').addEventListener('toggle',e=>{if(e.target.open)_helpWatchPictures();},true);
     $('#helpSearch').oninput=renderHelp;
     renderHelp();
   }catch(error){$('#helpContent').innerHTML=`<div class="empty-state">${safe(error.message)}</div>`;}
