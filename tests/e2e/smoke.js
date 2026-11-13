@@ -15,7 +15,8 @@ const check = (ok, label) => { console.log((ok ? 'ok   ' : 'FAIL ') + label); if
   let allowFailures = false;
   page.on('pageerror', e => pageErrors.push('pageerror: ' + e.message));
   page.on('response', r => { if (r.status() >= 400 && r.url().startsWith(APP) && !allowFailures) pageErrors.push(`HTTP ${r.status()} ${r.url().slice(APP.length)}`); });
-  page.on('dialog', d => d.accept());
+  const dialogs = [];
+  page.on('dialog', d => { dialogs.push(d.message()); d.accept(); });
   context.on('page', () => pageErrors.push('a new tab was opened'));
   // Keep the run offline: nothing outside the app under test.
   await page.route(url => !url.href.startsWith(APP), route => route.abort());
@@ -108,6 +109,23 @@ const check = (ok, label) => { console.log((ok ? 'ok   ' : 'FAIL ') + label); if
   await page.locator('.side-nav button', { hasText: 'Play' }).click();
   l = await layout();
   check(l.game && !l.sidebar, 'Play returns to the running game');
+
+  // --- a second story with the same character name gets its own character
+  const namesakes = async () => (await (await page.request.get(`${APP}/api/characters`)).json()).filter(c => c.name === 'Smoke Tester');
+  const firstId = (await namesakes())[0].id;
+  dialogs.length = 0;
+  await page.locator('#gameBackBtn').click();
+  await page.locator('#playHub button', { hasText: '▶ Play' }).nth(1).click();
+  await page.locator('#playerCharForm input[name=charName]').fill('Smoke Tester');
+  await page.locator('button', { hasText: 'Start Adventure' }).click();
+  await page.waitForFunction(() => !document.querySelector('#gameArea').hidden && document.querySelector('#partyCount')?.textContent.trim().startsWith('1') && !document.querySelector('#chatLog').textContent.includes('I climb to the rooftop.'), null, { timeout: 30000 });
+  const twins = await namesakes();
+  check(dialogs.length === 0, 'reusing a name does not prompt');
+  check(twins.length === 2, 'the second story creates its own character');
+  const secondId = Math.max(...twins.map(c => c.id));
+  const questsOf = async id => (await (await page.request.get(`${APP}/api/quests/active?character_name=Smoke%20Tester&character_id=${id}`)).json()).length;
+  check(await questsOf(firstId) === 1 && await questsOf(secondId) === 0, 'quests stay with the first story\'s character');
+  check(!(await page.locator('#gameArea').textContent()).includes('The Sealed Scroll'), 'the new story starts without the old quest');
 
   // --- combat
   await page.locator('#gameArea button', { hasText: 'Engage Enemies' }).click();

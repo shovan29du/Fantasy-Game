@@ -318,6 +318,19 @@ class ChatSendIn(BaseModel):
     retry: bool = False  # resend after a failed reply: the user line is already saved
 
 
+def _story_session(session_id: str) -> str:
+    """Session id when the chat belongs to a game story, else ''. The plain
+    companion chat ("default") keeps its shared, name-keyed memory."""
+    return "" if session_id in ("", "default") else session_id
+
+
+def _story_identity(name: str, session_id: str) -> str:
+    """Key for name-keyed state (relationship, mood). The same name in a
+    different story is a different character, so stories get their own key."""
+    story = _story_session(session_id)
+    return f"{name} [{story}]" if name and story else name
+
+
 class ChatEditIn(BaseModel):
     content: str
 
@@ -398,6 +411,7 @@ class MemoryIn(BaseModel):
     memory_type: str = "episodic"
     character_name: str = ""
     importance: float = 0.7
+    session_id: str = ""  # the story this fact belongs to; empty = shared by all
 
 
 class ImageIn(BaseModel):
@@ -928,7 +942,8 @@ def send_chat(payload: ChatSendIn) -> dict:
     character = get_full_sheet(payload.character_id) if payload.character_id else None
     character_name = payload.character_name or ((character or {}).get("name") if character else "Character")
     world = get_world(payload.world_id) if payload.world_id else None
-    relationship = ensure_relationship(character_name) if character_name else None
+    identity = _story_identity(character_name, payload.session_id)
+    relationship = ensure_relationship(identity) if character_name else None
     user_line = f"**{payload.user_name or 'User'}:** {payload.content}"
     if not payload.retry:
         save_message("user", user_line, payload.session_id)
@@ -950,7 +965,7 @@ def send_chat(payload: ChatSendIn) -> dict:
         system_prompt += "\n[Quests: " + "; ".join(q["title"][:30] for q in quests[:3]) + "]"
     try:
         from core.companion_soul import build_soul_prompt
-        soul_context = build_soul_prompt(character_name)
+        soul_context = build_soul_prompt(identity)
         if soul_context:
             system_prompt += f"\n{soul_context}"
     except Exception:
@@ -972,7 +987,8 @@ def send_chat(payload: ChatSendIn) -> dict:
     # with recent events, on top of the persistent memory facts below.
     messages.extend({"role": msg["role"], "content": msg["content"]} for msg in history[-RECENT_HISTORY_MESSAGES:])
     try:
-        memory_context = memory_engine.build_memory_context(query=payload.content, character_name=character_name)
+        memory_context = memory_engine.build_memory_context(
+            query=payload.content, character_name=character_name, session_id=_story_session(payload.session_id))
         if memory_context:
             messages[-1]["content"] += f"\n[Memory: {memory_context}]"
     except Exception:
@@ -991,6 +1007,7 @@ def send_chat(payload: ChatSendIn) -> dict:
                 f"{payload.user_name or 'Player'} said: {payload.content[:200]} | "
                 f"{character_name or 'AI'} replied: {response[:200]}",
                 source="auto", character_name=character_name or "",
+                    session_id=_story_session(payload.session_id),
             )
         except Exception:
             log.debug("Auto memory storage failed", exc_info=True)
@@ -1000,7 +1017,7 @@ def send_chat(payload: ChatSendIn) -> dict:
             sentiment = "negative"
         if any(word in payload.content.lower() for word in ["flirt", "seduce", "intimate", "desire"]):
             sentiment = "flirt"
-        record_interaction(character_name, sentiment, payload.content[:80])
+        record_interaction(identity, sentiment, payload.content[:80])
         try:
             from core.companion_soul import update_affect
             update_affect(character_name, sentiment)
@@ -1023,7 +1040,8 @@ def stream_chat(payload: ChatSendIn) -> StreamingResponse:
     character = get_full_sheet(payload.character_id) if payload.character_id else None
     character_name = payload.character_name or ((character or {}).get("name") if character else "Character")
     world = get_world(payload.world_id) if payload.world_id else None
-    relationship = ensure_relationship(character_name) if character_name else None
+    identity = _story_identity(character_name, payload.session_id)
+    relationship = ensure_relationship(identity) if character_name else None
     user_line = f"**{payload.user_name or 'User'}:** {payload.content}"
     if not payload.retry:
         save_message("user", user_line, payload.session_id)
@@ -1045,7 +1063,7 @@ def stream_chat(payload: ChatSendIn) -> StreamingResponse:
         system_prompt += "\n[Quests: " + "; ".join(q["title"][:30] for q in quests[:3]) + "]"
     try:
         from core.companion_soul import build_soul_prompt
-        soul_context = build_soul_prompt(character_name)
+        soul_context = build_soul_prompt(identity)
         if soul_context:
             system_prompt += f"\n{soul_context}"
     except Exception:
@@ -1062,7 +1080,8 @@ def stream_chat(payload: ChatSendIn) -> StreamingResponse:
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend({"role": msg["role"], "content": msg["content"]} for msg in history[-RECENT_HISTORY_MESSAGES:])
     try:
-        memory_context = memory_engine.build_memory_context(query=payload.content, character_name=character_name)
+        memory_context = memory_engine.build_memory_context(
+            query=payload.content, character_name=character_name, session_id=_story_session(payload.session_id))
         if memory_context:
             messages[-1]["content"] += f"\n[Memory: {memory_context}]"
     except Exception:
@@ -1093,6 +1112,7 @@ def stream_chat(payload: ChatSendIn) -> StreamingResponse:
                     f"{payload.user_name or 'Player'} said: {payload.content[:200]} | "
                     f"{character_name or 'AI'} replied: {full_reply[:200]}",
                     source="auto", character_name=character_name or "",
+                    session_id=_story_session(payload.session_id),
                 )
             except Exception:
                 pass
@@ -1102,7 +1122,7 @@ def stream_chat(payload: ChatSendIn) -> StreamingResponse:
                     sentiment = "negative"
                 if any(w in payload.content.lower() for w in ["flirt","seduce","intimate","desire"]):
                     sentiment = "flirt"
-                record_interaction(character_name, sentiment, payload.content[:80])
+                record_interaction(identity, sentiment, payload.content[:80])
                 try:
                     from core.companion_soul import update_affect
                     update_affect(character_name, sentiment)
@@ -1168,7 +1188,8 @@ def save_message_to_memory(message_id: int) -> dict:
     if not row:
         raise HTTPException(status_code=404, detail="Message not found")
     fact = dict(row)["content"]
-    memory_engine.store_fact(fact, source="chat-pin", memory_type="episodic", importance=0.9)
+    memory_engine.store_fact(fact, source="chat-pin", memory_type="episodic", importance=0.9,
+                             session_id=_story_session(dict(row)["session_id"]))
     return {"saved": True, "fact": fact[:120]}
 
 
@@ -2433,6 +2454,7 @@ def create_memory_fact(payload: MemoryIn) -> dict:
         memory_type=payload.memory_type,
         character_name=payload.character_name,
         importance=payload.importance,
+        session_id=_story_session(payload.session_id),
     )
     return {"saved": True}
 

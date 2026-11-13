@@ -15,7 +15,7 @@ DB_PATH = Path(os.environ.get("AICHAT_DB_PATH") or DATA_DIR / "aichat_pro.db")
 
 # Bump whenever a new entry is added to _MIGRATIONS or _TABLES so the
 # schema_version table reflects the schema the app expects.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 def get_conn():
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
@@ -180,6 +180,7 @@ _MIGRATIONS = [
     ("quests", "depends_on", "INTEGER"),
     ("quests", "chain_id", "TEXT"),
     ("quests", "character_id", "INTEGER"),
+    ("memory_facts", "session_id", "TEXT DEFAULT ''"),
     ("achievements", "bonus_stat", "TEXT"),
     ("achievements", "bonus_value", "INTEGER DEFAULT 0"),
     ("inventory", "equip_slot", "TEXT"),

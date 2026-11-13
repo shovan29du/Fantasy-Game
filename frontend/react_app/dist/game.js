@@ -1350,7 +1350,7 @@ $('#chatLog').addEventListener('click',async e=>{
  else if(act==='memory'){
   if(!mid){
    try{
-    const r=await fetch('/api/memory/facts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fact:text,source:'chat-pin',memory_type:'episodic',importance:0.9})});
+    const r=await fetch('/api/memory/facts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fact:text,source:'chat-pin',memory_type:'episodic',importance:0.9,session_id:state.sessionId})});
     if(!r.ok)throw new Error('Memory save failed');
     toast('Saved to memory!');
    }catch(err){toast(err.message);}
@@ -1614,7 +1614,7 @@ function launchPlayerStep(payload){
   const sel=$('#existingCharSelect');
   if(!sel)return;
   sel.innerHTML=chars.length
-   ?chars.map(c=>`<option value="${c.id}" data-char='${JSON.stringify({name:c.name||'',age:c.age||25,gender:c.gender||'',profession:c.profession||'',backstory:c.backstory||''}).replace(/'/g,'&#39;')}'>${safe(c.name)} · ${safe(c.race||'')} ${safe(c.profession||'')} Lv${c.level||1}</option>`).join('')
+   ?chars.map(c=>`<option value="${c.id}" data-char='${JSON.stringify({name:c.name||'',age:c.age||25,gender:c.gender||'',profession:c.profession||'',backstory:c.backstory||''}).replace(/'/g,'&#39;')}'>${safe(c.name)} · ${safe(c.race||'')} ${safe(c.profession||'')} Lv${c.level||1}${c.scenario?` — ${safe(String(c.scenario).slice(0,40))}`:''}</option>`).join('')
    :'<option value="">No saved characters yet</option>';
  }).catch(()=>{});
  showStartStep('player');
@@ -1628,16 +1628,8 @@ $('#playerCharForm').onsubmit=async e=>{
  const btn=e.currentTarget.querySelector('button.gold');
  if(btn)btn.disabled=true;
  try{
-  const charData={name,age:parseInt(fd.get('charAge'))||25,gender:fd.get('charGender')||'',profession:fd.get('charProfession')||'',backstory:fd.get('charBackstory')||''};
-  let saved=state._savedCharCache;
-  if(!saved){try{saved=await api('/api/characters');}catch{saved=[];}}
-  const twin=saved.filter(c=>(c.name||'').trim().toLowerCase()===name.toLowerCase()).sort((a,b)=>(b.level||1)-(a.level||1)||b.id-a.id)[0];
-  if(twin&&confirm(`You already have a character named "${twin.name}" (level ${twin.level||1}).\n\nOK — play as that character\nCancel — create a separate new one`)){
-   state.characterId=twin.id;
-   try{await refreshCharacterState();}catch{}
-   await _doBeginGame(state.sheet||twin);
-   return;
-  }
+  // Each story gets its own character, even when the name matches a saved one.
+  const charData={name,age:parseInt(fd.get('charAge'))||25,gender:fd.get('charGender')||'',profession:fd.get('charProfession')||'',backstory:fd.get('charBackstory')||'',scenario:state.pendingGamePayload?.scenario_name||''};
   const result=await api('/api/characters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(charData)});
   state.characterId=result.id;
   state.sheet=charData;
@@ -2686,7 +2678,7 @@ async function openRecruitModal(){
         <div style="flex:1;min-width:0">
           <div style="font-weight:bold;font-size:12px">${safe(ch.name)}</div>
           <div style="font-size:10px;color:var(--muted)">${safe(ch.race||'')} ${safe(ch.profession||'')} · LV ${safe(ch.level||1)}</div>
-          <div style="font-size:10px;color:var(--muted)">${safe((ch.origin_world||ch.origin||'Unknown world')).slice(0,40)}</div>
+          <div style="font-size:10px;color:var(--muted)">${safe(String(ch.scenario||ch.origin_world||ch.origin||'Unknown world').slice(0,40))}</div>
         </div>
         <button data-recruit-id="${ch.id}" class="${inParty?'ghost':'gold'}" style="font-size:10px;padding:4px 10px;flex-shrink:0" ${inParty?'disabled':''}>
           ${inParty?'In party':'+ Add'}

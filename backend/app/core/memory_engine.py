@@ -76,8 +76,9 @@ class MemoryEngine:
     # ── Layer 2: SQLite facts (typed, scored) ───────────────
     def store_fact(self, fact: str, source: str = "user", memory_type: str = "general",
                    importance: float = 0.5, confidence: float = 1.0,
-                   character_name: str = "", tags: List[str] = None):
-        """Store a typed memory with importance scoring."""
+                   character_name: str = "", tags: List[str] = None, session_id: str = ""):
+        """Store a typed memory with importance scoring. `session_id` ties the
+        fact to one story so it is not recalled in others."""
         # Auto-classify if not specified
         if memory_type == "general":
             memory_type = self._classify_memory(fact)
@@ -89,9 +90,9 @@ class MemoryEngine:
         conn = get_conn()
         conn.execute(
             "INSERT INTO memory_facts (fact, source, memory_type, importance, confidence, "
-            "entities_json, tags, character_name, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "entities_json, tags, character_name, session_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (fact, source, memory_type, importance, confidence,
-             json.dumps(entities), json.dumps(tags or []), character_name, now_iso()))
+             json.dumps(entities), json.dumps(tags or []), character_name, session_id or "", now_iso()))
         conn.commit(); conn.close()
         # Graph: add entity relationships
         if entities and self._graph is not None:
@@ -288,8 +289,38 @@ class MemoryEngine:
         conn.commit(); conn.close()
 
     # ── Build context for chat ──────────────────────────────
-    def build_memory_context(self, query: str = "", character_name: str = "", max_items: int = 8) -> str:
+    def _story_memory_context(self, query: str, character_name: str, session_id: str) -> str:
+        """Memory context for one story: its own facts plus facts the user
+        saved without a story. Auto-captured facts from other stories (or from
+        before stories were tracked) are left out, so a character who shares a
+        name with one in another story starts with a clean slate."""
+        conn = get_conn()
+        rows = [dict(r) for r in conn.execute(
+            "SELECT fact, importance, character_name FROM memory_facts "
+            "WHERE session_id=? OR (COALESCE(session_id,'')='' AND source<>'auto') "
+            "ORDER BY importance DESC, id DESC", (session_id,)).fetchall()]
+        conn.close()
+        parts = []
+        important = [r for r in rows if (r["importance"] or 0) >= 0.7][:3]
+        if important:
+            parts.append("Important: " + "; ".join(r["fact"][:80] for r in important))
+        if character_name:
+            mine = [r for r in rows if r["character_name"] == character_name][:3]
+            if mine:
+                parts.append(f"About {character_name}: " + "; ".join(r["fact"][:60] for r in mine))
+        words = query.lower().split()
+        if words:
+            scored = [(sum(1 for w in words if w in r["fact"].lower()), r["fact"]) for r in rows]
+            relevant = [fact for score, fact in sorted(scored, key=lambda x: -x[0]) if score > 0][:3]
+            if relevant:
+                parts.append("Relevant: " + "; ".join(f[:60] for f in relevant))
+        return " | ".join(parts)[:600] if parts else ""
+
+    def build_memory_context(self, query: str = "", character_name: str = "", max_items: int = 8,
+                             session_id: str = "") -> str:
         """Build rich memory context for chat prompt injection."""
+        if session_id:
+            return self._story_memory_context(query, character_name, session_id)
         parts = []
         # Important memories first
         important = self.get_important_facts(0.7)[:3]
